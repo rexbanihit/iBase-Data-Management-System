@@ -1177,6 +1177,22 @@ const cardSt = {
   marginBottom: 16
 };
 
+// The system owner (developer). Mirrors the hardcoded owner in the server rules.
+const OWNER_UID = "pCaPXMqV2FXuuPLXGjfeP9qlbwl2";
+
+// Soft delete: everything deleted anywhere in iBase goes to the Bin first,
+// where administrators can restore it or delete it forever.
+async function binIt(kind, label, payload, byEmail) {
+  await db.collection("bin").add({
+    kind,
+    label: String(label || "").slice(0, 120),
+    payload: JSON.parse(JSON.stringify(payload)),
+    // strip undefined for Firestore
+    deletedBy: byEmail || "",
+    deletedAt: auditNow()
+  });
+}
+
 // PM flag from a machine's nextPM date
 function pmFlag(m) {
   const d = String(m && m.nextPM || "").slice(0, 10);
@@ -2016,7 +2032,27 @@ function LabDetail({
   }, "✏️ Edit lab"), canEdit && /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     onClick: () => setAddingM(true)
-  }, "+ Add Machine")), /*#__PURE__*/React.createElement("div", {
+  }, "+ Add Machine"), canEdit && /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#3a1d1d", "#fca5a5"),
+    onClick: async () => {
+      if (!confirm("Move the ENTIRE laboratory \"" + lab.name + "\" (with its " + (lab.machines || []).length + " machine record(s)) to the Bin?")) return;
+      try {
+        await binIt("lab", lab.name, {
+          ...lab
+        }, profile.email);
+      } catch (e) {
+        notify("Bin write refused: " + e.message, "error");
+        return;
+      }
+      try {
+        await db.collection("labs").doc(lab.id).delete();
+        notify("Laboratory moved to Bin.", "ok");
+        onBack();
+      } catch (e) {
+        notify("Server refused: " + e.message, "error");
+      }
+    }
+  }, "🗑 Delete lab")), /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("table", {
     style: {
@@ -2075,8 +2111,19 @@ function LabDetail({
         padding: "4px 9px",
         fontSize: 11
       },
-      onClick: () => {
-        if (confirm("Delete " + m.instrument + " (" + m.serialNo + ")?")) saveMachines((lab.machines || []).filter(x => x.id !== m.id), "Machine removed.");
+      onClick: async () => {
+        if (!confirm("Move " + m.instrument + " (" + m.serialNo + ") to the Bin?")) return;
+        try {
+          await binIt("machine", m.instrument + " · " + m.serialNo + " @ " + lab.name, {
+            labId: lab.id,
+            labName: lab.name,
+            machine: m
+          }, profile.email);
+        } catch (e) {
+          notify("Bin write refused: " + e.message, "error");
+          return;
+        }
+        saveMachines((lab.machines || []).filter(x => x.id !== m.id), "Machine moved to Bin.");
       }
     }, "🗑")));
   }), (lab.machines || []).length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
@@ -2374,6 +2421,7 @@ function InventoryTab({
   profile,
   labs,
   catalog,
+  tabsCfg,
   notify
 }) {
   const [sub, setSub] = useState("machines");
@@ -2388,10 +2436,10 @@ function InventoryTab({
   }, canViewM && /*#__PURE__*/React.createElement("button", {
     style: btnSt(sub === "machines" ? "var(--c-key)" : "var(--c-border)", sub === "machines" ? "var(--c-bg)" : "var(--c-text2)"),
     onClick: () => setSub("machines")
-  }, "🔬 Machine Inventory"), canViewS && /*#__PURE__*/React.createElement("button", {
+  }, subLabel(tabsCfg, "machines", "🔬 Machine Inventory")), canViewS && /*#__PURE__*/React.createElement("button", {
     style: btnSt(sub === "spares" ? "var(--c-key)" : "var(--c-border)", sub === "spares" ? "var(--c-bg)" : "var(--c-text2)"),
     onClick: () => setSub("spares")
-  }, "🔧 Spare Parts")), sub === "machines" && canViewM && /*#__PURE__*/React.createElement(MachineInv, {
+  }, subLabel(tabsCfg, "spares", "🔧 Spare Parts"))), sub === "machines" && canViewM && /*#__PURE__*/React.createElement(MachineInv, {
     profile: profile,
     labs: labs,
     catalog: catalog,
@@ -2431,7 +2479,14 @@ function MachineInv({
     if (!s) return true;
     return [it.brand, it.machineModel, it.serialNo, it.itemCode].some(x => String(x || "").toLowerCase().includes(s));
   }).sort((a, b) => String(a.brand + a.machineModel).localeCompare(String(b.brand + b.machineModel)));
+  const norm = v => String(v || "").trim().toLowerCase();
   async function save(rec) {
+    // No duplicates: the same brand + serial number may exist only once.
+    const dup = items.find(it => (editing === "new" || it.id !== editing.id) && norm(it.brand) === norm(rec.brand) && norm(it.serialNo) === norm(rec.serialNo));
+    if (dup) {
+      notify("Duplicate blocked: a " + rec.brand + " record with serial \"" + rec.serialNo + "\" already exists (" + (dup.machineModel || "no model") + ").", "error");
+      return;
+    }
     try {
       if (editing === "new") await db.collection("inventory").add({
         ...rec,
@@ -2449,10 +2504,18 @@ function MachineInv({
     }
   }
   async function del(it) {
-    if (!confirm("Delete " + it.serialNo + "?")) return;
+    if (!confirm("Move " + it.brand + " " + (it.machineModel || "") + " (" + it.serialNo + ") to the Bin?")) return;
+    try {
+      await binIt("inventory", it.brand + " " + (it.machineModel || "") + " · " + it.serialNo, {
+        ...it
+      }, profile.email);
+    } catch (e) {
+      notify("Bin write refused: " + e.message, "error");
+      return;
+    }
     try {
       await db.collection("inventory").doc(it.id).delete();
-      notify("Deleted.", "ok");
+      notify("Moved to Bin.", "ok");
     } catch (e) {
       notify("SERVER REFUSED the delete:\n" + e.message, "error");
     }
@@ -2768,7 +2831,14 @@ function SpareParts({
     return [p.brand, p.partNumber, p.description].some(x => String(x || "").toLowerCase().includes(s));
   }).sort((a, b) => String(a.brand + a.partNumber).localeCompare(String(b.brand + b.partNumber)));
   const onHand = p => (p.receipts || []).reduce((s, r) => s + (Number(r.qty) || 0), 0) - (p.issues || []).reduce((s, r) => s + (Number(r.qty) || 0), 0);
+  const norm = v => String(v || "").trim().toLowerCase();
   async function save(rec) {
+    // No duplicates: the same brand + part number may exist only once.
+    const dup = parts.find(p => (editing === "new" || p.id !== editing.id) && norm(p.brand) === norm(rec.brand) && norm(p.partNumber) === norm(rec.partNumber));
+    if (dup) {
+      notify("Duplicate blocked: a " + rec.brand + " spare part \"" + rec.partNumber + "\" already exists (" + (dup.description || "no description") + ").", "error");
+      return;
+    }
     try {
       if (editing === "new") await db.collection("spareParts").add({
         ...rec,
@@ -2778,6 +2848,23 @@ function SpareParts({
       });else await db.collection("spareParts").doc(editing.id).update(rec);
       notify("Saved.", "ok");
       setEditing(null);
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+  }
+  async function delPart(p) {
+    if (!confirm("Move spare part " + p.partNumber + " (" + p.brand + ") to the Bin?")) return;
+    try {
+      await binIt("sparePart", p.brand + " · " + p.partNumber, {
+        ...p
+      }, profile.email);
+    } catch (e) {
+      notify("Bin write refused: " + e.message, "error");
+      return;
+    }
+    try {
+      await db.collection("spareParts").doc(p.id).delete();
+      notify("Moved to Bin.", "ok");
     } catch (e) {
       notify("SERVER REFUSED:\n" + e.message, "error");
     }
@@ -2883,7 +2970,15 @@ function SpareParts({
       fontSize: 11
     },
     onClick: () => setEditing(p)
-  }, "✏️")) : /*#__PURE__*/React.createElement("span", {
+  }, "✏️"), " ", /*#__PURE__*/React.createElement("button", {
+    title: "Move to Bin",
+    style: {
+      ...btnSt("#3a1d1d", "#fca5a5"),
+      padding: "4px 9px",
+      fontSize: 11
+    },
+    onClick: () => delPart(p)
+  }, "🗑")) : /*#__PURE__*/React.createElement("span", {
     title: "Your account can't edit " + (p.brand || "this brand") + " spare parts",
     style: {
       color: "var(--c-text5)"
@@ -2997,6 +3092,400 @@ function StockForm({
     disabled: !(Number(qty) > 0),
     onClick: () => onSave(qty, ref)
   }, "Confirm"));
+}
+
+// ── Bin: everything deleted anywhere in iBase lands here (admins only) ──────
+function BinTab({
+  profile,
+  labs,
+  notify
+}) {
+  const entries = useCol("bin", true, notify);
+  const KIND_META = {
+    lab: {
+      icon: "🏥",
+      name: "Laboratory"
+    },
+    machine: {
+      icon: "🔬",
+      name: "Machine (in a lab)"
+    },
+    inventory: {
+      icon: "📦",
+      name: "Inventory record"
+    },
+    sparePart: {
+      icon: "🔧",
+      name: "Spare part"
+    },
+    user: {
+      icon: "👤",
+      name: "User profile"
+    },
+    tab: {
+      icon: "🗂",
+      name: "System tab"
+    }
+  };
+  const sorted = entries.slice().sort((a, b) => String(b.deletedAt || "").localeCompare(String(a.deletedAt || "")));
+  async function restore(e) {
+    try {
+      if (e.kind === "lab") {
+        const dup = labs.find(l => labNameNorm(l.name) === labNameNorm(e.payload.name));
+        if (dup) {
+          notify("A laboratory named \"" + dup.name + "\" already exists — rename or delete it first.", "error");
+          return;
+        }
+        const {
+          id,
+          ...data
+        } = e.payload;
+        await db.collection("labs").add(data);
+      } else if (e.kind === "machine") {
+        const lab = labs.find(l => l.id === e.payload.labId) || labs.find(l => labNameNorm(l.name) === labNameNorm(e.payload.labName));
+        if (!lab) {
+          notify("The laboratory \"" + e.payload.labName + "\" no longer exists — restore the laboratory first, then this machine.", "error");
+          return;
+        }
+        await db.collection("labs").doc(lab.id).update({
+          machines: [...(lab.machines || []), e.payload.machine]
+        });
+      } else if (e.kind === "inventory") {
+        const {
+          id,
+          ...data
+        } = e.payload;
+        await db.collection("inventory").add(data);
+      } else if (e.kind === "sparePart") {
+        const {
+          id,
+          ...data
+        } = e.payload;
+        await db.collection("spareParts").add(data);
+      } else if (e.kind === "user") {
+        const {
+          id,
+          ...data
+        } = e.payload;
+        if (!id) {
+          notify("This user entry has no UID — cannot restore.", "error");
+          return;
+        }
+        await db.collection("users").doc(id).set(data);
+      } else if (e.kind === "tab") {
+        const cur = (await db.doc("config/tabs").get()).data() || {};
+        const hidden = (cur.hidden || []).filter(t => t !== e.payload.tabId);
+        await db.doc("config/tabs").set({
+          ...cur,
+          hidden
+        }, {
+          merge: true
+        });
+      } else {
+        notify("Unknown bin entry kind: " + e.kind, "error");
+        return;
+      }
+      await db.collection("bin").doc(e.id).delete();
+      notify("Restored: " + (e.label || e.kind), "ok");
+    } catch (err) {
+      notify("Restore refused: " + err.message, "error");
+    }
+  }
+  async function purge(e) {
+    if (!confirm("PERMANENTLY delete \"" + (e.label || e.kind) + "\"? This cannot be undone.")) return;
+    try {
+      await db.collection("bin").doc(e.id).delete();
+      notify("Deleted forever.", "ok");
+    } catch (err) {
+      notify("Server refused: " + err.message, "error");
+    }
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    style: cardSt
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "var(--c-text4)",
+      textTransform: "uppercase",
+      marginBottom: 4
+    }
+  }, "🗑 Bin (", sorted.length, ")"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text5)",
+      marginBottom: 14
+    }
+  }, "Everything deleted anywhere in iBase lands here first. Restore puts it back where it came from; Delete forever removes it permanently."), /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: "100%",
+      borderCollapse: "collapse"
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Type", "Item", "Deleted by", "Deleted at", ""].map(h => /*#__PURE__*/React.createElement("th", {
+    key: h,
+    style: thSt
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, sorted.map(e => {
+    const m = KIND_META[e.kind] || {
+      icon: "❓",
+      name: e.kind
+    };
+    return /*#__PURE__*/React.createElement("tr", {
+      key: e.id
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdSt,
+        whiteSpace: "nowrap"
+      }
+    }, m.icon, " ", m.name), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdSt,
+        fontWeight: 600
+      }
+    }, e.label || "—"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdSt,
+        fontSize: 12,
+        color: "var(--c-text3)"
+      }
+    }, e.deletedBy || "—"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdSt,
+        fontSize: 12,
+        color: "var(--c-text4)",
+        whiteSpace: "nowrap"
+      }
+    }, e.deletedAt ? String(e.deletedAt).replace("T", " ").slice(0, 16) : "—"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdSt,
+        whiteSpace: "nowrap"
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      style: {
+        ...btnSt("#10b981", "#fff"),
+        padding: "4px 10px",
+        fontSize: 11
+      },
+      onClick: () => restore(e)
+    }, "↩ Restore"), " ", /*#__PURE__*/React.createElement("button", {
+      style: {
+        ...btnSt("#3a1d1d", "#fca5a5"),
+        padding: "4px 10px",
+        fontSize: 11
+      },
+      onClick: () => purge(e)
+    }, "✕ Delete forever")));
+  }), sorted.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: 5,
+    style: {
+      ...tdSt,
+      color: "var(--c-text4)"
+    }
+  }, "The Bin is empty.")))));
+}
+
+// ── Tab Manager: rename / delete (→ Bin) / re-add the system's tabs ─────────
+// Built-in tabs keep their functionality; what's editable is the label, emoji,
+// and whether the tab is visible. Deleting hides it for everyone and drops a
+// restorable entry in the Bin. Settings itself is locked so admins can never
+// lock themselves out.
+const MANAGED_TABS = [{
+  id: "dashboard",
+  def: "📊 Dashboard"
+}, {
+  id: "labs",
+  def: "🏥 Institutions"
+}, {
+  id: "inventory",
+  def: "📦 Inventory"
+}, {
+  id: "overtime",
+  def: "🕒 Overtime"
+}];
+const MANAGED_SUBS = [{
+  id: "machines",
+  def: "🔬 Machine Inventory"
+}, {
+  id: "spares",
+  def: "🔧 Spare Parts"
+}];
+function tabLabel(tabsCfg, id, def) {
+  const l = tabsCfg && tabsCfg.labels && tabsCfg.labels[id];
+  return l && String(l).trim() || def;
+}
+function subLabel(tabsCfg, id, def) {
+  const l = tabsCfg && tabsCfg.subs && tabsCfg.subs[id];
+  return l && String(l).trim() || def;
+}
+function tabHidden(tabsCfg, id) {
+  return !!(tabsCfg && Array.isArray(tabsCfg.hidden) && tabsCfg.hidden.indexOf(id) !== -1);
+}
+function TabManager({
+  profile,
+  tabsCfg,
+  notify
+}) {
+  const cfg = tabsCfg || {};
+  const [draft, setDraft] = useState({});
+  useEffect(() => {
+    const d = {};
+    MANAGED_TABS.forEach(t => {
+      d[t.id] = tabLabel(cfg, t.id, t.def);
+    });
+    MANAGED_SUBS.forEach(s => {
+      d["sub:" + s.id] = subLabel(cfg, s.id, s.def);
+    });
+    setDraft(d);
+  }, [JSON.stringify(cfg)]);
+  async function saveLabels() {
+    try {
+      const labels = {},
+        subs = {};
+      MANAGED_TABS.forEach(t => {
+        if (draft[t.id] && draft[t.id] !== t.def) labels[t.id] = draft[t.id];
+      });
+      MANAGED_SUBS.forEach(s => {
+        if (draft["sub:" + s.id] && draft["sub:" + s.id] !== s.def) subs[s.id] = draft["sub:" + s.id];
+      });
+      await db.doc("config/tabs").set({
+        ...cfg,
+        labels,
+        subs
+      }, {
+        merge: false
+      });
+      notify("Tab names saved — applies to everyone.", "ok");
+    } catch (e) {
+      notify("Server refused: " + e.message, "error");
+    }
+  }
+  async function deleteTab(t) {
+    if (!confirm("Move the \"" + tabLabel(cfg, t.id, t.def) + "\" tab to the Bin? It disappears for ALL users until an administrator restores it.")) return;
+    try {
+      await binIt("tab", tabLabel(cfg, t.id, t.def), {
+        tabId: t.id
+      }, profile.email);
+      const hidden = Array.from(new Set([...(cfg.hidden || []), t.id]));
+      await db.doc("config/tabs").set({
+        ...cfg,
+        hidden
+      }, {
+        merge: true
+      });
+      notify("Tab moved to Bin.", "ok");
+    } catch (e) {
+      notify("Server refused: " + e.message, "error");
+    }
+  }
+  async function readdTab(id) {
+    try {
+      const hidden = (cfg.hidden || []).filter(x => x !== id);
+      await db.doc("config/tabs").set({
+        ...cfg,
+        hidden
+      }, {
+        merge: true
+      });
+      notify("Tab re-added.", "ok");
+    } catch (e) {
+      notify("Server refused: " + e.message, "error");
+    }
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    style: cardSt
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "var(--c-text4)",
+      textTransform: "uppercase",
+      marginBottom: 4
+    }
+  }, "🗂 Tabs & Sub-tabs"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text5)",
+      marginBottom: 14
+    }
+  }, "Rename any tab (emoji included), delete one to the Bin (restorable), or re-add it. Changes apply to every user. Settings and the Bin are locked so administrators can never lock themselves out."), MANAGED_TABS.map(t => /*#__PURE__*/React.createElement("div", {
+    key: t.id,
+    style: {
+      display: "flex",
+      gap: 10,
+      alignItems: "center",
+      marginBottom: 8,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 90,
+      fontSize: 11,
+      color: "var(--c-text4)",
+      textTransform: "uppercase",
+      fontWeight: 700
+    }
+  }, t.id), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      maxWidth: 260
+    },
+    value: draft[t.id] || "",
+    onChange: e => setDraft(d => ({
+      ...d,
+      [t.id]: e.target.value
+    }))
+  }), tabHidden(cfg, t.id) ? /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#10b981", "#fff"),
+    onClick: () => readdTab(t.id)
+  }, "↩ Re-add") : /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#3a1d1d", "#fca5a5"),
+    onClick: () => deleteTab(t)
+  }, "🗑 Delete"), tabHidden(cfg, t.id) && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10.5,
+      color: "#fbbf24",
+      fontWeight: 700
+    }
+  }, "hidden for everyone"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 800,
+      color: "var(--c-text4)",
+      textTransform: "uppercase",
+      margin: "14px 0 8px"
+    }
+  }, "Inventory sub-tabs"), MANAGED_SUBS.map(s => /*#__PURE__*/React.createElement("div", {
+    key: s.id,
+    style: {
+      display: "flex",
+      gap: 10,
+      alignItems: "center",
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 90,
+      fontSize: 11,
+      color: "var(--c-text4)",
+      textTransform: "uppercase",
+      fontWeight: 700
+    }
+  }, s.id), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      maxWidth: 260
+    },
+    value: draft["sub:" + s.id] || "",
+    onChange: e => setDraft(d => ({
+      ...d,
+      ["sub:" + s.id]: e.target.value
+    }))
+  }))), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnSt("var(--c-key)", "var(--c-bg)"),
+      marginTop: 8
+    },
+    onClick: saveLabels
+  }, "Save names"));
 }
 
 // ── Overtime (full v127 workflow: engine, applications, revert, conversation) ─
@@ -4203,8 +4692,10 @@ function SettingsTab({
   profile,
   users,
   catalog,
+  tabsCfg,
   notify
 }) {
+  const iAmOwner = profile.id === OWNER_UID;
   const brands = catalog && catalog.brands || [];
   const [newBrand, setNewBrand] = useState("");
   async function saveBrands(list) {
@@ -4219,7 +4710,8 @@ function SettingsTab({
   }
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(CreateUser, {
     brands: brands,
-    notify: notify
+    notify: notify,
+    iAmOwner: iAmOwner
   }), /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
@@ -4236,7 +4728,11 @@ function SettingsTab({
     brands: brands,
     notify: notify,
     me: profile
-  }))), /*#__PURE__*/React.createElement("div", {
+  }))), /*#__PURE__*/React.createElement(TabManager, {
+    profile: profile,
+    tabsCfg: tabsCfg,
+    notify: notify
+  }), /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -4422,7 +4918,8 @@ function PermEditor({
 }
 function CreateUser({
   brands,
-  notify
+  notify,
+  iAmOwner
 }) {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
@@ -4430,6 +4927,7 @@ function CreateUser({
   const [role, setRole] = useState("FSE");
   const [engineerName, setEngineerName] = useState("");
   const [perms, setPerms] = useState(blankPermissions());
+  const [makeAdmin, setMakeAdmin] = useState(false);
   const [busy, setBusy] = useState(false);
   async function create() {
     if (!email.trim() || pw.length < 6) {
@@ -4446,7 +4944,7 @@ function CreateUser({
       await db.collection("users").doc(newUid).set({
         email: email.trim(),
         displayName: name.trim(),
-        isAdmin: false,
+        isAdmin: iAmOwner && makeAdmin ? true : false,
         role,
         engineerName: engineerName.trim(),
         permissions: perms,
@@ -4516,7 +5014,22 @@ function CreateUser({
     value: engineerName,
     onChange: e => setEngineerName(e.target.value),
     placeholder: "matches visit logs"
-  }))), /*#__PURE__*/React.createElement(PermEditor, {
+  }))), iAmOwner && /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center",
+      margin: "10px 2px",
+      cursor: "pointer",
+      fontSize: 13,
+      fontWeight: 700,
+      color: "#fbbf24"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: makeAdmin,
+    onChange: e => setMakeAdmin(e.target.checked)
+  }), "👑 Make this user an ADMINISTRATOR (full system access — only you, the owner, can grant or revoke this)"), !makeAdmin && /*#__PURE__*/React.createElement(PermEditor, {
     perms: perms,
     setPerms: setPerms,
     brands: brands
@@ -4546,6 +5059,11 @@ function UserRow({
   useEffect(() => {
     setPerms(u.permissions || blankPermissions());
   }, [u.id]);
+  const isOwnerRow = u.id === OWNER_UID;
+  const iAmOwner = me.id === OWNER_UID;
+  // Server rules enforce all of this; the UI just mirrors them:
+  const canEditRow = !isOwnerRow && !u.isAdmin; // non-admin profiles
+  const canDeleteRow = !isOwnerRow && (iAmOwner || !u.isAdmin) && u.id !== me.id;
   async function save() {
     try {
       await db.collection("users").doc(u.id).update({
@@ -4553,6 +5071,24 @@ function UserRow({
       });
       notify("Permissions updated for " + u.email + ".", "ok");
       setOpen(false);
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+  }
+  async function delUser() {
+    if (!confirm("Move " + u.email + "'s profile to the Bin? They will still be able to sign in, but the server will grant them NOTHING until an administrator restores the profile. (Their login account itself can be disabled in Firebase Console > Authentication.)")) return;
+    try {
+      await binIt("user", u.email, {
+        id: u.id,
+        ...u
+      }, me.email);
+    } catch (e) {
+      notify("Bin write refused: " + e.message, "error");
+      return;
+    }
+    try {
+      await db.collection("users").doc(u.id).delete();
+      notify("Profile moved to Bin.", "ok");
     } catch (e) {
       notify("SERVER REFUSED:\n" + e.message, "error");
     }
@@ -4584,7 +5120,18 @@ function UserRow({
       fontSize: 12,
       color: "var(--c-text4)"
     }
-  }, u.role || "—", u.engineerName ? " · 🔗 " + u.engineerName : ""), u.isAdmin && /*#__PURE__*/React.createElement("span", {
+  }, u.role || "—", u.engineerName ? " · 🔗 " + u.engineerName : ""), isOwnerRow && /*#__PURE__*/React.createElement("span", {
+    title: "System owner — protected by the server: no administrator can modify or remove this account",
+    style: {
+      fontSize: 10,
+      fontWeight: 800,
+      padding: "2px 9px",
+      borderRadius: 999,
+      color: "#fbbf24",
+      border: "1px solid #fbbf24",
+      background: "rgba(251,191,36,.1)"
+    }
+  }, "👑 OWNER"), u.isAdmin && !isOwnerRow && /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 10,
       fontWeight: 800,
@@ -4593,15 +5140,28 @@ function UserRow({
       color: "#fbbf24",
       border: "1px solid #fbbf2455"
     }
-  }, "ADMIN"), !u.isAdmin && /*#__PURE__*/React.createElement("button", {
+  }, "ADMIN"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: "auto",
+      display: "flex",
+      gap: 6
+    }
+  }, canEditRow && /*#__PURE__*/React.createElement("button", {
     style: {
       ...btnSt("var(--c-border)", "var(--c-text2)"),
       padding: "4px 10px",
-      fontSize: 11,
-      marginLeft: "auto"
+      fontSize: 11
     },
     onClick: () => setOpen(o => !o)
-  }, open ? "Close" : "🔐 Access")), open && !u.isAdmin && /*#__PURE__*/React.createElement("div", {
+  }, open ? "Close" : "🔐 Access"), canDeleteRow && /*#__PURE__*/React.createElement("button", {
+    title: "Move profile to Bin",
+    style: {
+      ...btnSt("#3a1d1d", "#fca5a5"),
+      padding: "4px 10px",
+      fontSize: 11
+    },
+    onClick: delUser
+  }, "🗑"))), open && !u.isAdmin && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8
     }
@@ -4701,18 +5261,22 @@ function App() {
   const labs = useCol("labs", !!signedProfile && (pCanTab(signedProfile, "labs", "view") || pCanTab(signedProfile, "overtime", "view") || pCanTab(signedProfile, "dashboard", "view")), notify);
   const users = useCol("users", !!signedProfile && signedProfile.isAdmin, notify);
   const catalog = useDoc("config/catalog", !!signedProfile);
-  const TABS = signedProfile ? [pCanTab(signedProfile, "dashboard", "view") && {
+  const tabsCfg = useDoc("config/tabs", !!signedProfile);
+  const TABS = signedProfile ? [pCanTab(signedProfile, "dashboard", "view") && !tabHidden(tabsCfg, "dashboard") && {
     id: "dashboard",
-    label: "📊 Dashboard"
-  }, pCanTab(signedProfile, "labs", "view") && {
+    label: tabLabel(tabsCfg, "dashboard", "📊 Dashboard")
+  }, pCanTab(signedProfile, "labs", "view") && !tabHidden(tabsCfg, "labs") && {
     id: "labs",
-    label: "🏥 Institutions"
-  }, pCanTab(signedProfile, "inventory", "view") && {
+    label: tabLabel(tabsCfg, "labs", "🏥 Institutions")
+  }, pCanTab(signedProfile, "inventory", "view") && !tabHidden(tabsCfg, "inventory") && {
     id: "inventory",
-    label: "📦 Inventory"
-  }, pCanTab(signedProfile, "overtime", "view") && {
+    label: tabLabel(tabsCfg, "inventory", "📦 Inventory")
+  }, pCanTab(signedProfile, "overtime", "view") && !tabHidden(tabsCfg, "overtime") && {
     id: "overtime",
-    label: "🕒 Overtime"
+    label: tabLabel(tabsCfg, "overtime", "🕒 Overtime")
+  }, signedProfile.isAdmin && {
+    id: "bin",
+    label: "🗑 Bin"
   }, signedProfile.isAdmin && {
     id: "settings",
     label: "⚙ Settings"
@@ -4836,16 +5400,22 @@ function App() {
     profile: signedProfile,
     labs: labs,
     catalog: catalog,
+    tabsCfg: tabsCfg,
     notify: notify
   }), tab === "overtime" && pCanTab(signedProfile, "overtime", "view") && /*#__PURE__*/React.createElement(OvertimeTab, {
     profile: signedProfile,
     labs: labs,
     users: signedProfile.isAdmin ? users : [],
     notify: notify
+  }), tab === "bin" && signedProfile.isAdmin && /*#__PURE__*/React.createElement(BinTab, {
+    profile: signedProfile,
+    labs: labs,
+    notify: notify
   }), tab === "settings" && signedProfile.isAdmin && /*#__PURE__*/React.createElement(SettingsTab, {
     profile: signedProfile,
     users: users,
     catalog: catalog,
+    tabsCfg: tabsCfg,
     notify: notify
   }))), /*#__PURE__*/React.createElement("div", {
     style: {
