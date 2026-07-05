@@ -3,42 +3,138 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>iBase — Secure (Firebase)</title>
+<title>iBase — Installed Base Management</title>
 <style>
-  :root{
-    --bg:#0b1220; --bg2:#0f1a2e; --card:#111c31; --card2:#16233c;
-    --border:#26344f; --text:#e6edf6; --text2:#aab8cc; --text3:#8798b0; --text4:#6f8098;
-    --key:#38bdf8; --ok:#34d399; --warn:#fbbf24; --bad:#f87171; --purple:#a78bfa;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);font-family:'DM Sans','Segoe UI',system-ui,sans-serif;font-size:14px}
-  input,select,button{font-family:inherit}
-  .wrap{max-width:1100px;margin:0 auto;padding:22px}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px}
-  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-  label{font-size:11px;color:var(--text4);font-weight:700;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px}
-  .inp{background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;width:100%}
-  .btn{background:var(--key);border:none;border-radius:8px;color:#04283b;font-weight:800;padding:8px 14px;cursor:pointer;font-size:13px}
-  .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text2)}
-  .btn.danger{background:#3a1d1d;color:#fca5a5}
-  .btn:disabled{opacity:.5;cursor:not-allowed}
-  .chip{font-size:10px;font-weight:800;padding:2px 9px;border-radius:999px;border:1px solid}
-  table{width:100%;border-collapse:collapse}
-  th{ text-align:left;padding:8px 10px;font-size:10.5px;font-weight:800;color:var(--text4);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)}
-  td{padding:8px 10px;font-size:13px;border-bottom:1px solid var(--card2)}
-  .muted{color:var(--text4);font-size:12px}
-  h1{font-size:20px;margin:0}
-  h2{font-size:14px;margin:0 0 12px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px}
-  .toast{position:fixed;right:18px;bottom:18px;max-width:420px;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;box-shadow:0 8px 30px rgba(0,0,0,.4);z-index:50}
-  code{background:var(--bg);padding:1px 5px;border-radius:5px;color:var(--key);font-size:12px}
+      :root, [data-theme="dark"] {
+        color-scheme: dark;
+        --c-bg: #0a0f1e;
+        --c-bg2: #0d1a30;
+        --c-card: #111827;
+        --c-card2: #161a22;
+        --c-border: #1e3a5f;
+        --c-border2: #1e2530;
+        --c-input-border: #374151;
+        --c-text: #dde5ef;
+        --c-text2: #a7b3c2;
+        --c-text3: #8893a3;
+        --c-text4: #717e8c;
+        --c-text5: #6a7785;
+        --c-key: #38bdf8;
+        --c-region: #5b9bf3;
+        --c-isr: #f87171;
+        --c-overlay: rgba(5,9,18,0.82);
+        --c-tooltip-bg: #0f1b2e;
+        --c-author: rgba(100,116,139,0.28);
+      }
+      [data-theme="light"] {
+        color-scheme: light;
+        --c-bg: #f1f5f9;
+        --c-bg2: #ffffff;
+        --c-card: #ffffff;
+        --c-card2: #f8fafc;
+        --c-border: #cbd5e1;
+        --c-border2: #e2e8f0;
+        --c-input-border: #cbd5e1;
+        --c-text: #18222f;
+        --c-text2: #44525f;
+        --c-text3: #566375;
+        --c-text4: #6f7e8d;
+        --c-text5: #6f7e8d;
+        --c-key: #0369a1;
+        --c-region: #1e3a8a;
+        --c-isr: #dc2626;
+        --c-overlay: rgba(148,163,184,0.45);
+        --c-tooltip-bg: #ffffff;
+        --c-author: rgba(203,213,225,0.55);
+      }
+      [data-theme="ocean"] {
+        color-scheme: dark;
+        --c-bg: #071a24; --c-bg2: #0a2836; --c-card: #0c2734; --c-card2: #123240;
+        --c-border: #14506b; --c-border2: #163542; --c-input-border: #1d5c78;
+        --c-text: #d6eef5; --c-text2: #9fc4d1; --c-text3: #82abba; --c-text4: #6b95a4; --c-text5: #628b9a;
+        --c-key: #22d3ee; --c-region: #38bdf8; --c-isr: #fb7185;
+        --c-overlay: rgba(3,14,20,0.82); --c-tooltip-bg: #0a2432; --c-author: rgba(45,120,145,0.3);
+      }
+      [data-theme="forest"] {
+        color-scheme: dark;
+        --c-bg: #0a1a12; --c-bg2: #0e281c; --c-card: #102616; --c-card2: #16301f;
+        --c-border: #1f5236; --c-border2: #17301f; --c-input-border: #276845;
+        --c-text: #dcefe0; --c-text2: #a6c7b0; --c-text3: #88ad96; --c-text4: #6f9480; --c-text5: #668b77;
+        --c-key: #34d399; --c-region: #4ade80; --c-isr: #fb7185;
+        --c-overlay: rgba(4,15,10,0.82); --c-tooltip-bg: #0d2417; --c-author: rgba(45,110,75,0.3);
+      }
+      [data-theme="plum"] {
+        color-scheme: dark;
+        --c-bg: #150e1e; --c-bg2: #21132f; --c-card: #1e1329; --c-card2: #271733;
+        --c-border: #472763; --c-border2: #2a1a38; --c-input-border: #58317a;
+        --c-text: #ece0f5; --c-text2: #c3a9d6; --c-text3: #a88bbd; --c-text4: #8e74a1; --c-text5: #846a97;
+        --c-key: #c084fc; --c-region: #a78bfa; --c-isr: #fb7185;
+        --c-overlay: rgba(10,5,16,0.82); --c-tooltip-bg: #1c1228; --c-author: rgba(110,70,140,0.3);
+      }
+      [data-theme="slate"] {
+        color-scheme: light;
+        --c-bg: #e7ebf0; --c-bg2: #ffffff; --c-card: #ffffff; --c-card2: #f2f5f8;
+        --c-border: #b9c4d1; --c-border2: #d5dde5; --c-input-border: #b9c4d1;
+        --c-text: #1c2732; --c-text2: #45535f; --c-text3: #586573; --c-text4: #6d7c8b; --c-text5: #6d7c8b;
+        --c-key: #475569; --c-region: #334155; --c-isr: #dc2626;
+        --c-overlay: rgba(120,135,150,0.45); --c-tooltip-bg: #ffffff; --c-author: rgba(185,196,209,0.55);
+      }
+      [data-theme="sand"] {
+        color-scheme: light;
+        --c-bg: #f3ece0; --c-bg2: #fffdf8; --c-card: #fffdf8; --c-card2: #f7f0e4;
+        --c-border: #d8c7a8; --c-border2: #e8ddc8; --c-input-border: #d8c7a8;
+        --c-text: #2e2519; --c-text2: #5a4d3a; --c-text3: #6f6047; --c-text4: #8a7a5e; --c-text5: #8a7a5e;
+        --c-key: #b45309; --c-region: #92400e; --c-isr: #dc2626;
+        --c-overlay: rgba(160,145,120,0.45); --c-tooltip-bg: #fffdf8; --c-author: rgba(216,199,168,0.55);
+      }
+      [data-theme="slatemin"] {
+        color-scheme: dark;
+        --c-bg: #1f2933; --c-bg2: #27333f; --c-card: #26313d; --c-card2: #2e3a47;
+        --c-border: #3d4c5c; --c-border2: #313d4a; --c-input-border: #46586b;
+        --c-text: #e6edf3; --c-text2: #b3c0cd; --c-text3: #97a6b5; --c-text4: #7d8d9c; --c-text5: #74838f;
+        --c-key: #60a5fa; --c-region: #38bdf8; --c-isr: #fb7185;
+        --c-overlay: rgba(12,18,24,0.82); --c-tooltip-bg: #26313d; --c-author: rgba(70,88,107,0.35);
+      }
+      [data-theme="sunset"] {
+        color-scheme: dark;
+        --c-bg: #22140d; --c-bg2: #331d12; --c-card: #301a10; --c-card2: #3d2216;
+        --c-border: #6b3a1f; --c-border2: #40251733; --c-input-border: #7c4526;
+        --c-text: #ffe9dc; --c-text2: #f0c3ab; --c-text3: #d99f80; --c-text4: #b8825f; --c-text5: #a8764f;
+        --c-key: #ff6b35; --c-region: #ffd166; --c-isr: #fb7185;
+        --c-overlay: rgba(16,8,4,0.82); --c-tooltip-bg: #301a10; --c-author: rgba(140,74,42,0.3);
+      }
+      [data-theme="botanical"] {
+        color-scheme: light;
+        --c-bg: #eaf1ea; --c-bg2: #ffffff; --c-card: #ffffff; --c-card2: #eef5ee;
+        --c-border: #b7d0bf; --c-border2: #d3e3d7; --c-input-border: #a3c2ac;
+        --c-text: #14291d; --c-text2: #3c5646; --c-text3: #4f6a58; --c-text4: #6a8574; --c-text5: #6a8574;
+        --c-key: #2f6b4a; --c-region: #4a8c63; --c-isr: #dc2626;
+        --c-overlay: rgba(110,140,120,0.42); --c-tooltip-bg: #ffffff; --c-author: rgba(183,208,191,0.55);
+      }
+      [data-theme="neoglass"] {
+        color-scheme: dark;
+        --c-bg: #0f1724; --c-bg2: #17202f; --c-card: #151e2d; --c-card2: #1c2637;
+        --c-border: #313f57; --c-border2: #23304333; --c-input-border: #3c4d6b;
+        --c-text: #e8ebf5; --c-text2: #b6bed6; --c-text3: #99a2be; --c-text4: #7f89a4; --c-text5: #767f97;
+        --c-key: #7c3aed; --c-region: #a78bfa; --c-isr: #fb7185;
+        --c-overlay: rgba(6,10,18,0.84); --c-tooltip-bg: #151e2d; --c-author: rgba(60,77,107,0.3);
+      }
+      [data-theme="mono"] {
+        color-scheme: dark;
+        --c-bg: #0b0b0b; --c-bg2: #151515; --c-card: #141414; --c-card2: #1e1e1e;
+        --c-border: #3a3a3a; --c-border2: #262626; --c-input-border: #4d4d4d;
+        --c-text: #ffffff; --c-text2: #d4d4d4; --c-text3: #b0b0b0; --c-text4: #909090; --c-text5: #808080;
+        --c-key: #ffffff; --c-region: #d4d4d4; --c-isr: #ff5c5c;
+        --c-overlay: rgba(0,0,0,0.88); --c-tooltip-bg: #141414; --c-author: rgba(80,80,80,0.4);
+      }
+      
+  body { background: var(--c-bg); color: var(--c-text); margin:0; font-family:'DM Sans','Segoe UI',system-ui,sans-serif; font-size:14px; }
+  * { box-sizing: border-box; }
+  input, select, button { font-family: inherit; }
 </style>
-
-<!-- Firebase SDK (loaded from Google's CDN by each user's browser) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-
-<!-- React (any CDN is fine — this only runs in the user's browser) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -46,36 +142,365 @@
 <body>
 <div id="root"></div>
 
-<!-- =======================================================================
-     STEP 1 — PASTE YOUR FIREBASE CONFIG HERE
-     Firebase Console → Project settings (gear) → "Your apps" → Web app → Config.
-     NOTE: unlike your old shared token, the "apiKey" below is NOT a secret. It
-     only identifies your project. Real security comes from Authentication +
-     the Security Rules on the server — not from hiding this config.
-======================================================================== -->
+<!-- ============================================================
+     STEP 1 - PASTE YOUR FIREBASE CONFIG (Project settings > Your apps > Web).
+     The apiKey is NOT a secret - security lives in Authentication + the
+     server-side Security Rules, not in hiding this config.
+============================================================= -->
 <script>
   var firebaseConfig = {
-    apiKey: "AIzaSyCfqj0hNsixJuvKAvCCDBl0B6rUxdA6KW0",
-    authDomain: "ibase-373e6.firebaseapp.com",
-    projectId: "ibase-373e6",
-    storageBucket: "ibase-373e6.firebasestorage.app",
+    apiKey:            "AIzaSyCfqj0hNsixJuvKAvCCDBl0B6rUxdA6KW0",
+    authDomain:        "ibase-373e6.firebaseapp.com",
+    projectId:         "ibase-373e6",
+    storageBucket:     "ibase-373e6.firebasestorage.app",
     messagingSenderId: "153032625736",
-    appId: "1:153032625736:web:4864bc0eaa2e706e9f527d"
-};
+    appId:             "1:153032625736:web:4864bc0eaa2e706e9f527d"
+  };
   firebase.initializeApp(firebaseConfig);
 </script>
 
+<script>
+/* iBase computation engines - extracted VERBATIM from iBase v127:
+   OT engine (weekly schedule, grace, holidays, cutoffs), inventory effective
+   status + Brand-New/Used derivation, In/Out-history precedence, analytics
+   exclusions. Behavior identical to the Google-Sheets edition. */
+const OT_MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+function otHoursBetween(a, b) { return Math.max(0, (b.getTime() - a.getTime()) / 3600000); }
+
+function otParseDT(s) {
+  if (!s) return null;
+  var d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function otRound2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+
+const DEFAULT_OT_SCHEDULE = {
+  mon: { off: false, start: "08:00", end: "17:30" },
+  tue: { off: false, start: "08:00", end: "17:30" },
+  wed: { off: false, start: "08:00", end: "17:30" },
+  thu: { off: false, start: "08:00", end: "17:30" },
+  fri: { off: false, start: "08:00", end: "17:30" },
+  sat: { off: false, start: "08:00", end: "12:00" },
+  sun: { off: true,  start: "08:00", end: "12:00" },
+};
+
+const OT_DAY_LABELS = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" };
+
+const DEFAULT_OT_SETTINGS = { schedule: DEFAULT_OT_SCHEDULE, graceMinutes: 60, cutoff1: 10, cutoff2: 25 };
+
+var PULLOUT_VISIT_STATUSES = ["pulled-out", "pulled out", "instrument is ready for pull-out", "scrapped", "decommissioned"];
+
+const OT_DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];   // getUTCDay() order
+
+
+const NON_ANALYTICS_VISIT_TYPES = ["travel", "office repair", "documentation", "pro-active visit", "site survey", "phone support", "offset", "vacation leave", "sick leave", "weekly visit", "emergency leave", "not applicable"];
+
+const PH_HOLIDAYS_2026 = [
+  { date: "2026-01-01", name: "New Year's Day",            type: "Regular Holiday" },
+  { date: "2026-02-17", name: "Chinese New Year",          type: "Special Non-Working Holiday" },
+  { date: "2026-04-02", name: "Maundy Thursday",           type: "Regular Holiday" },
+  { date: "2026-04-03", name: "Good Friday",               type: "Regular Holiday" },
+  { date: "2026-04-04", name: "Black Saturday",            type: "Special Non-Working Holiday" },
+  { date: "2026-04-09", name: "Araw ng Kagitingan",        type: "Regular Holiday" },
+  { date: "2026-05-01", name: "Labor Day",                 type: "Regular Holiday" },
+  { date: "2026-06-12", name: "Independence Day",          type: "Regular Holiday" },
+  { date: "2026-08-21", name: "Ninoy Aquino Day",          type: "Special Non-Working Holiday" },
+  { date: "2026-08-31", name: "National Heroes Day",       type: "Regular Holiday" },
+  { date: "2026-11-01", name: "All Saints' Day",           type: "Special Non-Working Holiday" },
+  { date: "2026-11-30", name: "Bonifacio Day",             type: "Regular Holiday" },
+  { date: "2026-12-08", name: "Feast of the Immaculate Conception", type: "Special Non-Working Holiday" },
+  { date: "2026-12-25", name: "Christmas Day",             type: "Regular Holiday" },
+  { date: "2026-12-30", name: "Rizal Day",                 type: "Regular Holiday" },
+  { date: "2026-12-31", name: "Last Day of the Year",      type: "Special Non-Working Holiday" },
+];
+
+const HOLIDAY_TYPES = ["Regular Holiday", "Special Non-Working Holiday", "Special Working Holiday", "Company Holiday"];
+
+const ENGINEER_ROLES = [
+  "Field Service Engineer",
+  "Senior Field Service Engineer",
+  "Application Specialist",
+  "Senior Application Specialist",
+  "CAS Supervisor",
+  "TAS Coordinator",
+  "Area Service Manager",
+  "Technical Head",
+  "Supervisor",
+  "Trainee",
+  "HR",
+  "Accounting",
+  "Warehouse Staff",
+  "Driver",
+  "Office Staff",
+];
+
+const INVENTORY_STATUS_OPTIONS = ["Available", "Not available", "Reserved", "For Installation", "Sold"];
+
+function otNormSchedule(settings) {
+  var src = (settings && settings.schedule && typeof settings.schedule === "object") ? settings.schedule : null;
+  var legacyStart = (settings && settings.officeStart) || "08:00";
+  var legacyEnd   = (settings && settings.officeEnd)   || "17:30";
+  var out = {};
+  OT_DAY_KEYS.forEach(function (k) {
+    var d = (src && src[k]) || null;
+    var def = DEFAULT_OT_SCHEDULE[k];
+    if (d) out[k] = { off: !!d.off, start: d.start || def.start, end: d.end || def.end };
+    else if (src) out[k] = { off: def.off, start: def.start, end: def.end };
+    else out[k] = (k === "sat" || k === "sun") ? { off: def.off, start: def.start, end: def.end }
+                                               : { off: false, start: legacyStart, end: legacyEnd };
+  });
+  var grace = Number(settings && settings.graceMinutes);
+  if (!isFinite(grace) || grace < 0) grace = 60;
+  return { schedule: out, graceMinutes: Math.min(600, Math.round(grace)) };
+}
+
+function otNormCutoffs(settings) {
+  var c1 = Math.min(27, Math.max(1, Number(settings && settings.cutoff1) || 10));
+  var c2 = Math.min(28, Math.max(c1 + 1, Number(settings && settings.cutoff2) || 25));
+  return { c1: c1, c2: c2 };
+}
+
+function otWeekday(dateKey) {
+  var p = String(dateKey).split("-").map(Number);
+  return new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay();
+}
+
+function otCutoffForDate(dateKey, settings) {
+  var cc = otNormCutoffs(settings), c1 = cc.c1, c2 = cc.c2;
+  var parts = String(dateKey).split("-").map(Number);
+  var y = parts[0], m = parts[1] - 1, day = parts[2];
+  function shortMon(mm) { return OT_MONTH_NAMES[mm].slice(0, 3); }
+  var endY, endM, endD, startY, startM, startD, half;
+  if (day <= c1)      { endY = y; endM = m; endD = c1; half = "A"; startY = y; startM = m - 1; if (startM < 0) { startM = 11; startY = y - 1; } startD = c2 + 1; }
+  else if (day <= c2) { endY = y; endM = m; endD = c2; half = "B"; startY = y; startM = m; startD = c1 + 1; }
+  else                { endY = y; endM = m + 1; if (endM > 11) { endM = 0; endY = y + 1; } endD = c1; half = "A"; startY = y; startM = m; startD = c2 + 1; }
+  var startDMax = new Date(startY, startM + 1, 0).getDate();
+  if (startD > startDMax) startD = startDMax;
+  return {
+    key: endY + "-" + String(endM + 1).padStart(2, "0") + "-" + half,
+    label: shortMon(startM) + " " + startD + " – " + shortMon(endM) + " " + endD + ", " + endY,
+    order: endY * 1000 + endM * 10 + (half === "A" ? 1 : 2),
+  };
+}
+
+function otAddDays(dateKey, n) {
+  var p = String(dateKey).split("-").map(Number);
+  var dt = new Date(Date.UTC(p[0], p[1] - 1, p[2] + n));
+  return dt.toISOString().slice(0, 10);
+}
+
+function computeEngineerOt(engineerName, allVisits, otSettings, holidayMap) {
+  var settings = otSettings || DEFAULT_OT_SETTINGS;
+  var byDate = {};
+  var incompleteCount = 0;
+  (allVisits || []).forEach(function (v) {
+    var involved = v.engineer === engineerName || v.engineer2 === engineerName || v.engineer3 === engineerName;
+    if (!involved) return;
+    var start = otParseDT(v.dtDeparture) || otParseDT(v.dtWorkStarted);
+    var end   = otParseDT(v.dtArrivalHome) || otParseDT(v.dtWorkEnded);
+    if (!start || !end || end.getTime() <= start.getTime()) { if (v.date) incompleteCount++; return; }
+    var dateKey = v.date || start.toISOString().slice(0, 10);
+    if (!byDate[dateKey]) byDate[dateKey] = { starts: [], ends: [], visitIds: [], isrNos: [] };
+    byDate[dateKey].starts.push(start);
+    byDate[dateKey].ends.push(end);
+    byDate[dateKey].visitIds.push(v.id);
+    if (v.isrNo) byDate[dateKey].isrNos.push(v.isrNo);
+  });
+  var days = Object.keys(byDate).sort().map(function (dateKey) {
+    var rec = byDate[dateKey];
+    var dayStart = new Date(Math.min.apply(null, rec.starts.map(function (d) { return d.getTime(); })));
+    var dayEnd   = new Date(Math.max.apply(null, rec.ends.map(function (d) { return d.getTime(); })));
+    var totalHours = otHoursBetween(dayStart, dayEnd);
+    var holidayName = holidayMap && holidayMap[dateKey] ? holidayMap[dateKey] : "";
+    var isHoliday = !!holidayName;
+    var norm = otNormSchedule(settings);
+    var sch = norm.schedule[OT_DAY_KEYS[otWeekday(dateKey)]];
+    var isRestDay = !!(sch && sch.off);
+    var regularHours, otHours;
+    if (isHoliday || isRestDay) {
+      // Holiday or scheduled rest day (e.g. Sunday): the whole worked span is OT.
+      regularHours = 0; otHours = totalHours;
+    } else {
+      var offStart = new Date(dateKey + "T" + (sch.start || "08:00") + ":00");
+      var offEnd   = new Date(dateKey + "T" + (sch.end   || "17:30") + ":00");
+      var overlapStartMs = Math.max(dayStart.getTime(), offStart.getTime());
+      var overlapEndMs   = Math.min(dayEnd.getTime(), offEnd.getTime());
+      regularHours = overlapEndMs > overlapStartMs ? (overlapEndMs - overlapStartMs) / 3600000 : 0;
+      // Grace rule: the first graceMinutes after office end are NOT yet overtime
+      // (e.g. 17:30–18:30). Morning OT (before office start) has no grace.
+      var graceMs = norm.graceMinutes * 60000;
+      var morningOtMs = Math.max(0, Math.min(dayEnd.getTime(), offStart.getTime()) - dayStart.getTime());
+      var eveningOtMs = Math.max(0, dayEnd.getTime() - Math.max(dayStart.getTime(), offEnd.getTime() + graceMs));
+      otHours = (morningOtMs + eveningOtMs) / 3600000;
+    }
+    return {
+      date: dateKey, totalHours: otRound2(totalHours), regularHours: otRound2(regularHours), otHours: otRound2(otHours),
+      isHoliday: isHoliday, holidayName: holidayName, restDay: isRestDay, visitCount: rec.visitIds.length, isrNos: rec.isrNos,
+      dayStart: dayStart, dayEnd: dayEnd,
+    };
+  });
+  return { days: days, incompleteCount: incompleteCount };
+}
+
+function isOtManagerRoleName(role) {
+  var r = String(role || "").trim().toLowerCase();
+  if (!r) return false;
+  return r === "hr" || r.indexOf("human resource") !== -1 || r.indexOf("accounting") !== -1 || r.indexOf("accountant") !== -1;
+}
+
+function invPlacement(labs, serial) {
+  var sn = String(serial || "").trim().toLowerCase();
+  if (!sn) return { state: "In Warehouse", lab: "", returnedSuggested: "" };
+  var installed = null, installedKey = "", returned = null, returnedKey = "";
+  function _later(a, b) { a = String(a || ""); b = String(b || ""); if (a && !b) return true; if (!a && b) return false; return a >= b; }
+  (labs || []).forEach(function (lab) {
+    (lab.machines || []).forEach(function (m) {
+      if (String(m.serialNo || "").trim().toLowerCase() !== sn) return;
+      if (isMachineReleased(m)) {
+        var k = invLastOutDate(m) || m.installDate || "";   // when it most recently left this lab
+        if (returned == null || _later(k, returnedKey)) { returned = lab.name || ""; returnedKey = k; }
+      } else {
+        var ik = m.installDate || "";
+        if (installed == null || _later(ik, installedKey)) { installed = lab.name || ""; installedKey = ik; }
+      }
+    });
+  });
+  if (installed != null) return { state: "Installed", lab: installed, returnedSuggested: "" };
+  if (returned != null) {
+    var po = latestPullOut(labs, serial);
+    // Auto returned-date only when the unit was actually "Pulled-out"; for
+    // "Instrument is ready for pull-out" the returned date stays a manual entry.
+    var sugg = (po && po.mode === "pulled") ? (po.date || "") : "";
+    return { state: "Returned", lab: returned, returnedSuggested: sugg };
+  }
+  return { state: "In Warehouse", lab: "", returnedSuggested: "" };
+}
+
+function invEffectiveStatus(storedStatus, placementState) {
+  if (placementState === "Installed") return "Onsite";
+  var st = String(storedStatus || "").trim();
+  if (!st || st === "Onsite" || st === "Available") return "Available";
+  return st;
+}
+
+function _normLabName(name) { return String(name || "").trim().replace(/\s+/g, " ").toLowerCase(); }
+
+function invDistinctInstallLabs(labs, serial) {
+  var sn = String(serial || "").trim().toLowerCase();
+  if (!sn) return [];
+  var set = {};
+  (labs || []).forEach(function (lab) {
+    (lab.machines || []).forEach(function (m) {
+      if (String(m.serialNo || "").trim().toLowerCase() !== sn) return;
+      // Any install evidence at this lab: an install date, or an installation visit.
+      var installed = !!m.installDate;
+      (m.visits || []).forEach(function (v) { if (String(v.type || "").trim().toLowerCase() === "installation") installed = true; });
+      if (installed) { var nm = _normLabName(lab.name); if (nm) set[nm] = true; }
+    });
+  });
+  return Object.keys(set);
+}
+
+function invEffectiveCondition(storedCondition, labs, serial) {
+  var c = String(storedCondition || "").trim().toUpperCase();
+  if (c && c !== "BRAND NEW" && c !== "USED" && c !== "BNEW") return storedCondition;  // keep explicit non-new/used states
+  var labsCount = invDistinctInstallLabs(labs, serial).length;
+  return labsCount >= 2 ? "USED" : "BRAND NEW";
+}
+
+function invMovements(labs, serial) {
+  var sn = String(serial || "").trim().toLowerCase();
+  if (!sn) return [];
+  var ev = [];
+  (labs || []).forEach(function (lab) {
+    (lab.machines || []).forEach(function (m) {
+      if (String(m.serialNo || "").trim().toLowerCase() !== sn) return;
+      var labName = lab.name || "";
+      // Gather this machine's Installation visits separately so precedence can pick.
+      var installVisits = [];
+      var hasPull = false;
+      (m.visits || []).forEach(function (v) {
+        var vs = String(v.machineStatus || "").trim().toLowerCase();
+        var vt = String(v.type || "").trim().toLowerCase();
+        if (vt === "installation") installVisits.push(v);
+        var isPull = vt === "pull-out" || PULLOUT_VISIT_STATUSES.indexOf(vs) !== -1;
+        if (isPull) {
+          hasPull = true;
+          var label = (vs === "instrument is ready for pull-out") ? "Ready for pull-out at " : "Pulled out from ";
+          ev.push({ date: v.date || "", dir: "OUT", lab: labName, detail: (label + labName), source: "Visit", isr: v.isrNo || "" });
+        }
+      });
+      // INSTALL precedence: Info date present → use it (rules 3 & 4); otherwise
+      // fall back to Installation visits (rule 1). Neither → nothing (rule 2).
+      // A blank field, or a "-"/"—" placeholder, counts as "no Info date".
+      var infoDateRaw = String(m.installDate || "").trim();
+      var hasInfoDate = !!infoDateRaw && infoDateRaw !== "-" && infoDateRaw !== "\u2014";
+      if (hasInfoDate) {
+        ev.push({ date: m.installDate, dir: "IN", lab: labName, detail: "Installed at " + labName, source: "Install record", isr: "" });
+      } else {
+        installVisits.forEach(function (v) {
+          ev.push({ date: v.date || "", dir: "IN", lab: labName, detail: "Installed at " + labName, source: "Visit", isr: v.isrNo || "" });
+        });
+      }
+      if (String(m.status) === "Pulled-out" && !hasPull) ev.push({ date: "", dir: "OUT", lab: labName, detail: "Pulled out from " + labName, source: "Status", isr: "" });
+    });
+  });
+  ev.sort(function (a, b) { if (!a.date && !b.date) return 0; if (!a.date) return 1; if (!b.date) return -1; return String(a.date).localeCompare(String(b.date)); });
+  var seen = {}, out = [];
+  ev.forEach(function (e) { var k = e.dir + "|" + e.lab + "|" + e.date + "|" + e.detail; if (!seen[k]) { seen[k] = 1; out.push(e); } });
+  return out;
+}
+
+function isNonAnalyticsVisit(v) { return NON_ANALYTICS_VISIT_TYPES.indexOf(String(v && v.type || "").trim().toLowerCase()) !== -1; }
+
+function fmtManilaDate(d) {
+  try { return new Intl.DateTimeFormat("en-US", { timeZone:"Asia/Manila", weekday:"short", month:"short", day:"numeric", year:"numeric" }).format(d || new Date()); }
+  catch(e) { return (d||new Date()).toDateString(); }
+}
+
+function fmtManilaTime(d) {
+  try { return new Intl.DateTimeFormat("en-US", { timeZone:"Asia/Manila", hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:true }).format(d || new Date()); }
+  catch(e) { return (d||new Date()).toLocaleTimeString(); }
+}
+</script>
+
 <script type="text/babel">
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useMemo, useRef } = React;
 const auth = firebase.auth();
 const db   = firebase.firestore();
 const FieldValue = firebase.firestore.FieldValue;
 
-// Catalog of brands the org uses. In the full system this comes from your
-// Brands & Instruments data; here it drives the permission checkboxes + demo.
-const BRANDS = ["Sebia", "Mindray", "Boditech", "Siemens", "Roche"];
+// ── tiny helpers (ported from iBase v127) ───────────────────────────────────
+const today = () => new Date().toISOString().split("T")[0];
+const uid = () => "id_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+function auditNow() { return new Date().toISOString(); }
+function fmtDate(d) {
+  if (!d) return "—";
+  try { const [y, m, dd] = String(d).slice(0, 10).split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Number(m)-1] + " " + Number(dd) + ", " + y; } catch (e) { return d; }
+}
+const inputSt = () => ({ background:"var(--c-bg)", border:"1px solid var(--c-input-border)", borderRadius:8, color:"var(--c-text)", padding:"8px 10px", fontSize:13, width:"100%" });
+const btnSt = (bg, col) => ({ background:bg, border:"none", borderRadius:8, color:col, fontWeight:800, padding:"8px 14px", cursor:"pointer", fontSize:13 });
+const labelSt = { fontSize:10.5, color:"var(--c-text4)", fontWeight:700, textTransform:"uppercase", letterSpacing:.5, display:"block", marginBottom:4 };
+const cardSt = { background:"var(--c-card)", border:"1px solid var(--c-border)", borderRadius:14, padding:20, marginBottom:16 };
 
-// Build a complete, safe permissions object. "brands: null" means ALL brands.
+// PM flag from a machine's nextPM date
+function pmFlag(m) {
+  const d = String(m && m.nextPM || "").slice(0, 10);
+  if (!d) return "OK";
+  const t = today();
+  if (d < t) return "Overdue";
+  const [ty, tm] = t.split("-").map(Number), [y, mo] = d.split("-").map(Number);
+  if (y === ty && mo === tm) return "Due This Month";
+  const nm = tm === 12 ? [ty + 1, 1] : [ty, tm + 1];
+  if (y === nm[0] && mo === nm[1]) return "Due Next Month";
+  return "OK";
+}
+const FLAG_COLORS = { "Overdue":"#ef4444", "Due This Month":"#f97316", "Due Next Month":"#f59e0b", "OK":"#38bdf8" };
+function labNameNorm(n) { return String(n||"").trim().replace(/\s+/g," ").toLowerCase(); }
+
+// ── permission helpers (client mirror; the SERVER rules are authoritative) ──
 function blankPermissions() {
   return {
     dashboard: { view: true,  edit: false },
@@ -84,70 +509,1116 @@ function blankPermissions() {
       machines: { view: true, edit: false, brands: null },
       spares:   { view: true, edit: false, brands: null },
     }},
-    overtime:  { view: true,  edit: false },
+    overtime:  { view: true,  edit: true },
   };
 }
+function pCanTab(p, tab, mode) {
+  if (!p) return false;
+  if (p.isAdmin) return true;
+  const t = p.permissions && p.permissions[tab];
+  return !!(t && t[mode]);
+}
+function pCanSub(p, sub, mode) {
+  if (!p) return false;
+  if (p.isAdmin) return true;
+  const inv = p.permissions && p.permissions.inventory;
+  return !!(inv && inv.edit && inv.subs && inv.subs[sub] && inv.subs[sub][mode]);
+}
+function pBrandOk(p, sub, brand) {
+  if (!p) return false;
+  if (p.isAdmin) return true;
+  if (!pCanSub(p, sub, "edit")) return false;
+  const bl = p.permissions.inventory.subs[sub].brands;
+  return bl === null || bl === undefined || (Array.isArray(bl) && bl.indexOf(brand) !== -1);
+}
+function pIsOtManager(p) { return !!p && (p.isAdmin || isOtManagerRoleName(p.role)); }
 
+// ── live Firestore collection hook ──────────────────────────────────────────
+function useCol(path, enabled, notify) {
+  const [docs, setDocs] = useState([]);
+  useEffect(() => {
+    if (!enabled) { setDocs([]); return; }
+    const unsub = db.collection(path).onSnapshot(
+      s => setDocs(s.docs.map(d => ({ id: d.id, ...d.data() }))),
+      e => notify && notify(path + ": " + e.message, "error"));
+    return () => unsub();
+  }, [path, enabled]);
+  return docs;
+}
+function useDoc(path, enabled) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    if (!enabled) { setData(null); return; }
+    const unsub = db.doc(path).onSnapshot(d => setData(d.exists ? d.data() : null), () => setData(null));
+    return () => unsub();
+  }, [path, enabled]);
+  return data;
+}
+
+// ── toast ────────────────────────────────────────────────────────────────────
 function Toast({ msg, kind, onClose }) {
-  useEffect(() => { const t = setTimeout(onClose, 6000); return () => clearTimeout(t); }, []);
-  const color = kind === "error" ? "var(--bad)" : kind === "ok" ? "var(--ok)" : "var(--key)";
+  useEffect(() => { const t = setTimeout(onClose, 6500); return () => clearTimeout(t); }, []);
+  const color = kind === "error" ? "#f87171" : kind === "ok" ? "#34d399" : "var(--c-key)";
   return (
-    <div className="toast">
+    <div style={{ position:"fixed", right:18, bottom:18, maxWidth:440, background:"var(--c-card2)", border:"1px solid var(--c-border)", borderRadius:10, padding:"12px 14px", boxShadow:"0 8px 30px rgba(0,0,0,.4)", zIndex:90 }}>
       <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
         <span style={{ color, fontWeight:800 }}>{kind === "error" ? "⛔" : kind === "ok" ? "✓" : "ℹ"}</span>
-        <div style={{ fontSize:12.5, color:"var(--text2)", whiteSpace:"pre-wrap" }}>{msg}</div>
-        <button className="btn ghost" style={{ padding:"2px 8px", marginLeft:"auto" }} onClick={onClose}>✕</button>
+        <div style={{ fontSize:12.5, color:"var(--c-text2)", whiteSpace:"pre-wrap" }}>{msg}</div>
+        <button onClick={onClose} style={{ background:"none", border:"1px solid var(--c-border)", borderRadius:6, color:"var(--c-text3)", cursor:"pointer", padding:"1px 7px", marginLeft:"auto" }}>✕</button>
       </div>
     </div>
   );
 }
 
-// ---------- Login ----------
-function Login({ notify }) {
-  const [email, setEmail] = useState("");
-  const [pw, setPw] = useState("");
-  const [busy, setBusy] = useState(false);
+// ── theme system (12 themes, from iBase v123) ───────────────────────────────
+const THEMES = [
+  { id:"dark", label:"🌙 Midnight" }, { id:"light", label:"☀️ Daylight" },
+  { id:"ocean", label:"🌊 Ocean" }, { id:"forest", label:"🌲 Forest" },
+  { id:"plum", label:"🍇 Plum" }, { id:"slate", label:"🪨 Slate" },
+  { id:"sand", label:"🏜️ Sand" }, { id:"slatemin", label:"📊 Slate Minimal" },
+  { id:"sunset", label:"🌇 Sunset Warmth" }, { id:"botanical", label:"🌿 Botanical Calm" },
+  { id:"neoglass", label:"🧊 Neo Glass" }, { id:"mono", label:"🖤 High Contrast Mono" },
+];
+function ThemePicker({ theme, setTheme }) {
+  return (
+    <select value={theme} onChange={e=>setTheme(e.target.value)} title="Colour theme"
+      style={{ height:34, borderRadius:10, background:"var(--c-card)", border:"1px solid var(--c-border)", color:"var(--c-text2)", cursor:"pointer", fontSize:12, fontWeight:600, padding:"0 8px" }}>
+      {THEMES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+    </select>
+  );
+}
+function HeaderClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => { const iv = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(iv); }, []);
+  return (
+    <div title="Asia/Manila" style={{ display:"flex", alignItems:"center", gap:8, height:34, padding:"0 12px", background:"var(--c-card)", border:"1px solid var(--c-border)", borderRadius:10 }}>
+      <span>🕐</span>
+      <div style={{ lineHeight:1.15 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:"var(--c-text2)" }}>{fmtManilaDate(now)}</div>
+        <div style={{ fontSize:10.5, fontWeight:700, color:"var(--c-key)" }}>{fmtManilaTime(now)}</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Login ────────────────────────────────────────────────────────────────────
+function Login({ notify, theme, setTheme }) {
+  const [email, setEmail] = useState(""); const [pw, setPw] = useState(""); const [busy, setBusy] = useState(false);
   async function submit() {
     setBusy(true);
     try { await auth.signInWithEmailAndPassword(email.trim(), pw); }
-    catch (e) { notify(e.message, "error"); }
+    catch (e) { notify("Sign-in failed: " + e.message, "error"); }
     finally { setBusy(false); }
   }
   return (
-    <div className="wrap" style={{ maxWidth:420, marginTop:"9vh" }}>
-      <div className="card">
-        <h1 style={{ marginBottom:4 }}>iBase</h1>
-        <div className="muted" style={{ marginBottom:18 }}>Secure sign-in · authenticated by Firebase</div>
-        <label>Email</label>
-        <input className="inp" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@company.com" style={{ marginBottom:12 }} />
-        <label>Password</label>
-        <input className="inp" type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()} style={{ marginBottom:16 }} />
-        <button className="btn" disabled={busy} onClick={submit} style={{ width:"100%" }}>{busy ? "Signing in…" : "Sign In"}</button>
-        <div className="muted" style={{ marginTop:14, lineHeight:1.5 }}>
-          Passwords are hashed and verified by Google's servers — this app never sees or stores them.
+    <div style={{ maxWidth:420, margin:"9vh auto 0", padding:"0 16px" }}>
+      <div style={{ position:"fixed", top:14, right:14, display:"flex", gap:10 }}><HeaderClock /><ThemePicker theme={theme} setTheme={setTheme} /></div>
+      <div style={cardSt}>
+        <div style={{ fontSize:22, fontWeight:900 }}>iBase</div>
+        <div style={{ fontSize:12, color:"var(--c-text4)", marginBottom:18 }}>Installed Base Management · secured by Firebase</div>
+        <label style={labelSt}>Email</label>
+        <input style={{ ...inputSt(), marginBottom:12 }} value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@company.com" />
+        <label style={labelSt}>Password</label>
+        <input style={{ ...inputSt(), marginBottom:16 }} type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()} />
+        <button style={{ ...btnSt("var(--c-key)","var(--c-bg)"), width:"100%" }} disabled={busy} onClick={submit}>{busy ? "Signing in…" : "🔓 Sign In"}</button>
+        <div style={{ fontSize:11, color:"var(--c-text5)", marginTop:14, lineHeight:1.5 }}>Passwords are hashed and verified by Google's servers — this app never sees or stores them.</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Dashboard ────────────────────────────────────────────────────────────────
+function KPICard({ title, value, icon, color, sub }) {
+  return (
+    <div style={{ background:"var(--c-card)", borderRadius:16, padding:"20px 22px", border:"1px solid var(--c-border)", position:"relative", overflow:"hidden", flex:"1 1 150px", minWidth:150 }}>
+      <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:`linear-gradient(90deg, ${color}66, ${color}11, transparent)` }} />
+      <div style={{ display:"flex", justifyContent:"space-between", marginBottom:12 }}>
+        <div style={{ fontSize:11, color:"var(--c-text3)", fontWeight:700, textTransform:"uppercase", letterSpacing:.8 }}>{title}</div>
+        <div style={{ fontSize:18, opacity:.6 }}>{icon}</div>
+      </div>
+      <div style={{ fontSize:32, fontWeight:900, color, lineHeight:1 }}>{value}</div>
+      <div style={{ fontSize:11, color:"var(--c-text5)", marginTop:6 }}>{sub}</div>
+    </div>
+  );
+}
+function DashboardTab({ labs }) {
+  const machines = labs.flatMap(l => l.machines || []);
+  const active = machines.filter(m => !isPull(m)).length;
+  const flags = machines.filter(m => !isPull(m)).map(pmFlag);
+  const count = f => flags.filter(x => x === f).length;
+  return (
+    <div style={{ display:"flex", gap:14, flexWrap:"wrap" }}>
+      <KPICard title="Laboratories" value={labs.length} icon="🏥" color="#38bdf8" sub="customer sites" />
+      <KPICard title="Total Machines" value={machines.length} icon="🔬" color="#a78bfa" sub="all instruments" />
+      <KPICard title="Active Units" value={active} icon="✅" color="#34d399" sub={machines.length ? Math.round(active/machines.length*100)+"% of total" : "—"} />
+      <KPICard title="Overdue PM" value={count("Overdue")} icon="🚨" color="#ef4444" sub="urgent" />
+      <KPICard title="Due This Month" value={count("Due This Month")} icon="⏰" color="#f97316" sub="schedule now" />
+      <KPICard title="Due Next Month" value={count("Due Next Month")} icon="📅" color="#f59e0b" sub="plan ahead" />
+    </div>
+  );
+}
+function isPull(m) { return PULLOUT_VISIT_STATUSES.indexOf(String(m && m.status || "").trim().toLowerCase()) !== -1; }
+
+// ── Institutions (labs + machines + visits) ─────────────────────────────────
+const VISIT_TYPES = ["PM","Corrective","Installation","Pull-out","Validation","Calibration","Demo","Training","Travel","Office Repair","Documentation","Pro-active Visit","Site Survey","Phone support","Offset","Vacation leave","Sick leave","Weekly visit","Emergency leave","Not Applicable"];
+const MACHINE_STATUSES = ["Active","Under Repair","For Follow-up","Pulled-out","Scrapped","Travel","Not Applicable"];
+
+function LabsTab({ labs, profile, notify }) {
+  const canEdit = pCanTab(profile, "labs", "edit");
+  const [openLab, setOpenLab] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [q, setQ] = useState("");
+  const shown = labs.filter(l => {
+    const s = q.toLowerCase(); if (!s) return true;
+    return String(l.name||"").toLowerCase().includes(s) || String(l.location||"").toLowerCase().includes(s)
+      || (l.machines||[]).some(m => String(m.serialNo||"").toLowerCase().includes(s) || String(m.instrument||"").toLowerCase().includes(s));
+  }).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+
+  async function addLab(name, location) {
+    const dup = labs.find(l => labNameNorm(l.name) === labNameNorm(name));
+    if (dup) { notify("A laboratory with that name already exists: " + dup.name, "error"); return false; }
+    try { await db.collection("labs").add({ name: name.trim(), location: location.trim(), machines: [], createdAt: FieldValue.serverTimestamp() }); notify("Laboratory added.", "ok"); return true; }
+    catch (e) { notify("Server refused: " + e.message, "error"); return false; }
+  }
+  const live = openLab ? labs.find(l => l.id === openLab) : null;
+  return (
+    <div>
+      {!live && (
+        <React.Fragment>
+          <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
+            <input style={{ ...inputSt(), maxWidth:340 }} value={q} onChange={e=>setQ(e.target.value)} placeholder="🔍 Search lab, location, serial, instrument…" />
+            {canEdit && <button style={btnSt("var(--c-key)","var(--c-bg)")} onClick={()=>setAdding(true)}>+ New Laboratory</button>}
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:12 }}>
+            {shown.map(lab => {
+              const ms = (lab.machines||[]).filter(m=>!isPull(m));
+              const worst = ms.some(m=>pmFlag(m)==="Overdue") ? "Overdue" : ms.some(m=>pmFlag(m)==="Due This Month") ? "Due This Month" : ms.some(m=>pmFlag(m)==="Due Next Month") ? "Due Next Month" : "OK";
+              const accent = FLAG_COLORS[worst];
+              return (
+                <div key={lab.id} onClick={()=>setOpenLab(lab.id)} style={{ background:"var(--c-card)", borderRadius:16, padding:"20px 22px", border:"1px solid var(--c-border)", position:"relative", overflow:"hidden", cursor:"pointer" }}>
+                  <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:`linear-gradient(90deg, ${accent}66, ${accent}11, transparent)` }} />
+                  <div style={{ display:"flex", justifyContent:"space-between", gap:10, marginBottom:12 }}>
+                    <div style={{ fontSize:11, color:"var(--c-text3)", fontWeight:700, textTransform:"uppercase", letterSpacing:.8 }}>{lab.name}</div>
+                    <div style={{ fontSize:18, opacity:.5 }}>🏥</div>
+                  </div>
+                  <div style={{ display:"flex", alignItems:"baseline", gap:8, marginBottom:6 }}>
+                    <span style={{ fontSize:32, fontWeight:900, color:accent, lineHeight:1 }}>{ms.length}</span>
+                    <span style={{ fontSize:11, color:"var(--c-text4)", textTransform:"uppercase", fontWeight:700 }}>machine{ms.length!==1?"s":""}</span>
+                  </div>
+                  <div style={{ fontSize:11, color:"var(--c-text5)" }}>📍 {lab.location || "—"}</div>
+                </div>
+              );
+            })}
+            {shown.length === 0 && <div style={{ color:"var(--c-text4)", fontSize:13 }}>No laboratories{q ? " match the search." : " yet."}</div>}
+          </div>
+          {adding && <LabModal onSave={async (n,loc)=>{ if (await addLab(n,loc)) setAdding(false); }} onClose={()=>setAdding(false)} />}
+        </React.Fragment>
+      )}
+      {live && <LabDetail lab={live} labs={labs} profile={profile} notify={notify} onBack={()=>setOpenLab(null)} />}
+    </div>
+  );
+}
+function LabModal({ initial, onSave, onClose }) {
+  const [n, setN] = useState(initial ? initial.name : "");
+  const [loc, setLoc] = useState(initial ? initial.location : "");
+  return (
+    <Modal title={initial ? "Edit Laboratory" : "New Laboratory"} onClose={onClose}>
+      <label style={labelSt}>Laboratory name</label>
+      <input style={{ ...inputSt(), marginBottom:12 }} value={n} onChange={e=>setN(e.target.value)} />
+      <label style={labelSt}>Location / Region</label>
+      <input style={{ ...inputSt(), marginBottom:16 }} value={loc} onChange={e=>setLoc(e.target.value)} />
+      <button style={btnSt("var(--c-key)","var(--c-bg)")} disabled={!n.trim()} onClick={()=>onSave(n, loc)}>Save</button>
+    </Modal>
+  );
+}
+function Modal({ title, children, onClose, wide }) {
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"var(--c-overlay)", zIndex:60, display:"flex", alignItems:"flex-start", justifyContent:"center", padding:"6vh 16px", overflowY:"auto" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:"var(--c-card)", border:"1px solid var(--c-border)", borderRadius:14, padding:22, width:"100%", maxWidth: wide ? 760 : 460 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+          <div style={{ fontSize:15, fontWeight:800 }}>{title}</div>
+          <button onClick={onClose} style={{ background:"none", border:"1px solid var(--c-border)", borderRadius:8, color:"var(--c-text3)", cursor:"pointer", padding:"3px 9px" }}>✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function LabDetail({ lab, labs, profile, notify, onBack }) {
+  const canEdit = pCanTab(profile, "labs", "edit");
+  const [addingM, setAddingM] = useState(false);
+  const [visitFor, setVisitFor] = useState(null);
+  const [editingLab, setEditingLab] = useState(false);
+
+  async function saveMachines(machines, okMsg) {
+    try { await db.collection("labs").doc(lab.id).update({ machines }); notify(okMsg || "Saved.", "ok"); return true; }
+    catch (e) { notify("Server refused: " + e.message, "error"); return false; }
+  }
+  async function renameLab(n, loc) {
+    const dup = labs.find(l => l.id !== lab.id && labNameNorm(l.name) === labNameNorm(n));
+    if (dup) { notify("A laboratory with that name already exists.", "error"); return; }
+    try { await db.collection("labs").doc(lab.id).update({ name:n.trim(), location:loc.trim() }); notify("Laboratory updated.", "ok"); setEditingLab(false); }
+    catch (e) { notify("Server refused: " + e.message, "error"); }
+  }
+  return (
+    <div>
+      <div style={{ display:"flex", gap:10, alignItems:"center", marginBottom:14, flexWrap:"wrap" }}>
+        <button style={btnSt("var(--c-border)","var(--c-text2)")} onClick={onBack}>← Back</button>
+        <div style={{ fontSize:17, fontWeight:900 }}>{lab.name}</div>
+        <div style={{ fontSize:12, color:"var(--c-text4)" }}>📍 {lab.location || "—"}</div>
+        {canEdit && <button style={{ ...btnSt("var(--c-border)","var(--c-text2)"), marginLeft:"auto" }} onClick={()=>setEditingLab(true)}>✏️ Edit lab</button>}
+        {canEdit && <button style={btnSt("var(--c-key)","var(--c-bg)")} onClick={()=>setAddingM(true)}>+ Add Machine</button>}
+      </div>
+      <div style={cardSt}>
+        <table style={{ width:"100%", borderCollapse:"collapse" }}>
+          <thead><tr>{["Instrument","Serial No","Installed","Next PM","PM Flag","Status","Visits",""].map(h=><th key={h} style={thSt}>{h}</th>)}</tr></thead>
+          <tbody>
+            {(lab.machines||[]).map(m => {
+              const f = pmFlag(m);
+              return (
+                <tr key={m.id}>
+                  <td style={tdSt}>{m.instrument}</td>
+                  <td style={{ ...tdSt, fontFamily:"monospace", fontSize:12, color:"var(--c-key)" }}>{m.serialNo}</td>
+                  <td style={tdSt}>{m.installDate ? fmtDate(m.installDate) : "—"}</td>
+                  <td style={tdSt}>{m.nextPM ? fmtDate(m.nextPM) : "—"}</td>
+                  <td style={tdSt}><span style={{ fontSize:10, fontWeight:800, padding:"2px 9px", borderRadius:999, color:FLAG_COLORS[f], border:"1px solid "+FLAG_COLORS[f]+"55", background:FLAG_COLORS[f]+"18" }}>{f}</span></td>
+                  <td style={tdSt}>{m.status || "Active"}</td>
+                  <td style={tdSt}>{(m.visits||[]).length}</td>
+                  <td style={tdSt}>
+                    {canEdit && <button style={{ ...btnSt("var(--c-key)","var(--c-bg)"), padding:"4px 9px", fontSize:11 }} onClick={()=>setVisitFor(m)}>+ Visit</button>}{" "}
+                    {canEdit && <button title="Delete machine" style={{ ...btnSt("#3a1d1d","#fca5a5"), padding:"4px 9px", fontSize:11 }} onClick={()=>{ if (confirm("Delete " + m.instrument + " (" + m.serialNo + ")?")) saveMachines((lab.machines||[]).filter(x=>x.id!==m.id), "Machine removed."); }}>🗑</button>}
+                  </td>
+                </tr>
+              );
+            })}
+            {(lab.machines||[]).length === 0 && <tr><td colSpan={8} style={{ ...tdSt, color:"var(--c-text4)" }}>No machines yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {/* recent visits across the lab */}
+      <div style={cardSt}>
+        <div style={{ fontSize:12, fontWeight:800, color:"var(--c-text3)", textTransform:"uppercase", marginBottom:10 }}>Recent Service Visits</div>
+        <table style={{ width:"100%", borderCollapse:"collapse" }}>
+          <thead><tr>{["Date","Machine","Type","ISR","Engineer","Status after"].map(h=><th key={h} style={thSt}>{h}</th>)}</tr></thead>
+          <tbody>
+            {(lab.machines||[]).flatMap(m => (m.visits||[]).map(v => ({ ...v, _m:m.instrument, _sn:m.serialNo })))
+              .sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,25).map((v,i)=>(
+              <tr key={i}><td style={tdSt}>{fmtDate(v.date)}</td><td style={tdSt}>{v._m} <span style={{ color:"var(--c-text5)", fontSize:11 }}>({v._sn})</span></td><td style={tdSt}>{v.type}</td><td style={tdSt}>{v.isrNo||"—"}</td><td style={tdSt}>{v.engineer||"—"}</td><td style={tdSt}>{v.machineStatus||"—"}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {addingM && <MachineModal onClose={()=>setAddingM(false)} onSave={async (m)=>{ if (await saveMachines([...(lab.machines||[]), m], "Machine added.")) setAddingM(false); }} />}
+      {visitFor && <VisitModal machine={visitFor} onClose={()=>setVisitFor(null)} onSave={async (v, newStatus)=>{
+        const machines = (lab.machines||[]).map(m => m.id === visitFor.id ? { ...m, status: newStatus && newStatus !== "Not Applicable" && newStatus !== "Travel" ? newStatus : m.status, visits: [...(m.visits||[]), v] } : m);
+        if (await saveMachines(machines, "Visit logged.")) setVisitFor(null);
+      }} />}
+      {editingLab && <LabModal initial={lab} onSave={renameLab} onClose={()=>setEditingLab(false)} />}
+    </div>
+  );
+}
+const thSt = { textAlign:"left", padding:"8px 10px", fontSize:10.5, fontWeight:800, color:"var(--c-text4)", textTransform:"uppercase", letterSpacing:.5, borderBottom:"1px solid var(--c-border)" };
+const tdSt = { padding:"8px 10px", fontSize:13, borderBottom:"1px solid var(--c-border2)" };
+
+function MachineModal({ onSave, onClose }) {
+  const [f, setF] = useState({ instrument:"", serialNo:"", installDate:"", unknownDate:false, nextPM:"", status:"Active" });
+  const set = (k,v)=>setF(x=>({ ...x, [k]:v }));
+  return (
+    <Modal title="Add Machine" onClose={onClose}>
+      <label style={labelSt}>Instrument / Model</label>
+      <input style={{ ...inputSt(), marginBottom:10 }} value={f.instrument} onChange={e=>set("instrument",e.target.value)} />
+      <label style={labelSt}>Serial No</label>
+      <input style={{ ...inputSt(), marginBottom:10 }} value={f.serialNo} onChange={e=>set("serialNo",e.target.value)} />
+      <label style={labelSt}>Installation date</label>
+      <input type="date" disabled={f.unknownDate} style={{ ...inputSt(), marginBottom:6 }} value={f.installDate} onChange={e=>set("installDate",e.target.value)} />
+      <label style={{ fontSize:12, color:"var(--c-text3)", display:"flex", gap:6, marginBottom:10, cursor:"pointer" }}>
+        <input type="checkbox" checked={f.unknownDate} onChange={e=>set("unknownDate",e.target.checked)} /> Don't know the installation date (old record)
+      </label>
+      <label style={labelSt}>Next PM date</label>
+      <input type="date" style={{ ...inputSt(), marginBottom:16 }} value={f.nextPM} onChange={e=>set("nextPM",e.target.value)} />
+      <button style={btnSt("var(--c-key)","var(--c-bg)")} disabled={!f.instrument.trim()||!f.serialNo.trim()}
+        onClick={()=>onSave({ id:uid(), instrument:f.instrument.trim(), serialNo:f.serialNo.trim(), installDate:f.unknownDate?"":f.installDate, nextPM:f.nextPM, status:"Active", visits:[], createdAt:auditNow() })}>Save machine</button>
+    </Modal>
+  );
+}
+function VisitModal({ machine, onClose, onSave }) {
+  const [f, setF] = useState({ date:today(), type:"PM", isrNo:"", engineer:"", machineStatus:"Active", dtDeparture:"", dtArrivalHome:"", dtWorkStarted:"", dtWorkEnded:"", remarks:"" });
+  const set = (k,v)=>setF(x=>({ ...x, [k]:v }));
+  return (
+    <Modal title={"Log Visit — " + machine.instrument + " (" + machine.serialNo + ")"} onClose={onClose} wide>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+        <div><label style={labelSt}>Date</label><input type="date" style={inputSt()} value={f.date} onChange={e=>set("date",e.target.value)} /></div>
+        <div><label style={labelSt}>Type of Visit</label>
+          <select style={inputSt()} value={f.type} onChange={e=>set("type",e.target.value)}>{VISIT_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
+        <div><label style={labelSt}>ISR No</label><input style={inputSt()} value={f.isrNo} onChange={e=>set("isrNo",e.target.value)} /></div>
+        <div><label style={labelSt}>Engineer</label><input style={inputSt()} value={f.engineer} onChange={e=>set("engineer",e.target.value)} placeholder="Full name (matches Overtime)" /></div>
+        <div><label style={labelSt}>Departure (from home/office)</label><input type="datetime-local" style={inputSt()} value={f.dtDeparture} onChange={e=>set("dtDeparture",e.target.value)} /></div>
+        <div><label style={labelSt}>Arrival home</label><input type="datetime-local" style={inputSt()} value={f.dtArrivalHome} onChange={e=>set("dtArrivalHome",e.target.value)} /></div>
+        <div><label style={labelSt}>Work started</label><input type="datetime-local" style={inputSt()} value={f.dtWorkStarted} onChange={e=>set("dtWorkStarted",e.target.value)} /></div>
+        <div><label style={labelSt}>Work ended</label><input type="datetime-local" style={inputSt()} value={f.dtWorkEnded} onChange={e=>set("dtWorkEnded",e.target.value)} /></div>
+        <div><label style={labelSt}>Machine status after visit</label>
+          <select style={inputSt()} value={f.machineStatus} onChange={e=>set("machineStatus",e.target.value)}>{MACHINE_STATUSES.map(t=><option key={t}>{t}</option>)}</select></div>
+        <div><label style={labelSt}>Remarks</label><input style={inputSt()} value={f.remarks} onChange={e=>set("remarks",e.target.value)} /></div>
+      </div>
+      <button style={{ ...btnSt("var(--c-key)","var(--c-bg)"), marginTop:16 }}
+        onClick={()=>onSave({ id:uid(), ...f, loggedAt:auditNow() }, f.machineStatus)}>Save visit</button>
+      <div style={{ fontSize:10.5, color:"var(--c-text5)", marginTop:8 }}>Travel and leave/administrative visit types are excluded from engineer analytics and count toward Overtime only via their time fields.</div>
+    </Modal>
+  );
+}
+
+// ── Inventory (machines + spare parts, per-brand server-enforced) ───────────
+function InventoryTab({ profile, labs, catalog, notify }) {
+  const [sub, setSub] = useState("machines");
+  const canViewM = pCanSub(profile, "machines", "view") || profile.isAdmin;
+  const canViewS = pCanSub(profile, "spares", "view") || profile.isAdmin;
+  return (
+    <div>
+      <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+        {canViewM && <button style={btnSt(sub==="machines"?"var(--c-key)":"var(--c-border)", sub==="machines"?"var(--c-bg)":"var(--c-text2)")} onClick={()=>setSub("machines")}>🔬 Machine Inventory</button>}
+        {canViewS && <button style={btnSt(sub==="spares"?"var(--c-key)":"var(--c-border)", sub==="spares"?"var(--c-bg)":"var(--c-text2)")} onClick={()=>setSub("spares")}>🔧 Spare Parts</button>}
+      </div>
+      {sub === "machines" && canViewM && <MachineInv profile={profile} labs={labs} catalog={catalog} notify={notify} />}
+      {sub === "spares" && canViewS && <SpareParts profile={profile} catalog={catalog} notify={notify} />}
+    </div>
+  );
+}
+
+function MachineInv({ profile, labs, catalog, notify }) {
+  const items = useCol("inventory", true, notify);
+  const brands = (catalog && catalog.brands) || [];
+  const canEdit = pCanSub(profile, "machines", "edit") || profile.isAdmin;
+  const brandOk = b => pBrandOk(profile, "machines", b);
+  const [editing, setEditing] = useState(null);   // null | "new" | item
+  const [histFor, setHistFor] = useState(null);
+  const [q, setQ] = useState("");
+
+  // Effective status + condition, derived live from the labs data (v113/v118/v122 rules)
+  const enriched = items.map(it => {
+    const p = invPlacement(labs, it.serialNo);
+    return { ...it,
+      _status: invEffectiveStatus(it.status, p.state),
+      _condition: invEffectiveCondition(it.condition, labs, it.serialNo),
+      _state: p.state, _installedTo: p.state === "Installed" ? p.lab : "" };
+  }).filter(it => {
+    const s = q.toLowerCase(); if (!s) return true;
+    return [it.brand, it.machineModel, it.serialNo, it.itemCode].some(x => String(x||"").toLowerCase().includes(s));
+  }).sort((a,b)=>String(a.brand+a.machineModel).localeCompare(String(b.brand+b.machineModel)));
+
+  async function save(rec) {
+    try {
+      if (editing === "new") await db.collection("inventory").add({ ...rec, createdAt: FieldValue.serverTimestamp(), createdBy: profile.email });
+      else await db.collection("inventory").doc(editing.id).update({ ...rec, updatedAt: auditNow(), updatedBy: profile.email });
+      notify("Saved.", "ok"); setEditing(null);
+    } catch (e) { notify("SERVER REFUSED the write:\n" + e.message, "error"); }
+  }
+  async function del(it) {
+    if (!confirm("Delete " + it.serialNo + "?")) return;
+    try { await db.collection("inventory").doc(it.id).delete(); notify("Deleted.", "ok"); }
+    catch (e) { notify("SERVER REFUSED the delete:\n" + e.message, "error"); }
+  }
+  return (
+    <div style={cardSt}>
+      <div style={{ display:"flex", gap:10, marginBottom:12, flexWrap:"wrap" }}>
+        <input style={{ ...inputSt(), maxWidth:320 }} value={q} onChange={e=>setQ(e.target.value)} placeholder="🔍 Search serial, brand, model…" />
+        {canEdit && <button style={btnSt("var(--c-key)","var(--c-bg)")} onClick={()=>setEditing("new")}>+ New Record</button>}
+      </div>
+      <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <thead><tr>{["Brand","Model","Serial No","Condition","Status","Installed To",""].map(h=><th key={h} style={thSt}>{h}</th>)}</tr></thead>
+        <tbody>
+          {enriched.map(it => (
+            <tr key={it.id}>
+              <td style={tdSt}>{it.brand}</td><td style={tdSt}>{it.machineModel}</td>
+              <td style={{ ...tdSt, fontFamily:"monospace", fontSize:12, color:"var(--c-key)" }}>{it.serialNo}</td>
+              <td style={tdSt}>{(() => {
+                const c = String(it._condition||"").toUpperCase(); const used = c === "USED";
+                return (c==="USED"||c==="BRAND NEW")
+                  ? <span title={used?"Previously installed at another laboratory — automatically Used":"Never installed at a different laboratory"} style={{ fontSize:10, fontWeight:800, padding:"2px 9px", borderRadius:999, background: used?"rgba(251,146,60,.14)":"rgba(56,189,248,.14)", color: used?"#fdba74":"#7dd3fc", border:"1px solid "+(used?"rgba(251,146,60,.4)":"rgba(56,189,248,.4)") }}>{c}</span>
+                  : (it._condition || "—");
+              })()}</td>
+              <td style={tdSt}>{it._status}</td>
+              <td style={{ ...tdSt, fontSize:12, color:"var(--c-text3)" }}>{it._installedTo || "—"}</td>
+              <td style={{ ...tdSt, whiteSpace:"nowrap" }}>
+                <button title="In / Out History" style={{ ...btnSt("var(--c-border)","var(--c-text2)"), padding:"4px 9px", fontSize:11 }} onClick={()=>setHistFor(it)}>🕐</button>{" "}
+                {canEdit && (brandOk(it.brand)
+                  ? <React.Fragment>
+                      <button style={{ ...btnSt("var(--c-border)","var(--c-text2)"), padding:"4px 9px", fontSize:11 }} onClick={()=>setEditing(it)}>✏️</button>{" "}
+                      <button style={{ ...btnSt("#3a1d1d","#fca5a5"), padding:"4px 9px", fontSize:11 }} onClick={()=>del(it)}>🗑</button>
+                    </React.Fragment>
+                  : <span title={"Your account can't edit " + (it.brand||"this brand")} style={{ color:"var(--c-text5)" }}>🔒</span>)}
+              </td>
+            </tr>
+          ))}
+          {enriched.length === 0 && <tr><td colSpan={7} style={{ ...tdSt, color:"var(--c-text4)" }}>No inventory records{q?" match the search.":" yet."}</td></tr>}
+        </tbody>
+      </table>
+      {editing && <InvModal initial={editing === "new" ? null : editing} brands={brands} brandOk={brandOk} isAdmin={profile.isAdmin} onSave={save} onClose={()=>setEditing(null)} />}
+      {histFor && <HistoryModal item={histFor} labs={labs} onClose={()=>setHistFor(null)} />}
+    </div>
+  );
+}
+function InvModal({ initial, brands, brandOk, isAdmin, onSave, onClose }) {
+  const [f, setF] = useState(initial || { brand: brands.find(b=>brandOk(b)) || brands[0] || "", machineModel:"", serialNo:"", itemCode:"", condition:"BRAND NEW", status:"Available", location:"warehouse", dealer:"", remarks:"" });
+  const set = (k,v)=>setF(x=>({ ...x, [k]:v }));
+  return (
+    <Modal title={initial ? "Edit Inventory Record" : "New Inventory Record"} onClose={onClose} wide>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+        <div><label style={labelSt}>Brand</label>
+          <select style={inputSt()} value={f.brand} onChange={e=>set("brand",e.target.value)}>
+            {brands.map(b=><option key={b} value={b} disabled={!isAdmin && !brandOk(b)}>{b}{(!isAdmin && !brandOk(b))?" (locked)":""}</option>)}
+          </select></div>
+        <div><label style={labelSt}>Machine Model</label><input style={inputSt()} value={f.machineModel} onChange={e=>set("machineModel",e.target.value)} /></div>
+        <div><label style={labelSt}>Serial No</label><input style={inputSt()} value={f.serialNo} onChange={e=>set("serialNo",e.target.value)} /></div>
+        <div><label style={labelSt}>Item Code</label><input style={inputSt()} value={f.itemCode} onChange={e=>set("itemCode",e.target.value)} /></div>
+        <div><label style={labelSt}>Condition</label>
+          <select style={inputSt()} value={f.condition} onChange={e=>set("condition",e.target.value)}>
+            {["BRAND NEW","USED","For Repair","Defective","Scrapped"].map(c=><option key={c}>{c}</option>)}
+          </select>
+          <div style={{ fontSize:9.5, color:"var(--c-text5)", marginTop:3, lineHeight:1.4 }}>Brand New / Used is derived automatically — installed at a second laboratory ⇒ <b>Used</b>; cycling within the same laboratory stays <b>Brand New</b>.</div>
+        </div>
+        <div><label style={labelSt}>Status</label>
+          <select style={inputSt()} value={f.status} onChange={e=>set("status",e.target.value)}>
+            {INVENTORY_STATUS_OPTIONS.map(s=><option key={s}>{s}</option>)}
+          </select>
+          <div style={{ fontSize:9.5, color:"var(--c-text5)", marginTop:3 }}>Shows as <b>Onsite</b> automatically while the serial is installed in a laboratory.</div>
+        </div>
+        <div><label style={labelSt}>Dealer</label><input style={inputSt()} value={f.dealer} onChange={e=>set("dealer",e.target.value)} /></div>
+        <div><label style={labelSt}>Remarks</label><input style={inputSt()} value={f.remarks} onChange={e=>set("remarks",e.target.value)} /></div>
+      </div>
+      <button style={{ ...btnSt("var(--c-key)","var(--c-bg)"), marginTop:16 }} disabled={!f.serialNo.trim() || !f.brand} onClick={()=>onSave(f)}>Save record</button>
+    </Modal>
+  );
+}
+function HistoryModal({ item, labs, onClose }) {
+  const mv = invMovements(labs, item.serialNo);
+  const ins = mv.filter(e=>e.dir==="IN").length, outs = mv.filter(e=>e.dir==="OUT").length;
+  return (
+    <Modal title="🕐 In / Out History" onClose={onClose} wide>
+      <div style={{ fontSize:12, color:"var(--c-text3)", marginBottom:4 }}><span style={{ fontFamily:"monospace", color:"var(--c-key)" }}>{item.serialNo}</span> · {item.brand} {item.machineModel}</div>
+      <div style={{ fontSize:11, color:"var(--c-text5)", marginBottom:14 }}>{ins} install{ins!==1?"s":""} · {outs} pull-out{outs!==1?"s":""} — built from install records and Installation / Pull-out visits.</div>
+      {mv.length === 0 && <div style={{ fontSize:12, color:"var(--c-text4)" }}>No movements recorded for this serial.</div>}
+      {mv.map((e,i)=>(
+        <div key={i} style={{ display:"flex", gap:12, alignItems:"flex-start", padding:"10px 0", borderBottom:"1px solid var(--c-border2)" }}>
+          <span style={{ fontSize:10, fontWeight:900, padding:"3px 10px", borderRadius:7, background: e.dir==="IN"?"rgba(52,211,153,.15)":"rgba(248,113,113,.15)", color: e.dir==="IN"?"#34d399":"#f87171", border:"1px solid "+(e.dir==="IN"?"rgba(52,211,153,.4)":"rgba(248,113,113,.4)") }}>{e.dir}</span>
+          <div>
+            <div style={{ fontSize:13, fontWeight:700 }}>{e.detail}</div>
+            <div style={{ fontSize:11, color:"var(--c-text5)" }}>{e.date ? fmtDate(e.date) : "date unknown"}{e.isr ? " · " + e.isr : ""} · {e.source}</div>
+          </div>
+        </div>
+      ))}
+    </Modal>
+  );
+}
+
+function SpareParts({ profile, catalog, notify }) {
+  const parts = useCol("spareParts", true, notify);
+  const brands = (catalog && catalog.brands) || [];
+  const canEdit = pCanSub(profile, "spares", "edit") || profile.isAdmin;
+  const brandOk = b => pBrandOk(profile, "spares", b);
+  const [editing, setEditing] = useState(null);
+  const [stockFor, setStockFor] = useState(null);   // {part, dir:"in"|"out"}
+  const [q, setQ] = useState("");
+  const shown = parts.filter(p => {
+    const s = q.toLowerCase(); if (!s) return true;
+    return [p.brand, p.partNumber, p.description].some(x => String(x||"").toLowerCase().includes(s));
+  }).sort((a,b)=>String(a.brand+a.partNumber).localeCompare(String(b.brand+b.partNumber)));
+
+  const onHand = p => (p.receipts||[]).reduce((s,r)=>s+(Number(r.qty)||0),0) - (p.issues||[]).reduce((s,r)=>s+(Number(r.qty)||0),0);
+
+  async function save(rec) {
+    try {
+      if (editing === "new") await db.collection("spareParts").add({ ...rec, receipts:[], issues:[], createdAt: FieldValue.serverTimestamp() });
+      else await db.collection("spareParts").doc(editing.id).update(rec);
+      notify("Saved.", "ok"); setEditing(null);
+    } catch (e) { notify("SERVER REFUSED:\n" + e.message, "error"); }
+  }
+  async function move(part, dir, qty, ref) {
+    const entry = { id:uid(), qty:Number(qty)||0, date:today(), ref:ref||"", by:profile.email, at:auditNow() };
+    const field = dir === "in" ? "receipts" : "issues";
+    try {
+      await db.collection("spareParts").doc(part.id).update({ [field]: [...(part[field]||[]), entry] });
+      notify(dir === "in" ? "Stock received." : "Stock issued.", "ok"); setStockFor(null);
+    } catch (e) { notify("SERVER REFUSED:\n" + e.message, "error"); }
+  }
+  return (
+    <div style={cardSt}>
+      <div style={{ display:"flex", gap:10, marginBottom:12, flexWrap:"wrap" }}>
+        <input style={{ ...inputSt(), maxWidth:320 }} value={q} onChange={e=>setQ(e.target.value)} placeholder="🔍 Search part no, brand…" />
+        {canEdit && <button style={btnSt("var(--c-key)","var(--c-bg)")} onClick={()=>setEditing("new")}>+ New Spare Part</button>}
+      </div>
+      <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <thead><tr>{["Brand","Part No","Description","On Hand",""].map(h=><th key={h} style={thSt}>{h}</th>)}</tr></thead>
+        <tbody>
+          {shown.map(p => (
+            <tr key={p.id}>
+              <td style={tdSt}>{p.brand}</td>
+              <td style={{ ...tdSt, fontFamily:"monospace", fontSize:12, color:"var(--c-key)" }}>{p.partNumber}</td>
+              <td style={tdSt}>{p.description}</td>
+              <td style={{ ...tdSt, fontWeight:800, color: onHand(p) > 0 ? "#34d399" : "#f87171" }}>{onHand(p)}</td>
+              <td style={{ ...tdSt, whiteSpace:"nowrap" }}>
+                {canEdit && (brandOk(p.brand)
+                  ? <React.Fragment>
+                      <button title="Receive stock" style={{ ...btnSt("#10b981","#fff"), padding:"4px 9px", fontSize:11 }} onClick={()=>setStockFor({ part:p, dir:"in" })}>📥</button>{" "}
+                      <button title="Issue stock" style={{ ...btnSt("#f59e0b","#1a1205"), padding:"4px 9px", fontSize:11 }} onClick={()=>setStockFor({ part:p, dir:"out" })}>📤</button>{" "}
+                      <button style={{ ...btnSt("var(--c-border)","var(--c-text2)"), padding:"4px 9px", fontSize:11 }} onClick={()=>setEditing(p)}>✏️</button>
+                    </React.Fragment>
+                  : <span title={"Your account can't edit " + (p.brand||"this brand") + " spare parts"} style={{ color:"var(--c-text5)" }}>🔒</span>)}
+              </td>
+            </tr>
+          ))}
+          {shown.length === 0 && <tr><td colSpan={5} style={{ ...tdSt, color:"var(--c-text4)" }}>No spare parts{q?" match the search.":" yet."}</td></tr>}
+        </tbody>
+      </table>
+      {editing && (
+        <Modal title={editing==="new"?"New Spare Part":"Edit Spare Part"} onClose={()=>setEditing(null)}>
+          <SparePartForm initial={editing==="new"?null:editing} brands={brands} brandOk={brandOk} isAdmin={profile.isAdmin} onSave={save} />
+        </Modal>
+      )}
+      {stockFor && (
+        <Modal title={(stockFor.dir==="in"?"📥 Receive":"📤 Issue") + " — " + stockFor.part.partNumber} onClose={()=>setStockFor(null)}>
+          <StockForm onSave={(qty,ref)=>move(stockFor.part, stockFor.dir, qty, ref)} />
+        </Modal>
+      )}
+    </div>
+  );
+}
+function SparePartForm({ initial, brands, brandOk, isAdmin, onSave }) {
+  const [f, setF] = useState(initial || { brand: brands.find(b=>brandOk(b)) || brands[0] || "", partNumber:"", description:"" });
+  const set=(k,v)=>setF(x=>({ ...x, [k]:v }));
+  return (
+    <React.Fragment>
+      <label style={labelSt}>Brand</label>
+      <select style={{ ...inputSt(), marginBottom:10 }} value={f.brand} onChange={e=>set("brand",e.target.value)}>
+        {brands.map(b=><option key={b} value={b} disabled={!isAdmin && !brandOk(b)}>{b}{(!isAdmin && !brandOk(b))?" (locked)":""}</option>)}
+      </select>
+      <label style={labelSt}>Part number</label>
+      <input style={{ ...inputSt(), marginBottom:10 }} value={f.partNumber} onChange={e=>set("partNumber",e.target.value)} />
+      <label style={labelSt}>Description</label>
+      <input style={{ ...inputSt(), marginBottom:16 }} value={f.description} onChange={e=>set("description",e.target.value)} />
+      <button style={btnSt("var(--c-key)","var(--c-bg)")} disabled={!f.partNumber.trim()} onClick={()=>onSave({ brand:f.brand, partNumber:f.partNumber.trim(), description:f.description.trim() })}>Save</button>
+    </React.Fragment>
+  );
+}
+function StockForm({ onSave }) {
+  const [qty, setQty] = useState(""); const [ref, setRef] = useState("");
+  return (
+    <React.Fragment>
+      <label style={labelSt}>Quantity</label>
+      <input type="number" min="1" style={{ ...inputSt(), marginBottom:10 }} value={qty} onChange={e=>setQty(e.target.value)} />
+      <label style={labelSt}>Reference (DR / PO / ISR)</label>
+      <input style={{ ...inputSt(), marginBottom:16 }} value={ref} onChange={e=>setRef(e.target.value)} />
+      <button style={btnSt("var(--c-key)","var(--c-bg)")} disabled={!(Number(qty)>0)} onClick={()=>onSave(qty, ref)}>Confirm</button>
+    </React.Fragment>
+  );
+}
+
+// ── Overtime (full v127 workflow: engine, applications, revert, conversation) ─
+function OvertimeTab({ profile, labs, users, notify }) {
+  const isMgr = pIsOtManager(profile);
+  const editable = pCanTab(profile, "overtime", "edit");
+  const myName = profile.engineerName || "";
+  const otSettings = useDoc("config/otSettings", true) || DEFAULT_OT_SETTINGS;
+  const holidaysDoc = useDoc("config/holidays", true);
+  const holidays = (holidaysDoc && holidaysDoc.list) || [];
+  const holidayMap = useMemo(() => otHolidayMapFromList(holidays), [holidays]);
+  const apps = useCol("otApplications", true, notify);
+  const [showSettings, setShowSettings] = useState(false);
+
+  // all visits across labs (engineer fields matched by the engine)
+  const allVisits = useMemo(() => labs.flatMap(l => (l.machines||[]).flatMap(m => m.visits || [])), [labs]);
+  // engineer names: from user profiles + visit logs
+  const engineerNames = useMemo(() => {
+    const set = {};
+    users.forEach(u => { if (u.engineerName) set[u.engineerName] = 1; });
+    allVisits.forEach(v => ["engineer","engineer2","engineer3"].forEach(k => { if (v[k]) set[v[k]] = 1; }));
+    return Object.keys(set).sort();
+  }, [users, allVisits]);
+  const visibleEngineers = isMgr ? engineerNames : (myName ? [myName] : []);
+
+  const [selectedEng, setSelectedEng] = useState(isMgr ? "__all__" : "");
+  const [period, setPeriod] = useState("__allhist__");
+  const [otFrom, setOtFrom] = useState(""); const [otTo, setOtTo] = useState("");
+
+  const ledgers = useMemo(() => {
+    const map = {};
+    visibleEngineers.forEach(n => { map[n] = computeEngineerOt(n, allVisits, otSettings, holidayMap); });
+    return map;
+  }, [visibleEngineers.join("|"), allVisits, otSettings, holidayMap]);
+
+  const periodOptions = useMemo(() => {
+    const seen = {};
+    Object.values(ledgers).forEach(l => l.days.forEach(d => { const c = otCutoffForDate(d.date, otSettings); seen[c.key] = c; }));
+    const tc = otCutoffForDate(today(), otSettings); seen[tc.key] = tc;
+    return Object.values(seen).sort((a,b)=>b.order-a.order);
+  }, [ledgers, otSettings]);
+  const currentPeriodKey = otCutoffForDate(today(), otSettings).key;
+  const effKey = period === "__current__" ? currentPeriodKey : period;
+  function daysInPeriod(n) {
+    const l = ledgers[n]; if (!l) return [];
+    if (period === "__allhist__") return l.days;
+    if (period === "__range__") {
+      if (!otFrom && !otTo) return l.days;
+      return l.days.filter(d => { const k = String(d.date).slice(0,10); if (otFrom && k < otFrom) return false; if (otTo && k > otTo) return false; return true; });
+    }
+    return l.days.filter(d => otCutoffForDate(d.date, otSettings).key === effKey);
+  }
+  const periodLabel = period === "__allhist__" ? "All history"
+    : period === "__range__" ? ((otFrom||otTo) ? ((otFrom?fmtDate(otFrom):"start") + " → " + (otTo?fmtDate(otTo):"today")) : "All history")
+    : ((periodOptions.find(p=>p.key===effKey)||{}).label || "Current period");
+
+  // application map + mutations (server rules enforce owner/manager)
+  const appMap = useMemo(() => { const m = {}; apps.forEach(a => { if (a.engineerName && a.date) m[a.engineerName + "|" + a.date] = a; }); return m; }, [apps]);
+  async function upsert(prev, data, okMsg) {
+    try {
+      if (prev && prev.id) await db.collection("otApplications").doc(prev.id).update(data);
+      else await db.collection("otApplications").add(data);
+      notify(okMsg, "ok"); return true;
+    } catch (e) { notify("SERVER REFUSED:\n" + e.message, "error"); return false; }
+  }
+  function applyFor(engName, dateKey, cashH, offsetH) {
+    const prev = appMap[engName + "|" + dateKey];
+    return upsert(prev, { engineerName: engName, date: dateKey, cashHours: cashH, offsetHours: offsetH,
+      status: "pending", apCash: 0, apOffset: 0, appliedBy: profile.email, appliedAt: auditNow(),
+      decidedBy: "", decidedAt: "", remarks: "", thread: (prev && prev.thread) || [] }, "OT application filed.");
+  }
+  function decideApp(engName, dateKey, approve, apC, apO, remarks) {
+    const prev = appMap[engName + "|" + dateKey]; if (!prev) return;
+    return upsert(prev, { status: approve ? "approved" : "rejected", apCash: approve ? apC : 0, apOffset: approve ? apO : 0,
+      decidedBy: profile.email, decidedAt: auditNow(), remarks: remarks || "" }, approve ? "Approved." : "Rejected.");
+  }
+  function revertApp(engName, dateKey) {
+    const prev = appMap[engName + "|" + dateKey]; if (!prev || prev.status === "pending") return;
+    return upsert(prev, { status: "pending", apCash: 0, apOffset: 0, decidedBy: "", decidedAt: "", remarks: "",
+      revertedBy: profile.email, revertedAt: auditNow() }, "Reverted to pending for re-review.");
+  }
+  function postMessage(engName, dateKey, text) {
+    const prev = appMap[engName + "|" + dateKey]; const t = String(text||"").trim();
+    if (!prev || !t) return;
+    const msg = { by: profile.email, role: isMgr ? "manager" : "employee", text: t, at: auditNow() };
+    return upsert(prev, { thread: [ ...(prev.thread||[]), msg ] }, "Message sent.");
+  }
+  async function withdraw(engName, dateKey) {
+    const prev = appMap[engName + "|" + dateKey]; if (!prev) return;
+    try { await db.collection("otApplications").doc(prev.id).delete(); notify("Application withdrawn.", "ok"); }
+    catch (e) { notify("SERVER REFUSED:\n" + e.message, "error"); }
+  }
+
+  function totalsFor(n) {
+    return daysInPeriod(n).reduce((acc,d)=>{
+      acc.regular += d.regularHours; acc.ot += d.otHours; acc.total += d.totalHours;
+      const a = appMap[n + "|" + d.date];
+      if (a) {
+        const rc = Number(a.cashHours)||0, ro = Number(a.offsetHours)||0;
+        acc.reqCash += rc; acc.reqOffset += ro;
+        if (a.status === "pending") acc.pending++;
+        else { const ac = Number(a.apCash)||0, ao = Number(a.apOffset)||0; acc.apCash += ac; acc.apOffset += ao; acc.balance += Math.max(0,(rc+ro)-(ac+ao)); }
+      }
+      return acc;
+    }, { regular:0, ot:0, total:0, reqCash:0, reqOffset:0, apCash:0, apOffset:0, pending:0, balance:0 });
+  }
+
+  // ---- one day's application lifecycle cell (v127 OtAppCell + OtThread) ----
+  function OtAppCell({ engName, d }) {
+    const app = appMap[engName + "|" + d.date];
+    const isOwner = engName === myName;
+    const canFile = editable && (isOwner || isMgr);
+    const [mode, setMode] = useState("");
+    const [c, setC] = useState(""); const [o, setO] = useState("");
+    const [ac, setAc] = useState(""); const [ao, setAo] = useState(""); const [rm, setRm] = useState("");
+    const [err, setErr] = useState("");
+    const tiny = { fontSize:9.5, color:"var(--c-text5)", whiteSpace:"nowrap" };
+    const numIn = (v,set)=><input type="number" min="0" step="0.25" value={v} onChange={e=>{set(e.target.value);setErr("");}} style={{ ...inputSt(), width:64, padding:"3px 6px", fontSize:11.5 }} />;
+    const chip = (bg,bd,col,txt)=><span style={{ fontSize:10, fontWeight:800, padding:"2px 8px", borderRadius:999, background:bg, color:col, border:"1px solid "+bd, whiteSpace:"nowrap" }}>{txt}</span>;
+    const sb = (label,on,color)=><button onClick={on} style={{ background:"none", border:"1px solid var(--c-border)", borderRadius:6, color:color||"var(--c-text3)", fontSize:10, cursor:"pointer", padding:"2px 8px" }}>{label}</button>;
+
+    function submitApply() {
+      const nc = Number(c)||0, no = Number(o)||0;
+      if (nc+no <= 0) { setErr("Enter the hours to apply."); return; }
+      if (nc+no > d.otHours + 1e-9) { setErr("Cash + offset can't exceed this day's " + d.otHours.toFixed(2) + " OT hours."); return; }
+      applyFor(engName, d.date, nc, no); setMode("");
+    }
+    function submitDecision(approve) {
+      const nac = Number(ac)||0, nao = Number(ao)||0;
+      const rc = Number(app.cashHours)||0, ro = Number(app.offsetHours)||0;
+      if (approve && (nac > rc+1e-9 || nao > ro+1e-9)) { setErr("Approved hours can't exceed the requested hours."); return; }
+      const partial = approve && (nac+nao) < (rc+ro) - 1e-9;
+      if ((!approve || partial) && !rm.trim()) { setErr(approve ? "Give remarks explaining the partial approval." : "Give remarks explaining the rejection."); return; }
+      decideApp(engName, d.date, approve, nac, nao, rm.trim()); setMode("");
+    }
+    if (mode === "apply") return (
+      <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+          <span style={tiny}>💵 Cash</span>{numIn(c,setC)}<span style={tiny}>🔁 Offset</span>{numIn(o,setO)}<span style={tiny}>of {d.otHours.toFixed(2)}h OT</span>
+        </div>
+        {err && <div style={{ fontSize:10, color:"#f87171", fontWeight:600 }}>⚠ {err}</div>}
+        <div style={{ display:"flex", gap:6 }}>{sb("✔ Submit",submitApply,"#34d399")}{sb("Cancel",()=>setMode(""))}</div>
+      </div>
+    );
+    if (mode === "decide") return (
+      <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+          <span style={tiny}>approve 💵</span>{numIn(ac,setAc)}<span style={tiny}>🔁</span>{numIn(ao,setAo)}
+          <span style={tiny}>of 💵{Number(app.cashHours||0).toFixed(2)} + 🔁{Number(app.offsetHours||0).toFixed(2)} requested</span>
+        </div>
+        <input value={rm} onChange={e=>{setRm(e.target.value);setErr("");}} placeholder="Remarks / notice to the employee…" style={{ ...inputSt(), fontSize:11, padding:"4px 7px" }} />
+        {err && <div style={{ fontSize:10, color:"#f87171", fontWeight:600 }}>⚠ {err}</div>}
+        <div style={{ display:"flex", gap:6 }}>{sb("✅ Approve",()=>submitDecision(true),"#34d399")}{sb("❌ Reject",()=>submitDecision(false),"#f87171")}{sb("Cancel",()=>setMode(""))}</div>
+      </div>
+    );
+    if (!app) return canFile && d.otHours > 0
+      ? <button onClick={()=>{ setC(""); setO(""); setErr(""); setMode("apply"); }} style={{ ...btnSt("var(--c-border)","var(--c-text2)"), padding:"4px 10px", fontSize:11 }}>✋ Apply OT</button>
+      : <span style={{ color:"var(--c-text5)", fontSize:11 }}>—</span>;
+    const rc = Number(app.cashHours)||0, ro = Number(app.offsetHours)||0;
+    const aC = Number(app.apCash)||0, aO = Number(app.apOffset)||0;
+    const bal = Math.max(0,(rc+ro)-(aC+aO));
+    return (
+      <div style={{ display:"flex", flexDirection:"column", gap:3, minWidth:250 }}>
+        {app.status === "pending" && (
+          <React.Fragment>
+            <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+              {chip("rgba(251,191,36,.13)","rgba(251,191,36,.4)","#fbbf24","⏳ Pending")}
+              <span style={{ fontSize:11, fontFamily:"monospace", color:"var(--c-text2)" }}>💵 {rc.toFixed(2)}h + 🔁 {ro.toFixed(2)}h</span>
+            </div>
+            <div style={tiny}>filed by {app.appliedBy}{app.appliedAt ? " · " + String(app.appliedAt).slice(0,10) : ""}</div>
+            {app.revertedBy && <div style={{ fontSize:9.5, color:"#fbbf24" }}>↩ reverted for re-review by {app.revertedBy}{app.revertedAt ? " · " + String(app.revertedAt).slice(0,10) : ""}</div>}
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              {isOwner && editable && sb("✏️ Edit",()=>{ setC(String(rc)); setO(String(ro)); setMode("apply"); })}
+              {isOwner && editable && sb("🗑 Withdraw",()=>withdraw(engName,d.date),"#f87171")}
+              {isMgr && editable && sb("⚖ Review",()=>{ setAc(String(rc)); setAo(String(ro)); setRm(""); setMode("decide"); },"#38bdf8")}
+            </div>
+          </React.Fragment>
+        )}
+        {app.status === "approved" && (
+          <React.Fragment>
+            <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+              {chip("rgba(16,185,129,.13)","rgba(16,185,129,.4)","#34d399","✅ Approved")}
+              <span style={{ fontSize:11, fontFamily:"monospace", color:"var(--c-text2)" }}>💵 {aC.toFixed(2)}h + 🔁 {aO.toFixed(2)}h</span>
+            </div>
+            <div style={tiny}>requested 💵 {rc.toFixed(2)} + 🔁 {ro.toFixed(2)} · by {app.decidedBy}{app.decidedAt ? " · " + String(app.decidedAt).slice(0,10) : ""}</div>
+            {bal > 1e-9 && <div style={{ fontSize:10, color:"#fbbf24", fontWeight:700 }}>⚖ {bal.toFixed(2)}h unapproved balance (kept on record)</div>}
+            {app.remarks && <div style={{ fontSize:10, color:"var(--c-text4)", maxWidth:260, whiteSpace:"normal" }}>📝 {app.remarks}</div>}
+            {isMgr && editable && <div style={{ display:"flex", gap:6 }}>{sb("⚖ Revise",()=>{ setAc(String(aC)); setAo(String(aO)); setRm(app.remarks||""); setMode("decide"); })}{sb("↩ Revert to pending",()=>revertApp(engName,d.date),"#fbbf24")}</div>}
+          </React.Fragment>
+        )}
+        {app.status === "rejected" && (
+          <React.Fragment>
+            <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+              {chip("rgba(248,113,113,.13)","rgba(248,113,113,.4)","#f87171","❌ Rejected")}
+              <span style={{ fontSize:11, fontFamily:"monospace", color:"var(--c-text4)", textDecoration:"line-through" }}>💵 {rc.toFixed(2)}h + 🔁 {ro.toFixed(2)}h</span>
+            </div>
+            <div style={tiny}>by {app.decidedBy}{app.decidedAt ? " · " + String(app.decidedAt).slice(0,10) : ""} · request kept on record</div>
+            {app.remarks && <div style={{ fontSize:10, color:"var(--c-text4)", maxWidth:260, whiteSpace:"normal" }}>📝 {app.remarks}</div>}
+            {isMgr && editable && <div style={{ display:"flex", gap:6 }}>{sb("⚖ Revise",()=>{ setAc("0"); setAo("0"); setRm(app.remarks||""); setMode("decide"); })}{sb("↩ Revert to pending",()=>revertApp(engName,d.date),"#fbbf24")}</div>}
+            {isOwner && editable && <div>{sb("✋ Re-apply",()=>{ setC(String(rc)); setO(String(ro)); setMode("apply"); })}</div>}
+          </React.Fragment>
+        )}
+        <OtThread app={app} engName={engName} d={d} isOwner={isOwner} />
+      </div>
+    );
+  }
+  // ---- conversation thread (v127) ----
+  function OtThread({ app, engName, d, isOwner }) {
+    const thread = Array.isArray(app.thread) ? app.thread : [];
+    const canReply = editable && (isMgr || isOwner);
+    const [open, setOpen] = useState(false);
+    const [txt, setTxt] = useState("");
+    if (thread.length === 0 && !canReply) return null;
+    const send = () => { const t = txt.trim(); if (!t) return; postMessage(engName, d.date, t); setTxt(""); };
+    return (
+      <div style={{ marginTop:4, borderTop:"1px dashed var(--c-border)", paddingTop:5 }}>
+        <button onClick={()=>setOpen(o=>!o)} style={{ background:"none", border:"none", color:"var(--c-text4)", cursor:"pointer", fontSize:10, fontWeight:700, padding:0 }}>
+          💬 Conversation{thread.length ? " ("+thread.length+")" : ""} <span style={{ fontSize:8 }}>{open?"▲":"▼"}</span>
+        </button>
+        {open && (
+          <div style={{ marginTop:5, display:"flex", flexDirection:"column", gap:4, maxWidth:300 }}>
+            {thread.length === 0 && <div style={{ fontSize:10, color:"var(--c-text5)", fontStyle:"italic" }}>No messages yet — start the conversation below.</div>}
+            {thread.map((m,i)=>{
+              const mine = m.by === profile.email; const mgr = m.role === "manager";
+              return (
+                <div key={i} style={{ alignSelf: mine?"flex-end":"flex-start", maxWidth:"88%", background: mgr?"rgba(56,189,248,.12)":"rgba(167,139,250,.12)", border:"1px solid "+(mgr?"rgba(56,189,248,.3)":"rgba(167,139,250,.3)"), borderRadius:9, padding:"4px 8px" }}>
+                  <div style={{ fontSize:8.5, fontWeight:800, textTransform:"uppercase", color: mgr?"#38bdf8":"#a78bfa", marginBottom:1 }}>{mgr?"🛠 ":"👤 "}{m.by}{mgr?" · manager":""}</div>
+                  <div style={{ fontSize:11, color:"var(--c-text2)", whiteSpace:"pre-wrap", wordBreak:"break-word" }}>{m.text}</div>
+                  <div style={{ fontSize:8, color:"var(--c-text5)", marginTop:1 }}>{m.at ? String(m.at).replace("T"," ").slice(0,16) : ""}</div>
+                </div>
+              );
+            })}
+            {canReply && (
+              <div style={{ display:"flex", gap:4 }}>
+                <input value={txt} onChange={e=>setTxt(e.target.value)} onKeyDown={e=>{ if (e.key==="Enter") { e.preventDefault(); send(); } }} placeholder="Write a reply…" style={{ ...inputSt(), fontSize:11, padding:"4px 7px", flex:1 }} />
+                <button onClick={send} disabled={!txt.trim()} style={{ ...btnSt(txt.trim()?"#38bdf8":"var(--c-border)", txt.trim()?"var(--c-bg)":"var(--c-text5)"), padding:"4px 10px", fontSize:11 }}>➤</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function DayTable({ engName }) {
+    const days = daysInPeriod(engName);
+    const totals = totalsFor(engName);
+    return (
+      <div style={cardSt}>
+        <div style={{ display:"flex", gap:20, flexWrap:"wrap", marginBottom:16 }}>
+          {[["Employee",engName,"var(--c-key)"],["Period",periodLabel,"var(--c-text)"],["Regular Hours",totals.regular.toFixed(2),"var(--c-text)"],["Overtime Hours",totals.ot.toFixed(2),"#fbbf24"],
+            ["💵 Cash Approved",totals.apCash.toFixed(2)+" (req "+totals.reqCash.toFixed(2)+")","#34d399"],
+            ["🔁 Offset Approved",totals.apOffset.toFixed(2)+" (req "+totals.reqOffset.toFixed(2)+")","#a78bfa"],
+            ["⏳ Pending",String(totals.pending),"#fbbf24"],["⚖ Balance",totals.balance.toFixed(2)+"h on record","var(--c-text3)"]].map(([t,v,c])=>(
+            <div key={t}><div style={{ fontSize:10.5, color:"var(--c-text4)", fontWeight:700, textTransform:"uppercase" }}>{t}</div><div style={{ fontSize:14, fontWeight:800, color:c, marginTop:2 }}>{v}</div></div>
+          ))}
+        </div>
+        <table style={{ width:"100%", borderCollapse:"collapse" }}>
+          <thead><tr>{["Date","Visits","Total Hrs","Regular","OT Hrs","OT Application (Cash / Offset)","Notes"].map(h=><th key={h} style={thSt}>{h}</th>)}</tr></thead>
+          <tbody>
+            {days.map(d=>(
+              <tr key={d.date}>
+                <td style={{ ...tdSt, whiteSpace:"nowrap" }}>{fmtDate(d.date)}</td>
+                <td style={{ ...tdSt, fontSize:12, color:"var(--c-text3)" }}>{d.visitCount}{d.isrNos && d.isrNos.length ? " ("+d.isrNos.join(", ")+")" : ""}</td>
+                <td style={{ ...tdSt, fontFamily:"monospace" }}>{d.totalHours.toFixed(2)}</td>
+                <td style={{ ...tdSt, fontFamily:"monospace" }}>{d.regularHours.toFixed(2)}</td>
+                <td style={{ ...tdSt, fontFamily:"monospace", fontWeight:800, color: d.otHours>0?"#fbbf24":"var(--c-text5)" }}>{d.otHours.toFixed(2)}</td>
+                <td style={tdSt}>{d.otHours > 0 ? <OtAppCell engName={engName} d={d} /> : <span style={{ color:"var(--c-text5)", fontSize:11 }}>—</span>}</td>
+                <td style={{ ...tdSt, fontSize:11, color:"var(--c-text4)" }}>{d.holidayName || ""}</td>
+              </tr>
+            ))}
+            {days.length === 0 && <tr><td colSpan={7} style={{ ...tdSt, color:"var(--c-text4)" }}>{period==="__allhist__" ? "No overtime records yet." : period==="__range__" ? "No overtime in the selected date range." : "No records in this cutoff period."}</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14, flexWrap:"wrap" }}>
+        <div>
+          <div style={{ fontSize:16, fontWeight:900 }}>🕒 Overtime</div>
+          <div style={{ fontSize:11.5, color:"var(--c-text4)" }}>Computed automatically from service-visit departure/arrival (or work start/end) times.</div>
+        </div>
+        {isMgr && <button style={{ ...btnSt("var(--c-border)","var(--c-text2)"), marginLeft:"auto" }} onClick={()=>setShowSettings(true)}>⚙ Office Hours, Holidays & Cutoff</button>}
+      </div>
+      <div style={{ display:"flex", alignItems:"flex-end", gap:14, flexWrap:"wrap", marginBottom:14 }}>
+        {isMgr && (
+          <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+            <label style={labelSt}>Employee</label>
+            <select style={{ ...inputSt(), minWidth:220, cursor:"pointer" }} value={selectedEng} onChange={e=>setSelectedEng(e.target.value)}>
+              <option value="__all__">All Employees (summary)</option>
+              {engineerNames.map(n=><option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+        )}
+        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+          <label style={labelSt}>Show</label>
+          <select style={{ ...inputSt(), minWidth:250, cursor:"pointer" }} value={period} onChange={e=>setPeriod(e.target.value)}>
+            <option value="__allhist__">📚 All history (complete records)</option>
+            <option value="__range__">📅 Custom date range…</option>
+            <option value="__current__">Current cutoff ({(periodOptions.find(p=>p.key===currentPeriodKey)||{}).label||"…"})</option>
+            {periodOptions.filter(p=>p.key!==currentPeriodKey).map(p=><option key={p.key} value={p.key}>{p.label}</option>)}
+          </select>
+        </div>
+        {period === "__range__" && (
+          <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+            <label style={labelSt}>Date range</label>
+            <div style={{ display:"flex", alignItems:"center", gap:6, height:38, background:"var(--c-bg)", border:"1px solid "+((otFrom||otTo)?"#38bdf8":"var(--c-border)"), borderRadius:8, padding:"0 10px" }}>
+              <span style={{ fontSize:10.5, fontWeight:700, color:(otFrom||otTo)?"#38bdf8":"var(--c-text4)" }}>From</span>
+              <input type="date" value={otFrom} max={otTo||undefined} onChange={e=>setOtFrom(e.target.value)} style={{ background:"transparent", border:"none", color:"var(--c-text2)", fontSize:11.5 }} />
+              <span style={{ fontSize:11, color:"var(--c-text5)" }}>→</span>
+              <input type="date" value={otTo} min={otFrom||undefined} onChange={e=>setOtTo(e.target.value)} style={{ background:"transparent", border:"none", color:"var(--c-text2)", fontSize:11.5 }} />
+              {(otFrom||otTo) && <button onClick={()=>{setOtFrom("");setOtTo("");}} style={{ background:"none", border:"none", color:"var(--c-text4)", cursor:"pointer" }}>✕</button>}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {(!isMgr && !myName) && <div style={cardSt}><div style={{ fontSize:13, color:"var(--c-text3)" }}>Your account isn't linked to an employee name yet — ask an administrator to set your "Linked employee name" so your overtime shows here.</div></div>}
+      {isMgr && selectedEng === "__all__" && (
+        <div style={cardSt}>
+          <div style={{ fontSize:12, fontWeight:800, color:"var(--c-text4)", textTransform:"uppercase", marginBottom:10 }}>All Employees — {periodLabel}</div>
+          <table style={{ width:"100%", borderCollapse:"collapse" }}>
+            <thead><tr>{["Employee","Days","Regular Hrs","OT Hrs","💵 Approved Cash","🔁 Approved Offset","⏳ Pending",""].map(h=><th key={h} style={thSt}>{h}</th>)}</tr></thead>
+            <tbody>
+              {engineerNames.map(n=>{
+                const t = totalsFor(n), dCount = daysInPeriod(n).length;
+                if (!dCount) return null;
+                return (
+                  <tr key={n}>
+                    <td style={{ ...tdSt, fontWeight:700, color:"var(--c-key)" }}>{n}</td>
+                    <td style={tdSt}>{dCount}</td>
+                    <td style={{ ...tdSt, fontFamily:"monospace" }}>{t.regular.toFixed(2)}</td>
+                    <td style={{ ...tdSt, fontFamily:"monospace", fontWeight:800, color:t.ot>0?"#fbbf24":"var(--c-text5)" }}>{t.ot.toFixed(2)}</td>
+                    <td style={{ ...tdSt, fontFamily:"monospace", color:t.apCash>0?"#34d399":"var(--c-text5)" }}>{t.apCash.toFixed(2)}</td>
+                    <td style={{ ...tdSt, fontFamily:"monospace", color:t.apOffset>0?"#a78bfa":"var(--c-text5)" }}>{t.apOffset.toFixed(2)}</td>
+                    <td style={{ ...tdSt, fontFamily:"monospace", fontWeight:700, color:t.pending>0?"#fbbf24":"var(--c-text5)" }}>{t.pending}</td>
+                    <td style={tdSt}><button style={{ ...btnSt("var(--c-border)","var(--c-text2)"), padding:"4px 10px", fontSize:11 }} onClick={()=>setSelectedEng(n)}>View days</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div style={{ marginTop:10, fontSize:10.5, color:"var(--c-text5)" }}>Employees with no logged days in this period are hidden from this summary.</div>
+        </div>
+      )}
+      {isMgr && selectedEng !== "__all__" && <DayTable engName={selectedEng} />}
+      {!isMgr && myName && <DayTable engName={myName} />}
+      {showSettings && <OtSettingsModal otSettings={otSettings} holidays={holidays} notify={notify} onClose={()=>setShowSettings(false)} />}
+    </div>
+  );
+}
+
+function OtSettingsModal({ otSettings, holidays, notify, onClose }) {
+  const [sched, setSched] = useState(() => otNormSchedule(otSettings));
+  const [grace, setGrace] = useState(otSettings.graceMinutes != null ? otSettings.graceMinutes : 60);
+  const [c1, setC1] = useState(otSettings.cutoff1 || 10);
+  const [c2, setC2] = useState(otSettings.cutoff2 || 25);
+  const [hols, setHols] = useState(holidays);
+  const [hName, setHName] = useState(""); const [hFrom, setHFrom] = useState(""); const [hTo, setHTo] = useState(""); const [hType, setHType] = useState(HOLIDAY_TYPES[0]);
+  const setDay = (k, field, v) => setSched(s => ({ ...s, [k]: { ...s[k], [field]: v } }));
+  async function save() {
+    try {
+      await db.doc("config/otSettings").set({ schedule: sched, graceMinutes: Number(grace)||0, cutoff1: Number(c1)||10, cutoff2: Number(c2)||25 });
+      await db.doc("config/holidays").set({ list: hols });
+      notify("Overtime settings saved.", "ok"); onClose();
+    } catch (e) { notify("SERVER REFUSED:\n" + e.message, "error"); }
+  }
+  return (
+    <Modal title="⚙ Office Hours, Holidays & Cutoff" onClose={onClose} wide>
+      <div style={{ fontSize:11, fontWeight:800, color:"var(--c-text4)", textTransform:"uppercase", marginBottom:8 }}>Weekly office schedule</div>
+      {["mon","tue","wed","thu","fri","sat","sun"].map(k=>(
+        <div key={k} style={{ display:"flex", gap:10, alignItems:"center", marginBottom:6 }}>
+          <span style={{ width:80, fontSize:12.5 }}>{OT_DAY_LABELS[k]}</span>
+          <label style={{ fontSize:11.5, color:"var(--c-text3)", display:"flex", gap:5, cursor:"pointer" }}>
+            <input type="checkbox" checked={!!sched[k].off} onChange={e=>setDay(k,"off",e.target.checked)} /> Rest day
+          </label>
+          {!sched[k].off && <React.Fragment>
+            <input type="time" style={{ ...inputSt(), width:110 }} value={sched[k].start} onChange={e=>setDay(k,"start",e.target.value)} />
+            <span style={{ color:"var(--c-text5)" }}>→</span>
+            <input type="time" style={{ ...inputSt(), width:110 }} value={sched[k].end} onChange={e=>setDay(k,"end",e.target.value)} />
+          </React.Fragment>}
+        </div>
+      ))}
+      <div style={{ display:"flex", gap:14, marginTop:12, flexWrap:"wrap" }}>
+        <div><label style={labelSt}>Grace minutes after office end</label><input type="number" style={{ ...inputSt(), width:120 }} value={grace} onChange={e=>setGrace(e.target.value)} /></div>
+        <div><label style={labelSt}>Cutoff day 1</label><input type="number" style={{ ...inputSt(), width:100 }} value={c1} onChange={e=>setC1(e.target.value)} /></div>
+        <div><label style={labelSt}>Cutoff day 2</label><input type="number" style={{ ...inputSt(), width:100 }} value={c2} onChange={e=>setC2(e.target.value)} /></div>
+      </div>
+      <div style={{ fontSize:11, fontWeight:800, color:"var(--c-text4)", textTransform:"uppercase", margin:"18px 0 8px" }}>Holidays</div>
+      {hols.map((h,i)=>(
+        <div key={i} style={{ display:"flex", gap:10, alignItems:"center", fontSize:12.5, marginBottom:4 }}>
+          <span style={{ flex:1 }}>{h.name}</span><span style={{ color:"var(--c-text4)" }}>{fmtDate(h.from)}{h.to && h.to!==h.from ? " – "+fmtDate(h.to) : ""}</span>
+          <span style={{ fontSize:10.5, color:"var(--c-text4)" }}>{h.type}</span>
+          <button onClick={()=>setHols(x=>x.filter((_,j)=>j!==i))} style={{ background:"none", border:"1px solid var(--c-border)", borderRadius:6, color:"#f87171", cursor:"pointer", padding:"1px 7px", fontSize:11 }}>✕</button>
+        </div>
+      ))}
+      <div style={{ display:"flex", gap:8, marginTop:8, flexWrap:"wrap", alignItems:"flex-end" }}>
+        <div style={{ flex:"1 1 140px" }}><label style={labelSt}>Name</label><input style={inputSt()} value={hName} onChange={e=>setHName(e.target.value)} /></div>
+        <div><label style={labelSt}>From</label><input type="date" style={inputSt()} value={hFrom} onChange={e=>setHFrom(e.target.value)} /></div>
+        <div><label style={labelSt}>To</label><input type="date" style={inputSt()} value={hTo} onChange={e=>setHTo(e.target.value)} /></div>
+        <div><label style={labelSt}>Type</label><select style={inputSt()} value={hType} onChange={e=>setHType(e.target.value)}>{HOLIDAY_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
+        <button style={btnSt("var(--c-border)","var(--c-text2)")} disabled={!hName.trim()||!hFrom} onClick={()=>{ setHols(x=>[...x,{ id:uid(), name:hName.trim(), from:hFrom, to:hTo||hFrom, type:hType }]); setHName(""); setHFrom(""); setHTo(""); }}>+ Add</button>
+        <button style={btnSt("var(--c-border)","var(--c-text2)")} onClick={()=>setHols(x=>{ const have={}; x.forEach(h=>have[h.name+h.from]=1); return [...x, ...PH_HOLIDAYS_2026.filter(h=>!have[h.name+h.from]).map(h=>({ ...h, id:uid() }))]; })}>🇵🇭 Load PH 2026</button>
+      </div>
+      <button style={{ ...btnSt("var(--c-key)","var(--c-bg)"), marginTop:18 }} onClick={save}>Save settings</button>
+    </Modal>
+  );
+}
+
+// ── Settings: user management + brand catalog ───────────────────────────────
+function SettingsTab({ profile, users, catalog, notify }) {
+  const brands = (catalog && catalog.brands) || [];
+  const [newBrand, setNewBrand] = useState("");
+  async function saveBrands(list) {
+    try { await db.doc("config/catalog").set({ brands: list }); notify("Catalog saved.", "ok"); }
+    catch (e) { notify("SERVER REFUSED:\n" + e.message, "error"); }
+  }
+  return (
+    <div>
+      <CreateUser brands={brands} notify={notify} />
+      <div style={cardSt}>
+        <div style={{ fontSize:12, fontWeight:800, color:"var(--c-text4)", textTransform:"uppercase", marginBottom:10 }}>👥 Users ({users.length})</div>
+        {users.map(u => <UserRow key={u.id} u={u} brands={brands} notify={notify} me={profile} />)}
+      </div>
+      <div style={cardSt}>
+        <div style={{ fontSize:12, fontWeight:800, color:"var(--c-text4)", textTransform:"uppercase", marginBottom:10 }}>🏷 Brand Catalog</div>
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:10 }}>
+          {brands.map(b=>(
+            <span key={b} style={{ fontSize:12, padding:"4px 10px", borderRadius:999, background:"var(--c-card2)", border:"1px solid var(--c-border)", display:"inline-flex", gap:6, alignItems:"center" }}>
+              {b}<button onClick={()=>saveBrands(brands.filter(x=>x!==b))} style={{ background:"none", border:"none", color:"#f87171", cursor:"pointer", padding:0 }}>✕</button>
+            </span>
+          ))}
+          {brands.length === 0 && <span style={{ fontSize:12, color:"var(--c-text4)" }}>No brands yet — add the brands you carry; they drive the inventory dropdowns and the per-brand permission checkboxes.</span>}
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          <input style={{ ...inputSt(), maxWidth:220 }} value={newBrand} onChange={e=>setNewBrand(e.target.value)} placeholder="e.g. Sebia" />
+          <button style={btnSt("var(--c-key)","var(--c-bg)")} disabled={!newBrand.trim() || brands.includes(newBrand.trim())} onClick={()=>{ saveBrands([...brands, newBrand.trim()].sort()); setNewBrand(""); }}>+ Add brand</button>
         </div>
       </div>
     </div>
   );
 }
-
-// ---------- Create sub-user (admin only) ----------
-// Uses a SECONDARY Firebase app so creating the account doesn't sign the admin
-// out. The new profile/permissions doc is then written by the ADMIN, so the
-// Security Rules allow it (a normal user could never write this).
-function CreateUser({ notify, onDone }) {
-  const [email, setEmail] = useState("");
-  const [pw, setPw] = useState("");
-  const [name, setName] = useState("");
-  const [role, setRole] = useState("FSE");
+function PermEditor({ perms, setPerms, brands }) {
+  const set = (path, v) => setPerms(p => {
+    const n = JSON.parse(JSON.stringify(p)); let o = n;
+    for (let i = 0; i < path.length - 1; i++) o = o[path[i]];
+    o[path[path.length-1]] = v; return n;
+  });
+  const sub = (id, label) => {
+    const sp = perms.inventory.subs[id];
+    const allOn = sp.brands === null || sp.brands === undefined;
+    return (
+      <div key={id} style={{ marginLeft:18, marginTop:6 }}>
+        <label style={{ fontSize:12, display:"inline-flex", gap:5, cursor:"pointer" }}>
+          <input type="checkbox" checked={!!sp.edit} onChange={e=>set(["inventory","subs",id,"edit"], e.target.checked)} /> Can edit {label}
+        </label>
+        {sp.edit && (
+          <div style={{ marginLeft:20, marginTop:4 }}>
+            <label style={{ fontSize:11.5, display:"inline-flex", gap:5, cursor:"pointer", color:"var(--c-text3)" }}>
+              <input type="checkbox" checked={allOn} onChange={e=>set(["inventory","subs",id,"brands"], e.target.checked ? null : [])} /> All brands
+            </label>
+            {!allOn && (
+              <div style={{ display:"flex", gap:"3px 12px", flexWrap:"wrap", marginTop:4 }}>
+                {brands.map(b=>(
+                  <label key={b} style={{ fontSize:11.5, display:"inline-flex", gap:4, cursor:"pointer", color:"var(--c-text2)" }}>
+                    <input type="checkbox" checked={(sp.brands||[]).includes(b)} onChange={e=>{
+                      const cur = sp.brands || [];
+                      set(["inventory","subs",id,"brands"], e.target.checked ? [...cur, b] : cur.filter(x=>x!==b));
+                    }} /> {b}
+                  </label>
+                ))}
+                {(sp.brands||[]).length === 0 && <span style={{ fontSize:10, color:"#fbbf24" }}>⚠ no brands selected — can't edit any record</span>}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+  return (
+    <div style={{ background:"var(--c-card2)", borderRadius:10, padding:12, border:"1px solid var(--c-border)" }}>
+      {[["dashboard","Dashboard"],["labs","Institutions"],["inventory","Inventory"],["overtime","Overtime"]].map(([id,label])=>(
+        <div key={id} style={{ marginBottom:6 }}>
+          <label style={{ fontSize:12.5, display:"inline-flex", gap:6, cursor:"pointer", fontWeight:700 }}>
+            <input type="checkbox" checked={!!perms[id].view} onChange={e=>set([id,"view"], e.target.checked)} /> {label} — view
+          </label>{" "}
+          {(id==="labs"||id==="inventory"||id==="overtime") && (
+            <label style={{ fontSize:12, display:"inline-flex", gap:5, cursor:"pointer", marginLeft:10, color:"var(--c-text3)" }}>
+              <input type="checkbox" disabled={!perms[id].view} checked={!!perms[id].edit} onChange={e=>set([id,"edit"], e.target.checked)} /> edit
+            </label>
+          )}
+          {id === "inventory" && perms.inventory.view && perms.inventory.edit && (
+            <React.Fragment>{sub("machines","Machine Inventory")}{sub("spares","Spare Parts")}</React.Fragment>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+function CreateUser({ brands, notify }) {
+  const [email, setEmail] = useState(""); const [pw, setPw] = useState("");
+  const [name, setName] = useState(""); const [role, setRole] = useState("FSE");
   const [engineerName, setEngineerName] = useState("");
-  const [machEdit, setMachEdit] = useState(false);
-  const [allBrands, setAllBrands] = useState(true);
-  const [brands, setBrands] = useState([]);
+  const [perms, setPerms] = useState(blankPermissions());
   const [busy, setBusy] = useState(false);
-
-  function toggleBrand(b) { setBrands(x => x.includes(b) ? x.filter(y=>y!==b) : [...x, b]); }
-
   async function create() {
     if (!email.trim() || pw.length < 6) { notify("Enter an email and a password of at least 6 characters.", "error"); return; }
     setBusy(true);
@@ -155,253 +1626,143 @@ function CreateUser({ notify, onDone }) {
     try {
       secondary = firebase.initializeApp(firebaseConfig, "creator_" + Date.now());
       const cred = await secondary.auth().createUserWithEmailAndPassword(email.trim(), pw);
-      const uid = cred.user.uid;
+      const newUid = cred.user.uid;
       await secondary.auth().signOut();
-
-      const perms = blankPermissions();
-      perms.inventory.edit = machEdit;
-      perms.inventory.subs.machines.edit = machEdit;
-      perms.inventory.subs.machines.brands = (machEdit && !allBrands) ? brands : null;
-
-      await db.collection("users").doc(uid).set({
-        email: email.trim(), displayName: name.trim(), isAdmin: false,
-        role, engineerName: engineerName.trim(),
-        permissions: perms, createdAt: FieldValue.serverTimestamp(),
+      await db.collection("users").doc(newUid).set({
+        email: email.trim(), displayName: name.trim(), isAdmin: false, role,
+        engineerName: engineerName.trim(), permissions: perms, createdAt: FieldValue.serverTimestamp(),
       });
       notify("Created " + email.trim() + ".", "ok");
-      setEmail(""); setPw(""); setName(""); setEngineerName(""); setMachEdit(false); setAllBrands(true); setBrands([]);
-      onDone && onDone();
+      setEmail(""); setPw(""); setName(""); setEngineerName(""); setPerms(blankPermissions());
     } catch (e) { notify(e.message, "error"); }
     finally { if (secondary) await secondary.delete(); setBusy(false); }
   }
-
   return (
-    <div className="card">
-      <h2>➕ Create a user</h2>
-      <div className="row" style={{ marginBottom:10 }}>
-        <div style={{ flex:"1 1 200px" }}><label>Email</label><input className="inp" value={email} onChange={e=>setEmail(e.target.value)} /></div>
-        <div style={{ flex:"1 1 160px" }}><label>Temp password</label><input className="inp" value={pw} onChange={e=>setPw(e.target.value)} placeholder="≥ 6 chars" /></div>
-        <div style={{ flex:"1 1 160px" }}><label>Full name</label><input className="inp" value={name} onChange={e=>setName(e.target.value)} /></div>
+    <div style={cardSt}>
+      <div style={{ fontSize:12, fontWeight:800, color:"var(--c-text4)", textTransform:"uppercase", marginBottom:10 }}>➕ Create a user</div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))", gap:10, marginBottom:10 }}>
+        <div><label style={labelSt}>Email</label><input style={inputSt()} value={email} onChange={e=>setEmail(e.target.value)} /></div>
+        <div><label style={labelSt}>Temp password</label><input style={inputSt()} value={pw} onChange={e=>setPw(e.target.value)} placeholder="≥ 6 chars" /></div>
+        <div><label style={labelSt}>Full name</label><input style={inputSt()} value={name} onChange={e=>setName(e.target.value)} /></div>
+        <div><label style={labelSt}>Role</label><select style={inputSt()} value={role} onChange={e=>setRole(e.target.value)}>{ENGINEER_ROLES.map(r=><option key={r}>{r}</option>)}</select></div>
+        <div><label style={labelSt}>Linked employee name</label><input style={inputSt()} value={engineerName} onChange={e=>setEngineerName(e.target.value)} placeholder="matches visit logs" /></div>
       </div>
-      <div className="row" style={{ marginBottom:10 }}>
-        <div style={{ flex:"1 1 160px" }}><label>Role</label>
-          <select className="inp" value={role} onChange={e=>setRole(e.target.value)}>
-            {["FSE","HR","Accounting","Warehouse Staff","Office Staff"].map(r=><option key={r}>{r}</option>)}
-          </select>
-        </div>
-        <div style={{ flex:"1 1 200px" }}><label>Linked employee name</label><input className="inp" value={engineerName} onChange={e=>setEngineerName(e.target.value)} placeholder="e.g. Rex Banihit" /></div>
-      </div>
-      <div style={{ background:"var(--card2)", borderRadius:10, padding:12, border:"1px solid var(--border)" }}>
-        <label style={{ display:"inline-flex", gap:6, textTransform:"none", fontSize:13, cursor:"pointer" }}>
-          <input type="checkbox" checked={machEdit} onChange={e=>setMachEdit(e.target.checked)} /> Can edit Machine Inventory
-        </label>
-        {machEdit && (
-          <div style={{ marginTop:8, paddingLeft:8 }}>
-            <label style={{ display:"inline-flex", gap:6, textTransform:"none", fontSize:12.5, cursor:"pointer" }}>
-              <input type="checkbox" checked={allBrands} onChange={e=>setAllBrands(e.target.checked)} /> All brands
-            </label>
-            {!allBrands && (
-              <div className="row" style={{ marginTop:6, gap:"4px 14px" }}>
-                {BRANDS.map(b=>(
-                  <label key={b} style={{ display:"inline-flex", gap:5, textTransform:"none", fontSize:12.5, cursor:"pointer" }}>
-                    <input type="checkbox" checked={brands.includes(b)} onChange={()=>toggleBrand(b)} /> {b}
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-      <button className="btn" disabled={busy} onClick={create} style={{ marginTop:12 }}>{busy ? "Creating…" : "Create user"}</button>
-      <div className="muted" style={{ marginTop:8 }}>These permissions are enforced by the server. The checkboxes only decide what to store — the Security Rules decide what's allowed.</div>
+      <PermEditor perms={perms} setPerms={setPerms} brands={brands} />
+      <button style={{ ...btnSt("var(--c-key)","var(--c-bg)"), marginTop:12 }} disabled={busy} onClick={create}>{busy ? "Creating…" : "Create user"}</button>
+      <div style={{ fontSize:10.5, color:"var(--c-text5)", marginTop:8 }}>Permissions are enforced by the server's Security Rules — HR / Accounting roles are the Overtime managers.</div>
     </div>
   );
 }
-
-// ---------- Users list (admin only) ----------
-function UsersList({ notify }) {
-  const [users, setUsers] = useState([]);
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const unsub = db.collection("users").onSnapshot(
-      s => setUsers(s.docs.map(d => ({ id: d.id, ...d.data() }))),
-      e => notify(e.message, "error")
-    );
-    return () => unsub();
-  }, [tick]);
-  return (
-    <div className="card">
-      <h2>👥 Users ({users.length})</h2>
-      <table>
-        <thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Admin</th><th>Machine edit</th><th>Brands</th></tr></thead>
-        <tbody>
-          {users.map(u => {
-            const m = u.permissions && u.permissions.inventory && u.permissions.inventory.subs && u.permissions.inventory.subs.machines;
-            const edit = u.isAdmin ? "all" : (m && m.edit ? "yes" : "—");
-            const brands = u.isAdmin ? "all" : (m && m.edit ? (m.brands === null ? "all" : (m.brands || []).join(", ") || "(none)") : "—");
-            return (
-              <tr key={u.id}>
-                <td>{u.email}</td><td>{u.displayName||"—"}</td><td>{u.role||"—"}</td>
-                <td>{u.isAdmin ? <span className="chip" style={{ color:"var(--warn)", borderColor:"var(--warn)" }}>ADMIN</span> : "—"}</td>
-                <td>{edit}</td><td className="muted">{brands}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// ---------- Inventory (real data domain, per-brand server-enforced) ----------
-function Inventory({ profile, notify }) {
-  const [items, setItems] = useState([]);
-  const [brand, setBrand] = useState(BRANDS[0]);
-  const [model, setModel] = useState("");
-  const [serial, setSerial] = useState("");
-
-  const isAdmin = profile.isAdmin;
-  const mp = profile.permissions && profile.permissions.inventory;
-  const canView = isAdmin || (mp && mp.view);
-  const machEdit = isAdmin || (mp && mp.edit && mp.subs.machines.edit);
-  const allowedBrands = isAdmin ? null : (machEdit ? mp.subs.machines.brands : []); // null = all
-  const brandOk = (b) => allowedBrands === null || (allowedBrands || []).includes(b);
-
-  useEffect(() => {
-    if (!canView) return;
-    const unsub = db.collection("inventory").orderBy("createdAt", "desc").onSnapshot(
-      s => setItems(s.docs.map(d => ({ id: d.id, ...d.data() }))),
-      e => notify("Read blocked by server: " + e.message, "error")
-    );
-    return () => unsub();
-  }, [canView]);
-
-  async function addItem(forceBrand) {
-    const b = forceBrand || brand;
-    try {
-      await db.collection("inventory").add({
-        brand: b, machineModel: model.trim() || "(model)", serialNo: serial.trim() || ("SN" + Date.now()),
-        condition: "BRAND NEW", status: "Available", createdAt: FieldValue.serverTimestamp(),
-        createdBy: profile.email,
-      });
-      notify("Added a " + b + " item.", "ok");
-      setModel(""); setSerial("");
-    } catch (e) {
-      notify("SERVER REFUSED the write (this is #4 working):\n" + e.message, "error");
-    }
+function UserRow({ u, brands, notify, me }) {
+  const [open, setOpen] = useState(false);
+  const [perms, setPerms] = useState(u.permissions || blankPermissions());
+  useEffect(() => { setPerms(u.permissions || blankPermissions()); }, [u.id]);
+  async function save() {
+    try { await db.collection("users").doc(u.id).update({ permissions: perms }); notify("Permissions updated for " + u.email + ".", "ok"); setOpen(false); }
+    catch (e) { notify("SERVER REFUSED:\n" + e.message, "error"); }
   }
-  async function del(it) {
-    try { await db.collection("inventory").doc(it.id).delete(); notify("Deleted.", "ok"); }
-    catch (e) { notify("SERVER REFUSED the delete:\n" + e.message, "error"); }
-  }
-
-  if (!canView) return <div className="card"><h2>📦 Inventory</h2><div className="muted">Your account doesn't have permission to view inventory.</div></div>;
-
-  const disallowed = BRANDS.find(b => !brandOk(b)); // a brand this user may NOT edit, for the demo
-
   return (
-    <div className="card">
-      <h2>📦 Machine Inventory ({items.length})</h2>
-
-      {machEdit && (
-        <div className="row" style={{ marginBottom:12, alignItems:"flex-end" }}>
-          <div style={{ flex:"0 0 150px" }}><label>Brand</label>
-            <select className="inp" value={brand} onChange={e=>setBrand(e.target.value)}>
-              {BRANDS.map(b => <option key={b} value={b} disabled={!brandOk(b)}>{b}{brandOk(b) ? "" : " (locked)"}</option>)}
-            </select>
-          </div>
-          <div style={{ flex:"1 1 140px" }}><label>Model</label><input className="inp" value={model} onChange={e=>setModel(e.target.value)} /></div>
-          <div style={{ flex:"1 1 140px" }}><label>Serial</label><input className="inp" value={serial} onChange={e=>setSerial(e.target.value)} /></div>
-          <button className="btn" disabled={!brandOk(brand)} onClick={()=>addItem()}>Add</button>
+    <div style={{ borderBottom:"1px solid var(--c-border2)", padding:"8px 0" }}>
+      <div style={{ display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" }}>
+        <span style={{ fontWeight:700, minWidth:200 }}>{u.email}</span>
+        <span style={{ fontSize:12, color:"var(--c-text3)" }}>{u.displayName || "—"}</span>
+        <span style={{ fontSize:12, color:"var(--c-text4)" }}>{u.role || "—"}{u.engineerName ? " · 🔗 " + u.engineerName : ""}</span>
+        {u.isAdmin && <span style={{ fontSize:10, fontWeight:800, padding:"2px 9px", borderRadius:999, color:"#fbbf24", border:"1px solid #fbbf2455" }}>ADMIN</span>}
+        {!u.isAdmin && <button style={{ ...btnSt("var(--c-border)","var(--c-text2)"), padding:"4px 10px", fontSize:11, marginLeft:"auto" }} onClick={()=>setOpen(o=>!o)}>{open?"Close":"🔐 Access"}</button>}
+      </div>
+      {open && !u.isAdmin && (
+        <div style={{ marginTop:8 }}>
+          <PermEditor perms={perms} setPerms={setPerms} brands={brands} />
+          <button style={{ ...btnSt("var(--c-key)","var(--c-bg)"), marginTop:8, padding:"6px 12px", fontSize:12 }} onClick={save}>Save access</button>
         </div>
       )}
-
-      {machEdit && disallowed && (
-        <div style={{ background:"var(--card2)", border:"1px dashed var(--warn)", borderRadius:10, padding:12, marginBottom:12 }}>
-          <div style={{ fontSize:12.5, color:"var(--text2)", marginBottom:8 }}>
-            🔬 <b>Prove the server is in charge.</b> Your account isn't allowed to edit <code>{disallowed}</code>. The button below deliberately tries to add a <code>{disallowed}</code> item anyway — the browser check is bypassed, but the <b>server</b> will reject it.
-          </div>
-          <button className="btn danger" onClick={()=>addItem(disallowed)}>Try to add a {disallowed} item (should be refused)</button>
-        </div>
-      )}
-
-      <table>
-        <thead><tr><th>Brand</th><th>Model</th><th>Serial</th><th>Condition</th><th>Status</th><th></th></tr></thead>
-        <tbody>
-          {items.length === 0 && <tr><td colSpan={6} className="muted">No items yet.</td></tr>}
-          {items.map(it => (
-            <tr key={it.id}>
-              <td>{it.brand}</td><td>{it.machineModel}</td>
-              <td style={{ fontFamily:"monospace", color:"var(--key)", fontSize:12 }}>{it.serialNo}</td>
-              <td>{it.condition}</td><td>{it.status}</td>
-              <td>{(isAdmin || brandOk(it.brand)) && machEdit
-                ? <button className="btn danger" style={{ padding:"3px 9px" }} onClick={()=>del(it)}>🗑</button>
-                : <span title="Not editable by your account" style={{ color:"var(--text4)" }}>🔒</span>}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }
 
-// ---------- Shell ----------
+// ── App shell ────────────────────────────────────────────────────────────────
 function App() {
-  const [user, setUser] = useState(undefined);   // Firebase auth user | null | undefined(loading)
+  const [user, setUser] = useState(undefined);
   const [profile, setProfile] = useState(undefined);
   const [toast, setToast] = useState(null);
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem("ibase_theme") || "dark"; } catch(e){ return "dark"; } });
   const notify = (msg, kind) => setToast({ msg, kind });
-
+  useEffect(() => { document.documentElement.setAttribute("data-theme", theme); try { localStorage.setItem("ibase_theme", theme); } catch(e){} }, [theme]);
   useEffect(() => auth.onAuthStateChanged(setUser), []);
   useEffect(() => {
     if (!user) { setProfile(user === null ? null : undefined); return; }
     const unsub = db.collection("users").doc(user.uid).onSnapshot(
-      d => setProfile(d.exists ? { id: d.id, ...d.data() } : null),
-      () => setProfile(null)
-    );
+      d => setProfile(d.exists ? { id:d.id, ...d.data() } : null), () => setProfile(null));
     return () => unsub();
   }, [user]);
 
-  if (user === undefined) return <div className="wrap"><div className="muted" style={{ marginTop:40 }}>Loading…</div></div>;
-  if (user === null) return <React.Fragment><Login notify={notify} />{toast && <Toast {...toast} onClose={()=>setToast(null)} />}</React.Fragment>;
+  const signedProfile = profile ? { ...profile, isAdmin: !!profile.isAdmin } : null;
+  const labs = useCol("labs", !!signedProfile && (pCanTab(signedProfile,"labs","view") || pCanTab(signedProfile,"overtime","view") || pCanTab(signedProfile,"dashboard","view")), notify);
+  const users = useCol("users", !!signedProfile && signedProfile.isAdmin, notify);
+  const catalog = useDoc("config/catalog", !!signedProfile);
+
+  const TABS = signedProfile ? [
+    pCanTab(signedProfile,"dashboard","view") && { id:"dashboard", label:"📊 Dashboard" },
+    pCanTab(signedProfile,"labs","view") && { id:"labs", label:"🏥 Institutions" },
+    pCanTab(signedProfile,"inventory","view") && { id:"inventory", label:"📦 Inventory" },
+    pCanTab(signedProfile,"overtime","view") && { id:"overtime", label:"🕒 Overtime" },
+    signedProfile.isAdmin && { id:"settings", label:"⚙ Settings" },
+  ].filter(Boolean) : [];
+  const [tab, setTab] = useState("dashboard");
+  useEffect(() => { if (TABS.length && !TABS.find(t=>t.id===tab)) setTab(TABS[0].id); }, [TABS.map(t=>t.id).join("|")]);
+
+  if (user === undefined) return <div style={{ padding:40, color:"var(--c-text4)" }}>Loading…</div>;
+  if (user === null) return <React.Fragment><Login notify={notify} theme={theme} setTheme={setTheme} />{toast && <Toast {...toast} onClose={()=>setToast(null)} />}</React.Fragment>;
 
   return (
     <React.Fragment>
-      <div style={{ borderBottom:"1px solid var(--border)", background:"var(--bg2)" }}>
-        <div className="wrap" style={{ display:"flex", alignItems:"center", gap:12, paddingTop:14, paddingBottom:14 }}>
-          <h1>iBase <span className="muted" style={{ fontSize:12 }}>· Firebase-secured</span></h1>
-          <div style={{ marginLeft:"auto" }} className="row">
-            <span className="muted">{user.email}{profile && profile.isAdmin ? " · admin" : profile && profile.role ? " · " + profile.role : ""}</span>
-            <button className="btn ghost" onClick={()=>auth.signOut()}>Sign out</button>
+      <div style={{ borderBottom:"1px solid var(--c-border)", background:"var(--c-bg2)" }}>
+        <div style={{ maxWidth:1240, margin:"0 auto", padding:"12px 18px", display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+          <div>
+            <div style={{ fontSize:17, fontWeight:900 }}>iBase</div>
+            <div style={{ fontSize:9.5, color:"var(--c-text4)", textTransform:"uppercase", letterSpacing:1.5 }}>Installed Base · {signedProfile && signedProfile.isAdmin ? "Administrator" : (signedProfile && signedProfile.role) || "Field User"}</div>
+          </div>
+          <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+            {TABS.map(t=>(
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{ ...btnSt(tab===t.id?"var(--c-key)":"transparent", tab===t.id?"var(--c-bg)":"var(--c-text2)"), border: tab===t.id?"none":"1px solid var(--c-border)", padding:"7px 12px", fontSize:12.5 }}>{t.label}</button>
+            ))}
+          </div>
+          <div style={{ marginLeft:"auto", display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
+            <HeaderClock />
+            <ThemePicker theme={theme} setTheme={setTheme} />
+            <span style={{ fontSize:12, color:"var(--c-text4)" }}>{user.email}</span>
+            <button style={btnSt("var(--c-border)","var(--c-text2)")} onClick={()=>auth.signOut()}>🚪 Logout</button>
           </div>
         </div>
       </div>
-
-      <div className="wrap">
-        {profile === undefined && <div className="muted">Loading your profile…</div>}
+      <div style={{ maxWidth:1240, margin:"0 auto", padding:18 }}>
+        {profile === undefined && <div style={{ color:"var(--c-text4)" }}>Loading your profile…</div>}
         {profile === null && (
-          <div className="card">
-            <h2>No profile yet</h2>
-            <div className="muted" style={{ lineHeight:1.6 }}>
-              You're signed in, but there's no profile document for your account, so the server grants you nothing.<br/>
-              If you're the first administrator, create your profile once in the Firestore console (see the setup guide): collection <code>users</code>, document ID = your UID <code>{user.uid}</code>, fields <code>isAdmin</code> (boolean, true), <code>email</code>, <code>displayName</code>.
+          <div style={cardSt}>
+            <div style={{ fontWeight:800, marginBottom:8 }}>No profile yet</div>
+            <div style={{ fontSize:13, color:"var(--c-text3)", lineHeight:1.6 }}>
+              You're signed in, but there's no profile document for your account, so the server grants you nothing.
+              If you're the first administrator, create it once in the Firestore console: collection <b>users</b>, document ID = <b>{user.uid}</b>, fields <b>isAdmin</b> (boolean true), <b>email</b>, <b>displayName</b>.
             </div>
           </div>
         )}
-        {profile && (
+        {signedProfile && (
           <React.Fragment>
-            {profile.isAdmin && <CreateUser notify={notify} />}
-            {profile.isAdmin && <UsersList notify={notify} />}
-            <Inventory profile={profile} notify={notify} />
+            {tab === "dashboard" && pCanTab(signedProfile,"dashboard","view") && <DashboardTab labs={labs} />}
+            {tab === "labs" && pCanTab(signedProfile,"labs","view") && <LabsTab labs={labs} profile={signedProfile} notify={notify} />}
+            {tab === "inventory" && pCanTab(signedProfile,"inventory","view") && <InventoryTab profile={signedProfile} labs={labs} catalog={catalog} notify={notify} />}
+            {tab === "overtime" && pCanTab(signedProfile,"overtime","view") && <OvertimeTab profile={signedProfile} labs={labs} users={signedProfile.isAdmin ? users : []} notify={notify} />}
+            {tab === "settings" && signedProfile.isAdmin && <SettingsTab profile={signedProfile} users={users} catalog={catalog} notify={notify} />}
           </React.Fragment>
         )}
       </div>
+      <div style={{ textAlign:"center", padding:"10px 0 26px", fontSize:10, color:"var(--c-author)", letterSpacing:2, textTransform:"uppercase" }}>Designed & Developed by Rex Banihit</div>
       {toast && <Toast {...toast} onClose={()=>setToast(null)} />}
     </React.Fragment>
   );
 }
-
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
 </script>
 </body>
 </html>
