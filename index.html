@@ -151,7 +151,7 @@
   firebase.initializeApp(firebaseConfig);
 </script>
 <script>
-/* iBase computation engines — extracted VERBATIM from iBase v127 */
+/* iBase computation engines — extracted VERBATIM from iBase v126/v127 (incl. PM schedule engine) */
 const OT_MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function otHoursBetween(a, b) { return Math.max(0, (b.getTime() - a.getTime()) / 3600000); }
@@ -451,6 +451,40 @@ function fmtManilaDate(d) {
 function fmtManilaTime(d) {
   try { return new Intl.DateTimeFormat("en-US", { timeZone:"Asia/Manila", hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:true }).format(d || new Date()); }
   catch(e) { return (d||new Date()).toLocaleTimeString(); }
+}
+
+// v126 PM schedule engine (verbatim)
+function addDays(dateStr, days) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
+function addMonths(dateStr, months) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().split("T")[0];
+}
+
+function pmAnchor(m) {
+  if (!m) return "";
+  var base = m.lastPM || m.installDate || "";
+  var reinstall = "";
+  (Array.isArray(m.visits) ? m.visits : []).forEach(function (v) {
+    if (String(v.type || "").trim().toLowerCase() === "installation" && v.date && String(v.date) > String(reinstall)) reinstall = v.date;
+  });
+  if (reinstall && String(reinstall) > String(base)) return reinstall;
+  return base;
+}
+
+function nextPMDate(baseDate, interval) {
+  if (!baseDate) return null;
+  if (interval === "weekly")  return addDays(baseDate, 7);
+  if (interval === "monthly") return addMonths(baseDate, 1);
+  const n = Number(interval);
+  return n ? addMonths(baseDate, n) : null;
 }
 </script>
 <script>
@@ -1979,6 +2013,7 @@ function LabDetail({
   notify,
   onBack
 }) {
+  const engineerOptions = React.useMemo(() => Array.from(new Set([...(typeof window !== "undefined" && window.__ibaseEngineers || []), ...(labs || []).flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).flatMap(v => [v.engineer, v.engineer2, v.engineer3])))].map(x => String(x || "").trim()).filter(Boolean))).sort(), [labs]);
   const canEdit = pCanTab(profile, "labs", "edit");
   const [addingM, setAddingM] = useState(false);
   const [editingM, setEditingM] = useState(null);
@@ -2166,7 +2201,7 @@ function LabDetail({
       width: "100%",
       borderCollapse: "collapse"
     }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Date", "Machine", "Type", "ISR", "Engineer", "Status after"].map(h => /*#__PURE__*/React.createElement("th", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Date", "Machine", "Type", "ISR", "Engineer", "Status after", "Logged by"].map(h => /*#__PURE__*/React.createElement("th", {
     key: h,
     style: thSt
   }, h)))), /*#__PURE__*/React.createElement("tbody", null, (lab.machines || []).flatMap(m => (m.visits || []).map(v => ({
@@ -2192,7 +2227,13 @@ function LabDetail({
     style: tdSt
   }, v.engineer || "—"), /*#__PURE__*/React.createElement("td", {
     style: tdSt
-  }, v.machineStatus || "—")))))), addingM && /*#__PURE__*/React.createElement(MachineModal, {
+  }, v.machineStatus || "—"), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...tdSt,
+      fontSize: 11.5,
+      color: "var(--c-text4)"
+    }
+  }, v.loggedBy || "—", v.loggedAt ? " · " + String(v.loggedAt).slice(0, 10) : "")))))), addingM && /*#__PURE__*/React.createElement(MachineModal, {
     onClose: () => setAddingM(false),
     onSave: async m => {
       if (await saveMachines([...(lab.machines || []), m], "Machine added.")) setAddingM(false);
@@ -2205,14 +2246,33 @@ function LabDetail({
     }
   }), visitFor && /*#__PURE__*/React.createElement(VisitModal, {
     machine: visitFor,
+    engineerOptions: engineerOptions,
     onClose: () => setVisitFor(null),
     onSave: async (v, newStatus) => {
-      const machines = (lab.machines || []).map(m => m.id === visitFor.id ? {
-        ...m,
-        status: newStatus && newStatus !== "Not Applicable" && newStatus !== "Travel" ? newStatus : m.status,
-        visits: [...(m.visits || []), v]
-      } : m);
-      if (await saveMachines(machines, "Visit logged.")) setVisitFor(null);
+      const stamped = {
+        ...v,
+        loggedBy: profile.email,
+        loggedAt: auditNow()
+      };
+      const machines = (lab.machines || []).map(m => {
+        if (m.id !== visitFor.id) return m;
+        let nm = {
+          ...m,
+          status: newStatus && newStatus !== "Not Applicable" && newStatus !== "Travel" ? newStatus : m.status,
+          visits: [...(m.visits || []), stamped]
+        };
+        // PM VISIT RENEWS THE SCHEDULE (v126 behavior): advance lastPM, recompute next PM.
+        if (String(v.type).toUpperCase() === "PM" && v.date && (!nm.lastPM || v.date > nm.lastPM)) {
+          nm.lastPM = v.date;
+          const nx = nextPMDate(pmAnchor(nm), nm.pmInterval);
+          if (nx) nm.nextPM = nx;
+        }
+        return nm;
+      });
+      if (await saveMachines(machines, String(v.type).toUpperCase() === "PM" ? "PM logged — schedule renewed." : "Visit logged.")) {
+        logAudit(profile, "visit.add", (v.type || "Visit") + " · " + visitFor.instrument + " @ " + lab.name);
+        setVisitFor(null);
+      }
     }
   }), editingLab && /*#__PURE__*/React.createElement(LabModal, {
     initial: lab,
@@ -2372,8 +2432,118 @@ function MachineModal({
     })
   }, "Save machine"));
 }
+function SignaturePad({
+  value,
+  onChange
+}) {
+  const ref = React.useRef(null);
+  const drawing = React.useRef(false);
+  React.useEffect(() => {
+    const c = ref.current;
+    if (!c) return;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, c.width, c.height);
+    if (value) {
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, c.width, c.height);
+      img.src = value;
+    }
+  }, []);
+  function pos(e) {
+    const c = ref.current,
+      r = c.getBoundingClientRect();
+    const p = e.touches && e.touches[0] || e;
+    return {
+      x: (p.clientX - r.left) * (c.width / r.width),
+      y: (p.clientY - r.top) * (c.height / r.height)
+    };
+  }
+  function start(e) {
+    e.preventDefault();
+    drawing.current = true;
+    const ctx = ref.current.getContext("2d");
+    const {
+      x,
+      y
+    } = pos(e);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.strokeStyle = "#0b1220";
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = "round";
+  }
+  function move(e) {
+    if (!drawing.current) return;
+    e.preventDefault();
+    const ctx = ref.current.getContext("2d");
+    const {
+      x,
+      y
+    } = pos(e);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  }
+  function end() {
+    if (!drawing.current) return;
+    drawing.current = false;
+    onChange(ref.current.toDataURL("image/png"));
+  }
+  function clear() {
+    const c = ref.current,
+      ctx = c.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, c.width, c.height);
+    onChange("");
+  }
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("canvas", {
+    ref: ref,
+    width: 520,
+    height: 150,
+    onMouseDown: start,
+    onMouseMove: move,
+    onMouseUp: end,
+    onMouseLeave: end,
+    onTouchStart: start,
+    onTouchMove: move,
+    onTouchEnd: end,
+    style: {
+      width: "100%",
+      height: 150,
+      borderRadius: 8,
+      border: "1px solid var(--c-input-border)",
+      background: "#fff",
+      touchAction: "none",
+      cursor: "crosshair"
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      marginTop: 4
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10.5,
+      color: "var(--c-text5)"
+    }
+  }, "Sign above (customer / engineer)"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: clear,
+    style: {
+      background: "none",
+      border: "1px solid var(--c-border)",
+      borderRadius: 6,
+      color: "var(--c-text3)",
+      cursor: "pointer",
+      fontSize: 10.5,
+      padding: "2px 8px"
+    }
+  }, "Clear")));
+}
 function VisitModal({
   machine,
+  engineerOptions,
   onClose,
   onSave
 }) {
@@ -2389,7 +2559,8 @@ function VisitModal({
     dtArrivalHome: "",
     dtWorkStarted: "",
     dtWorkEnded: "",
-    remarks: ""
+    remarks: "",
+    signature: ""
   });
   const set = (k, v) => setF(x => ({
     ...x,
@@ -2429,19 +2600,27 @@ function VisitModal({
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Engineer"), /*#__PURE__*/React.createElement("input", {
+    list: "ibase-eng-list",
     style: inputSt(),
     value: f.engineer,
     onChange: e => set("engineer", e.target.value),
-    placeholder: "Full name (matches Overtime)"
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    placeholder: "Pick or type a name"
+  }), /*#__PURE__*/React.createElement("datalist", {
+    id: "ibase-eng-list"
+  }, (engineerOptions || []).map(n => /*#__PURE__*/React.createElement("option", {
+    key: n,
+    value: n
+  })))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Engineer 2 (optional)"), /*#__PURE__*/React.createElement("input", {
+    list: "ibase-eng-list",
     style: inputSt(),
     value: f.engineer2,
     onChange: e => set("engineer2", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Engineer 3 (optional)"), /*#__PURE__*/React.createElement("input", {
+    list: "ibase-eng-list",
     style: inputSt(),
     value: f.engineer3,
     onChange: e => set("engineer3", e.target.value)
@@ -2487,15 +2666,23 @@ function VisitModal({
     style: inputSt(),
     value: f.remarks,
     onChange: e => set("remarks", e.target.value)
-  }))), /*#__PURE__*/React.createElement("button", {
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 14
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Signature"), /*#__PURE__*/React.createElement(SignaturePad, {
+    value: f.signature,
+    onChange: v => set("signature", v)
+  })), /*#__PURE__*/React.createElement("button", {
     style: {
       ...btnSt("var(--c-key)", "var(--c-bg)"),
       marginTop: 16
     },
     onClick: () => onSave({
       id: uid(),
-      ...f,
-      loggedAt: auditNow()
+      ...f
     }, f.machineStatus)
   }, "Save visit"), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -4047,7 +4234,7 @@ function VisitsTab({
       width: "100%",
       borderCollapse: "collapse"
     }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Date", "Laboratory", "Machine", "Type", "ISR", "Engineer(s)", "Status after", "Remarks", ""].map(h => /*#__PURE__*/React.createElement("th", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Date", "Laboratory", "Machine", "Type", "ISR", "Engineer(s)", "Status after", "Logged by", "✍", "Remarks", ""].map(h => /*#__PURE__*/React.createElement("th", {
     key: h,
     style: thSt
   }, h)))), /*#__PURE__*/React.createElement("tbody", null, shown.slice(0, 400).map((v, i) => /*#__PURE__*/React.createElement("tr", {
@@ -4085,6 +4272,37 @@ function VisitsTab({
       fontSize: 12
     }
   }, v.machineStatus || "—"), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...tdSt,
+      fontSize: 11.5,
+      color: "var(--c-text4)",
+      whiteSpace: "nowrap"
+    }
+  }, v.loggedBy || "—", v.loggedAt ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9.5,
+      color: "var(--c-text5)"
+    }
+  }, String(v.loggedAt).replace("T", " ").slice(0, 16)) : null), /*#__PURE__*/React.createElement("td", {
+    style: tdSt
+  }, v.signature ? /*#__PURE__*/React.createElement("img", {
+    src: v.signature,
+    alt: "signature",
+    title: "Signed",
+    style: {
+      height: 26,
+      width: "auto",
+      background: "#fff",
+      borderRadius: 4,
+      border: "1px solid var(--c-border)",
+      cursor: "pointer"
+    },
+    onClick: () => window.open("").document.write('<img src=\'' + v.signature + '\' style="max-width:100%">')
+  }) : /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "var(--c-text5)"
+    }
+  }, "—")), /*#__PURE__*/React.createElement("td", {
     style: {
       ...tdSt,
       fontSize: 12,
@@ -4132,7 +4350,7 @@ function buildBackupSheets({
   const S = {};
   S["Laboratories"] = [["Laboratory", "Location", "Machines"]].concat(labs.map(l => [l.name || "", l.location || "", (l.machines || []).length]));
   S["Equipment Register"] = [["Laboratory", "Instrument", "Serial No", "Installed", "Last PM", "PM Interval", "Next PM", "Status", "Visits"]].concat(labs.flatMap(l => (l.machines || []).map(m => [l.name || "", m.instrument || "", m.serialNo || "", m.installDate || "", m.lastPM || "", m.pmInterval || "", m.nextPM || "", m.status || "", (m.visits || []).length])));
-  S["Service Visits"] = [["Date", "Laboratory", "Machine", "Serial", "Type", "ISR", "Engineer", "Engineer 2", "Engineer 3", "Status after", "Departure", "Arrival home", "Work started", "Work ended", "Remarks"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => [v.date || "", l.name || "", m.instrument || "", m.serialNo || "", v.type || "", v.isrNo || "", v.engineer || "", v.engineer2 || "", v.engineer3 || "", v.machineStatus || "", v.dtDeparture || "", v.dtArrivalHome || "", v.dtWorkStarted || "", v.dtWorkEnded || "", v.remarks || ""]))));
+  S["Service Visits"] = [["Date", "Laboratory", "Machine", "Serial", "Type", "ISR", "Engineer", "Engineer 2", "Engineer 3", "Status after", "Departure", "Arrival home", "Work started", "Work ended", "Logged By", "Logged At", "Signed", "Remarks"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => [v.date || "", l.name || "", m.instrument || "", m.serialNo || "", v.type || "", v.isrNo || "", v.engineer || "", v.engineer2 || "", v.engineer3 || "", v.machineStatus || "", v.dtDeparture || "", v.dtArrivalHome || "", v.dtWorkStarted || "", v.dtWorkEnded || "", v.loggedBy || "", v.loggedAt || "", v.signature ? "Yes" : "", v.remarks || ""]))));
   S["Machine Inventory"] = [["Brand", "Model", "Serial No", "Item Code", "Condition", "Status", "Location", "Dealer", "Remarks"]].concat(inventory.map(it => [it.brand || "", it.machineModel || "", it.serialNo || "", it.itemCode || "", it.condition || "", it.status || "", it.location || "", it.dealer || "", it.remarks || ""]));
   S["Spare Parts"] = [["Brand", "Part No", "Description", "On Hand"]].concat(spareParts.map(p => [p.brand || "", p.partNumber || "", p.description || "", (p.receipts || []).reduce((s, r) => s + (Number(r.qty) || 0), 0) - (p.issues || []).reduce((s, r) => s + (Number(r.qty) || 0), 0)]));
   S["Spare Parts History"] = [["Brand", "Part No", "Direction", "Qty", "Date", "Reference", "By"]].concat(spareParts.flatMap(p => [...(p.receipts || []).map(r => [p.brand || "", p.partNumber || "", "IN", Number(r.qty) || 0, r.date || "", r.ref || "", r.by || ""]), ...(p.issues || []).map(r => [p.brand || "", p.partNumber || "", "OUT", Number(r.qty) || 0, r.date || "", r.ref || "", r.by || ""])]));
@@ -6101,28 +6319,35 @@ function App() {
   const users = useCol("users", !!signedProfile && signedProfile.isAdmin, notify);
   const catalog = useDoc("config/catalog", !!signedProfile);
   const tabsCfg = useDoc("config/tabs", !!signedProfile);
+  // Publish the known engineer names (from user profiles) so the visit form's
+  // picklist includes staff who have no logged visits yet.
+  useEffect(() => {
+    try {
+      window.__ibaseEngineers = (users || []).map(u => u.engineerName).filter(Boolean);
+    } catch (e) {}
+  }, [users]);
   const otSettingsDoc = useDoc("config/otSettings", !!signedProfile && signedProfile.isAdmin);
   const holidaysDoc = useDoc("config/holidays", !!signedProfile && signedProfile.isAdmin);
   // Header KPI stats (v126-style)
   const hdrMachines = labs.flatMap(l => l.machines || []);
   const hdrActive = hdrMachines.filter(m => !isPull(m));
   const hdrOverdue = hdrActive.filter(m => pmFlag(m) === "Overdue").length;
-  const TABS = signedProfile ? [pCanTab(signedProfile, "dashboard", "view") && !tabHidden(tabsCfg, "dashboard") && {
+  const TABS = signedProfile ? [(signedProfile.isAdmin || pCanTab(signedProfile, "dashboard", "view")) && !tabHidden(tabsCfg, "dashboard") && {
     id: "dashboard",
     label: tabLabel(tabsCfg, "dashboard", "📊 Dashboard")
-  }, pCanTab(signedProfile, "labs", "view") && !tabHidden(tabsCfg, "labs") && {
+  }, (signedProfile.isAdmin || pCanTab(signedProfile, "labs", "view")) && !tabHidden(tabsCfg, "labs") && {
     id: "labs",
     label: tabLabel(tabsCfg, "labs", "🏥 Institutions")
-  }, pCanTab(signedProfile, "analytics", "view") && !tabHidden(tabsCfg, "analytics") && {
+  }, (signedProfile.isAdmin || pCanTab(signedProfile, "analytics", "view")) && !tabHidden(tabsCfg, "analytics") && {
     id: "analytics",
     label: tabLabel(tabsCfg, "analytics", "📈 Analytics")
-  }, pCanTab(signedProfile, "visits", "view") && !tabHidden(tabsCfg, "visits") && {
+  }, (signedProfile.isAdmin || pCanTab(signedProfile, "visits", "view")) && !tabHidden(tabsCfg, "visits") && {
     id: "visits",
     label: tabLabel(tabsCfg, "visits", "🧰 Visits")
-  }, pCanTab(signedProfile, "inventory", "view") && !tabHidden(tabsCfg, "inventory") && {
+  }, (signedProfile.isAdmin || pCanTab(signedProfile, "inventory", "view")) && !tabHidden(tabsCfg, "inventory") && {
     id: "inventory",
     label: tabLabel(tabsCfg, "inventory", "📦 Inventory")
-  }, pCanTab(signedProfile, "overtime", "view") && !tabHidden(tabsCfg, "overtime") && {
+  }, (signedProfile.isAdmin || pCanTab(signedProfile, "overtime", "view")) && !tabHidden(tabsCfg, "overtime") && {
     id: "overtime",
     label: tabLabel(tabsCfg, "overtime", "🕒 Overtime")
   }, signedProfile.isAdmin && {
@@ -6287,9 +6512,9 @@ function App() {
     labs: labs,
     profile: signedProfile,
     notify: notify
-  }), tab === "analytics" && pCanTab(signedProfile, "analytics", "view") && /*#__PURE__*/React.createElement(AnalyticsTab, {
+  }), tab === "analytics" && (signedProfile.isAdmin || pCanTab(signedProfile, "analytics", "view")) && /*#__PURE__*/React.createElement(AnalyticsTab, {
     labs: labs
-  }), tab === "visits" && pCanTab(signedProfile, "visits", "view") && /*#__PURE__*/React.createElement(VisitsTab, {
+  }), tab === "visits" && (signedProfile.isAdmin || pCanTab(signedProfile, "visits", "view")) && /*#__PURE__*/React.createElement(VisitsTab, {
     labs: labs,
     profile: signedProfile,
     notify: notify
