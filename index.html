@@ -1,8 +1,6 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<html lang="en"><head>
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>iBase — Installed Base Management</title>
 <style>
       :root, [data-theme="dark"] {
@@ -129,8 +127,7 @@
       }
       
   body { background: var(--c-bg); color: var(--c-text); margin:0; font-family:'DM Sans','Segoe UI',system-ui,sans-serif; font-size:14px; }
-  * { box-sizing: border-box; }
-  input, select, button { font-family: inherit; }
+  * { box-sizing: border-box; } input, select, button { font-family: inherit; }
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -138,8 +135,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-</head>
-<body>
+</head><body>
 <div id="root"></div>
 <script>
   var firebaseConfig = {
@@ -775,7 +771,15 @@ function pickPresenceColor(existing) {
 function usePresence(user, profile) {
   const [viewers, setViewers] = useState({});
   const [cursors, setCursors] = useState({});
-  const [myColor, setMyColor] = useState(PRESENCE_COLORS[0]);
+  // Deterministic instant color from my session id (available on frame 1, no
+  // network wait). We still reconcile against the live room below to prevent
+  // two people colliding, but the local effects never wait for that.
+  function instantColor() {
+    let h = 0;
+    for (const ch of SESSION_ID) h = h * 31 + ch.charCodeAt(0) >>> 0;
+    return PRESENCE_COLORS[h % PRESENCE_COLORS.length];
+  }
+  const [myColor, setMyColor] = useState(instantColor);
   const [showName, setShowNameState] = useState(() => {
     try {
       return localStorage.getItem("ibase_showname") !== "0";
@@ -794,10 +798,19 @@ function usePresence(user, profile) {
     (async () => {
       try {
         if (!joinedRef.current) {
+          colorRef.current = instantColor(); // instant, no wait
+          setMyColor(colorRef.current);
           const snap = await rtdb.ref("presence").once("value");
           if (cancelled) return;
-          colorRef.current = pickPresenceColor(snap.val());
-          setMyColor(colorRef.current);
+          // reconcile only if my instant color collides with someone already here
+          const used = {};
+          Object.entries(snap.val() || {}).forEach(([id, p]) => {
+            if (id !== SESSION_ID && p && p.color) used[p.color] = 1;
+          });
+          if (used[colorRef.current]) {
+            colorRef.current = pickPresenceColor(snap.val());
+            setMyColor(colorRef.current);
+          }
           joinedRef.current = true;
           myRef.onDisconnect().remove();
           rtdb.ref("cursors/" + SESSION_ID).onDisconnect().remove();
@@ -867,13 +880,17 @@ function usePresence(user, profile) {
       lx = e.clientX;
       ly = e.clientY;
       if (document.hidden) return;
-      try {
-        rtdb.ref("cursors/" + SESSION_ID).set({
-          x: Math.round(x * 1000) / 1000,
-          y: Math.round(y * 1000) / 1000,
-          at: firebase.database.ServerValue.TIMESTAMP
-        });
-      } catch (err) {}
+      var cx = Math.round(x * 1000) / 1000,
+        cy = Math.round(y * 1000) / 1000;
+      setTimeout(function () {
+        try {
+          rtdb.ref("cursors/" + SESSION_ID).set({
+            x: cx,
+            y: cy,
+            at: firebase.database.ServerValue.TIMESTAMP
+          });
+        } catch (err) {}
+      }, 0);
     };
     window.addEventListener("mousemove", onMove);
     return () => window.removeEventListener("mousemove", onMove);
@@ -886,13 +903,18 @@ function usePresence(user, profile) {
   };
   const sendClick = (x, y) => {
     if (!rtdbOk) return;
-    try {
-      rtdb.ref("clicks/" + SESSION_ID).set({
-        x: Math.round(x * 1000) / 1000,
-        y: Math.round(y * 1000) / 1000,
-        n: Date.now()
-      });
-    } catch (e) {}
+    // Defer the network write off the click frame so the LOCAL burst paints
+    // instantly (the local effect never waits on the round-trip).
+    var payload = {
+      x: Math.round(x * 1000) / 1000,
+      y: Math.round(y * 1000) / 1000,
+      n: Date.now()
+    };
+    setTimeout(function () {
+      try {
+        rtdb.ref("clicks/" + SESSION_ID).set(payload);
+      } catch (e) {}
+    }, 0);
   };
   const count = Object.keys(viewers).length;
   return {
@@ -4828,5 +4850,4 @@ function App() {
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
 
 </script>
-</body>
-</html>
+</body></html>
