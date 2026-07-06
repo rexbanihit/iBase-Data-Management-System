@@ -1553,9 +1553,16 @@ function Login({
     style: {
       position: "relative",
       zIndex: 2,
-      maxWidth: 360,
-      margin: "0 auto",
-      padding: "8vh 16px 0"
+      minHeight: "100vh",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "16px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: "100%",
+      maxWidth: 360
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1646,7 +1653,7 @@ function Login({
       textTransform: "uppercase",
       marginTop: 6
     }
-  }, "Designed & Developed by Rex Banihit")))));
+  }, "Designed & Developed by Rex Banihit"))))));
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
@@ -5734,13 +5741,18 @@ function SettingsTab({
       textTransform: "uppercase",
       marginBottom: 10
     }
-  }, "👥 Users (", users.length, ")"), users.map(u => /*#__PURE__*/React.createElement(UserRow, {
+  }, "👥 Users (", users.filter(u => u.id !== OWNER_UID).length, ")"), users.filter(u => u.id !== OWNER_UID).map(u => /*#__PURE__*/React.createElement(UserRow, {
     key: u.id,
     u: u,
     brands: brands,
     notify: notify,
     me: profile
-  }))), /*#__PURE__*/React.createElement(TabManager, {
+  })), users.filter(u => u.id !== OWNER_UID).length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: "var(--c-text4)"
+    }
+  }, "No other users yet. Create one above.")), /*#__PURE__*/React.createElement(TabManager, {
     profile: profile,
     tabsCfg: tabsCfg,
     notify: notify
@@ -5953,17 +5965,22 @@ function CreateUser({
       const cred = await secondary.auth().createUserWithEmailAndPassword(email.trim(), pw);
       const newUid = cred.user.uid;
       await secondary.auth().signOut();
-      await db.collection("users").doc(newUid).set({
-        email: email.trim(),
-        displayName: name.trim(),
-        isAdmin: iAmOwner && makeAdmin ? true : false,
-        role,
-        engineerName: engineerName.trim(),
-        permissions: perms,
-        createdAt: FieldValue.serverTimestamp()
-      });
+      try {
+        await db.collection("users").doc(newUid).set({
+          email: email.trim(),
+          displayName: name.trim(),
+          isAdmin: iAmOwner && makeAdmin ? true : false,
+          role,
+          engineerName: engineerName.trim(),
+          permissions: perms,
+          createdAt: FieldValue.serverTimestamp()
+        });
+      } catch (perr) {
+        notify("The login account for " + email.trim() + " was created, but saving their profile failed: " + perr.message + " — open Settings again and use '＋ Add profile for existing account' with their UID: " + newUid, "error");
+        throw perr;
+      }
       logAudit(null, iAmOwner && makeAdmin ? "user.create-ADMIN" : "user.create", email.trim());
-      notify("Created " + email.trim() + ".", "ok");
+      notify("✓ Created " + email.trim() + (makeAdmin ? " as an ADMINISTRATOR." : ".") + " They appear in the list below and can sign in now.", "ok");
       setEmail("");
       setPw("");
       setName("");
@@ -6022,27 +6039,45 @@ function CreateUser({
     key: r
   }, r)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Linked employee name"), /*#__PURE__*/React.createElement("input", {
+  }, "Linked employee name (optional)"), /*#__PURE__*/React.createElement("input", {
     style: inputSt(),
     value: engineerName,
     onChange: e => setEngineerName(e.target.value),
-    placeholder: "matches visit logs"
-  }))), iAmOwner && /*#__PURE__*/React.createElement("label", {
+    placeholder: "e.g. Rex Banihit — for Overtime"
+  }))), iAmOwner && /*#__PURE__*/React.createElement("div", {
+    style: {
+      margin: "12px 0",
+      padding: "12px 14px",
+      borderRadius: 10,
+      border: "1px solid " + (makeAdmin ? "#fbbf24" : "var(--c-border)"),
+      background: makeAdmin ? "rgba(251,191,36,.1)" : "var(--c-card2)"
+    }
+  }, /*#__PURE__*/React.createElement("label", {
     style: {
       display: "flex",
-      gap: 8,
+      gap: 9,
       alignItems: "center",
-      margin: "10px 2px",
       cursor: "pointer",
-      fontSize: 13,
-      fontWeight: 700,
+      fontSize: 13.5,
+      fontWeight: 800,
       color: "#fbbf24"
     }
   }, /*#__PURE__*/React.createElement("input", {
     type: "checkbox",
     checked: makeAdmin,
-    onChange: e => setMakeAdmin(e.target.checked)
-  }), "👑 Make this user an ADMINISTRATOR (full system access — only you, the owner, can grant or revoke this)"), !makeAdmin && /*#__PURE__*/React.createElement(PermEditor, {
+    onChange: e => setMakeAdmin(e.target.checked),
+    style: {
+      width: 16,
+      height: 16
+    }
+  }), "👑 Make this user an ADMINISTRATOR"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "var(--c-text4)",
+      marginTop: 6,
+      lineHeight: 1.5
+    }
+  }, "Grants full system access (all tabs, user management, Bin, Audit). Only you — the owner (rexbanihit@gmail.com) — can create or revoke administrators; they can never modify or remove you, or each other's admin rights. When ticked, the per-tab permission checkboxes are hidden because administrators get everything.")), !makeAdmin && /*#__PURE__*/React.createElement(PermEditor, {
     perms: perms,
     setPerms: setPerms,
     brands: brands
@@ -6387,14 +6422,83 @@ function App() {
   }));
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      bottom: 0,
+      width: 96,
+      background: "var(--c-bg2)",
+      borderRight: "1px solid var(--c-border)",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "stretch",
+      padding: "14px 0",
+      zIndex: 20,
+      overflowY: "auto"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "center",
+      gap: 3,
+      marginBottom: 18
+    }
+  }, [14, 20, 17].map((h, i) => /*#__PURE__*/React.createElement("span", {
+    key: i,
+    style: {
+      width: 7,
+      height: h,
+      borderRadius: 4,
+      background: "linear-gradient(180deg,#38bdf8,#0ea5e9)",
+      alignSelf: "flex-end"
+    }
+  }))), TABS.map(t => {
+    const parts = t.label.split(" ");
+    const icon = parts[0];
+    const name = parts.slice(1).join(" ");
+    const active = tab === t.id;
+    return /*#__PURE__*/React.createElement("button", {
+      key: t.id,
+      onClick: () => setTab(t.id),
+      title: name,
+      style: {
+        background: active ? "var(--c-card)" : "transparent",
+        border: "none",
+        borderLeft: active ? "3px solid var(--c-key)" : "3px solid transparent",
+        color: active ? "var(--c-key)" : "var(--c-text3)",
+        cursor: "pointer",
+        padding: "11px 4px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 4
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 19
+      }
+    }, icon), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 8.5,
+        fontWeight: 800,
+        letterSpacing: .3,
+        textTransform: "uppercase",
+        textAlign: "center",
+        lineHeight: 1.15
+      }
+    }, name));
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginLeft: 96
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
       borderBottom: "1px solid var(--c-border)",
       background: "var(--c-bg2)"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      maxWidth: 1240,
-      margin: "0 auto",
-      padding: "12px 18px",
+      padding: "12px 22px",
       display: "flex",
       alignItems: "center",
       gap: 12,
@@ -6413,21 +6517,6 @@ function App() {
       letterSpacing: 1.5
     }
   }, "Installed Base · ", signedProfile && signedProfile.isAdmin ? "Administrator" : signedProfile && signedProfile.role || "Field User")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6,
-      flexWrap: "wrap"
-    }
-  }, TABS.map(t => /*#__PURE__*/React.createElement("button", {
-    key: t.id,
-    onClick: () => setTab(t.id),
-    style: {
-      ...btnSt(tab === t.id ? "var(--c-key)" : "transparent", tab === t.id ? "var(--c-bg)" : "var(--c-text2)"),
-      border: tab === t.id ? "none" : "1px solid var(--c-border)",
-      padding: "7px 12px",
-      fontSize: 12.5
-    }
-  }, t.label))), /*#__PURE__*/React.createElement("div", {
     style: {
       marginLeft: "auto",
       display: "flex",
@@ -6487,7 +6576,7 @@ function App() {
     style: {
       maxWidth: 1240,
       margin: "0 auto",
-      padding: 18
+      padding: 22
     }
   }, profile === undefined && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -6550,7 +6639,7 @@ function App() {
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "Designed & Developed by Rex Banihit"), toast && /*#__PURE__*/React.createElement(Toast, {
+  }, "Designed & Developed by Rex Banihit")), toast && /*#__PURE__*/React.createElement(Toast, {
     ...toast,
     onClose: () => setToast(null)
   }));
