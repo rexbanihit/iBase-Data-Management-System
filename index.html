@@ -1701,6 +1701,35 @@ function Login({
     onClick: submit
   }, busy ? "Signing in…" : "🔓 Sign In"), /*#__PURE__*/React.createElement("div", {
     style: {
+      textAlign: "center",
+      marginTop: 12
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    style: {
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      color: "var(--c-text4)",
+      fontSize: 11.5,
+      textDecoration: "underline",
+      padding: 0
+    },
+    onClick: async () => {
+      const em = cleanEmail(email);
+      if (!EMAIL_RX.test(em)) {
+        notify("Type your email address in the field above first, then click Forgot password.", "error");
+        return;
+      }
+      try {
+        await auth.sendPasswordResetEmail(em);
+        notify("📧 Reset link sent to " + em + " — check the inbox AND the Spam folder. Your current password keeps working until you set a new one via the link.", "ok");
+      } catch (e) {
+        notify("Could not send reset email: " + e.message, "error");
+      }
+    }
+  }, "Forgot password?")), /*#__PURE__*/React.createElement("div", {
+    style: {
       marginTop: 26,
       textAlign: "center"
     }
@@ -6378,7 +6407,7 @@ function SettingsTab({
   tabsCfg,
   notify
 }) {
-  const iAmOwner = profile.id === OWNER_UID;
+  const iAmOwner = profile.id === OWNER_UID || auth.currentUser && auth.currentUser.uid === OWNER_UID;
   const brands = sortAlpha(catalog && catalog.brands || []);
   const roleOptions = sortAlpha(Array.from(new Set([...ENGINEER_ROLES, ...(catalog && catalog.roles || []), ...users.map(u => String(u.role || "").trim()).filter(Boolean)])));
   const [newBrand, setNewBrand] = useState("");
@@ -7591,7 +7620,12 @@ function App() {
       fontSize: 12,
       color: "var(--c-text4)"
     }
-  }, user.email), /*#__PURE__*/React.createElement("button", {
+  }, user.uid === OWNER_UID && /*#__PURE__*/React.createElement("span", {
+    title: "Signed in as the system OWNER",
+    style: {
+      marginRight: 5
+    }
+  }, "👑"), user.email), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: () => auth.signOut()
   }, "🚪 Logout")))), /*#__PURE__*/React.createElement("div", {
