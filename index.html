@@ -3710,34 +3710,18 @@ function TabManager({
       notify("Server refused: " + e.message, "error");
     }
   }
-  async function deleteTab(t) {
-    if (!confirm("Move the \"" + tabLabel(cfg, t.id, t.def) + "\" tab to the Bin? It disappears for ALL users until an administrator restores it.")) return;
+  // Tabs are part of the system: they can never be deleted — only hidden/shown.
+  async function toggleHide(t, hide) {
     try {
-      await binIt("tab", tabLabel(cfg, t.id, t.def), {
-        tabId: t.id
-      }, profile.email);
-      const hidden = Array.from(new Set([...(cfg.hidden || []), t.id]));
+      const hidden = hide ? Array.from(new Set([...(cfg.hidden || []), t.id])) : (cfg.hidden || []).filter(x => x !== t.id);
       await db.doc("config/tabs").set({
         ...cfg,
         hidden
       }, {
         merge: true
       });
-      notify("Tab moved to Bin.", "ok");
-    } catch (e) {
-      notify("Server refused: " + e.message, "error");
-    }
-  }
-  async function readdTab(id) {
-    try {
-      const hidden = (cfg.hidden || []).filter(x => x !== id);
-      await db.doc("config/tabs").set({
-        ...cfg,
-        hidden
-      }, {
-        merge: true
-      });
-      notify("Tab re-added.", "ok");
+      logAudit(profile, hide ? "tab.hide" : "tab.show", t.id);
+      notify(hide ? "Tab hidden for everyone." : "Tab visible again.", "ok");
     } catch (e) {
       notify("Server refused: " + e.message, "error");
     }
@@ -3758,7 +3742,7 @@ function TabManager({
       color: "var(--c-text5)",
       marginBottom: 14
     }
-  }, "Rename any tab (emoji included), delete one to the Bin (restorable), or re-add it. Changes apply to every user. Settings and the Bin are locked so administrators can never lock themselves out."), MANAGED_TABS.map(t => /*#__PURE__*/React.createElement("div", {
+  }, "Rename any tab (emoji included) or hide/show it for everyone. Tabs are part of the system and can never be deleted — not even by the owner. Settings, Bin and Audit are always visible to administrators."), MANAGED_TABS.map(t => /*#__PURE__*/React.createElement("div", {
     key: t.id,
     style: {
       display: "flex",
@@ -3787,11 +3771,11 @@ function TabManager({
     }))
   }), tabHidden(cfg, t.id) ? /*#__PURE__*/React.createElement("button", {
     style: btnSt("#10b981", "#fff"),
-    onClick: () => readdTab(t.id)
-  }, "↩ Re-add") : /*#__PURE__*/React.createElement("button", {
-    style: btnSt("#3a1d1d", "#fca5a5"),
-    onClick: () => deleteTab(t)
-  }, "🗑 Delete"), tabHidden(cfg, t.id) && /*#__PURE__*/React.createElement("span", {
+    onClick: () => toggleHide(t, false)
+  }, "👁 Show") : /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: () => toggleHide(t, true)
+  }, "🕶 Hide"), tabHidden(cfg, t.id) && /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 10.5,
       color: "#fbbf24",
@@ -5741,18 +5725,26 @@ function SettingsTab({
       textTransform: "uppercase",
       marginBottom: 10
     }
-  }, "👥 Users (", users.filter(u => u.id !== OWNER_UID).length, ")"), users.filter(u => u.id !== OWNER_UID).map(u => /*#__PURE__*/React.createElement(UserRow, {
+  }, "👥 Users (", users.filter(u => u.id !== OWNER_UID && !u.isAdmin).length, ")"), users.filter(u => u.id !== OWNER_UID && !u.isAdmin).map(u => /*#__PURE__*/React.createElement(UserRow, {
     key: u.id,
     u: u,
     brands: brands,
     notify: notify,
     me: profile
-  })), users.filter(u => u.id !== OWNER_UID).length === 0 && /*#__PURE__*/React.createElement("div", {
+  })), users.filter(u => u.id !== OWNER_UID && !u.isAdmin).length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: "var(--c-text4)"
     }
-  }, "No other users yet. Create one above.")), /*#__PURE__*/React.createElement(TabManager, {
+  }, "No users yet. Create one above."), /*#__PURE__*/React.createElement(RecoverProfileTool, {
+    me: profile,
+    notify: notify
+  })), iAmOwner && /*#__PURE__*/React.createElement(AdminManager, {
+    users: users,
+    me: profile,
+    brands: brands,
+    notify: notify
+  }), /*#__PURE__*/React.createElement(TabManager, {
     profile: profile,
     tabsCfg: tabsCfg,
     notify: notify
@@ -6096,6 +6088,284 @@ function CreateUser({
     }
   }, "Permissions are enforced by the server's Security Rules — HR / Accounting roles are the Overtime managers."));
 }
+// Inline editable 🔗 linked employee name (admins; admin rows only by the owner)
+function LinkedName({
+  u,
+  me,
+  notify
+}) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(u.engineerName || "");
+  useEffect(() => {
+    setVal(u.engineerName || "");
+  }, [u.id, u.engineerName]);
+  const mayEdit = me.id === OWNER_UID ? u.id !== OWNER_UID : !u.isAdmin;
+  async function save(newVal) {
+    try {
+      await db.collection("users").doc(u.id).update({
+        engineerName: newVal.trim()
+      });
+      logAudit(me, newVal.trim() ? "user.link-name" : "user.unlink-name", u.email + (newVal.trim() ? " → " + newVal.trim() : ""));
+      notify(newVal.trim() ? "Linked to \"" + newVal.trim() + "\"." : "Name unlinked.", "ok");
+      setEditing(false);
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+  }
+  if (editing) return /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-flex",
+      gap: 5,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    autoFocus: true,
+    list: "ibase-eng-list",
+    style: {
+      ...inputSt(),
+      padding: "4px 8px",
+      fontSize: 12,
+      width: 170
+    },
+    value: val,
+    onChange: e => setVal(e.target.value),
+    onKeyDown: e => e.key === "Enter" && save(val),
+    placeholder: "Employee name"
+  }), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnSt("#10b981", "#fff"),
+      padding: "3px 8px",
+      fontSize: 11
+    },
+    onClick: () => save(val)
+  }, "✓"), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnSt("var(--c-border)", "var(--c-text3)"),
+      padding: "3px 8px",
+      fontSize: 11
+    },
+    onClick: () => {
+      setEditing(false);
+      setVal(u.engineerName || "");
+    }
+  }, "✕"));
+  return /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-flex",
+      gap: 5,
+      alignItems: "center",
+      fontSize: 12
+    }
+  }, u.engineerName ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "var(--c-text3)"
+    }
+  }, "🔗 ", u.engineerName) : /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "var(--c-text5)"
+    }
+  }, "not linked"), mayEdit && /*#__PURE__*/React.createElement("button", {
+    title: u.engineerName ? "Edit or unlink the employee name" : "Link an employee name (connects Overtime & visit logs)",
+    style: {
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      color: "var(--c-text4)",
+      fontSize: 12,
+      padding: 0
+    },
+    onClick: () => setEditing(true)
+  }, "✎"), mayEdit && u.engineerName && /*#__PURE__*/React.createElement("button", {
+    title: "Unlink",
+    style: {
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      color: "var(--c-text5)",
+      fontSize: 11,
+      padding: 0
+    },
+    onClick: () => save("")
+  }, "⛓️‍💥"));
+}
+
+// 👑 OWNER-ONLY: manage administrators (invisible to everyone else).
+function AdminManager({
+  users,
+  me,
+  brands,
+  notify
+}) {
+  const admins = users.filter(u => u.isAdmin && u.id !== OWNER_UID);
+  const regulars = users.filter(u => !u.isAdmin && u.id !== OWNER_UID);
+  const [pick, setPick] = useState("");
+  async function promote() {
+    const u = regulars.find(x => x.id === pick);
+    if (!u) return;
+    if (!confirm("Make " + u.email + " an ADMINISTRATOR? They gain full system access (all tabs, users, Bin, Audit) — but can never modify you or other administrators.")) return;
+    try {
+      await db.collection("users").doc(u.id).update({
+        isAdmin: true
+      });
+      logAudit(me, "user.promote-ADMIN", u.email);
+      notify("👑 " + u.email + " is now an administrator.", "ok");
+      setPick("");
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...cardSt,
+      border: "1px solid #fbbf2455"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "#fbbf24",
+      textTransform: "uppercase",
+      marginBottom: 4
+    }
+  }, "👑 Administrators (", admins.length, ") — visible only to you"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text5)",
+      marginBottom: 12
+    }
+  }, "Administrators are hidden from the Users section for everyone. Only you can promote, demote, or manage them. You yourself never appear anywhere."), admins.map(u => /*#__PURE__*/React.createElement(UserRow, {
+    key: u.id,
+    u: u,
+    brands: brands,
+    notify: notify,
+    me: me
+  })), admins.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: "var(--c-text4)",
+      marginBottom: 8
+    }
+  }, "No additional administrators yet."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      alignItems: "center",
+      marginTop: 12,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      maxWidth: 280,
+      cursor: "pointer"
+    },
+    value: pick,
+    onChange: e => setPick(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "Promote an existing user…"), regulars.map(u => /*#__PURE__*/React.createElement("option", {
+    key: u.id,
+    value: u.id
+  }, u.email, u.displayName ? " — " + u.displayName : ""))), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#fbbf24", "#1a1a1a"),
+    disabled: !pick,
+    onClick: promote
+  }, "👑 Make administrator")));
+}
+
+// Recover an orphan login (Auth account exists but its profile document is missing)
+function RecoverProfileTool({
+  me,
+  notify
+}) {
+  const [open, setOpen] = useState(false);
+  const [uid, setUid] = useState("");
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  async function recover() {
+    try {
+      await db.collection("users").doc(uid.trim()).set({
+        email: email.trim(),
+        displayName: name.trim(),
+        isAdmin: false,
+        role: "FSE",
+        engineerName: "",
+        permissions: blankPermissions(),
+        createdAt: FieldValue.serverTimestamp()
+      });
+      logAudit(me, "profile.recover", email.trim() + " (" + uid.trim() + ")");
+      notify("Profile created — " + email.trim() + " now appears under Users and can use the system.", "ok");
+      setOpen(false);
+      setUid("");
+      setEmail("");
+      setName("");
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 14,
+      paddingTop: 12,
+      borderTop: "1px dashed var(--c-border)"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: {
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      color: "var(--c-text4)",
+      fontSize: 11.5,
+      padding: 0
+    },
+    onClick: () => setOpen(o => !o)
+  }, open ? "▾" : "▸", " A created account is missing from this list? Recover its profile"), open && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text5)",
+      marginBottom: 8,
+      lineHeight: 1.5
+    }
+  }, "This happens when the login account was created but saving its profile failed. Find the account in ", /*#__PURE__*/React.createElement("b", null, "Firebase Console → Authentication → Users"), ", copy its ", /*#__PURE__*/React.createElement("b", null, "User UID"), ", and paste it here with the email."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      maxWidth: 260
+    },
+    value: uid,
+    onChange: e => setUid(e.target.value),
+    placeholder: "User UID (from Firebase Console)"
+  }), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      maxWidth: 220
+    },
+    value: email,
+    onChange: e => setEmail(e.target.value),
+    placeholder: "Email"
+  }), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      maxWidth: 180
+    },
+    value: name,
+    onChange: e => setName(e.target.value),
+    placeholder: "Full name"
+  }), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-key)", "var(--c-bg)"),
+    disabled: !uid.trim() || !email.trim(),
+    onClick: recover
+  }, "Recover profile"))));
+}
 function UserRow({
   u,
   brands,
@@ -6135,6 +6405,28 @@ function UserRow({
       logAudit(me, "user.permissions", u.email);
       notify("Permissions updated for " + u.email + ".", "ok");
       setOpen(false);
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+  }
+  async function resetPw() {
+    if (!confirm("Send a password-reset email to " + u.email + "? They'll receive a secure link from Firebase to choose a new password.")) return;
+    try {
+      await auth.sendPasswordResetEmail(u.email);
+      logAudit(me, "user.pwreset", u.email);
+      notify("📧 Reset link sent to " + u.email + ". It may land in Spam.", "ok");
+    } catch (e) {
+      notify("Could not send reset email: " + e.message, "error");
+    }
+  }
+  async function demote() {
+    if (!confirm("Revoke ADMINISTRATOR rights from " + u.email + "? They become a regular user (their per-tab permissions apply again).")) return;
+    try {
+      await db.collection("users").doc(u.id).update({
+        isAdmin: false
+      });
+      logAudit(me, "user.demote-ADMIN", u.email);
+      notify("Administrator rights revoked.", "ok");
     } catch (e) {
       notify("SERVER REFUSED:\n" + e.message, "error");
     }
@@ -6184,7 +6476,11 @@ function UserRow({
       fontSize: 12,
       color: "var(--c-text4)"
     }
-  }, u.role || "—", u.engineerName ? " · 🔗 " + u.engineerName : ""), isOwnerRow && /*#__PURE__*/React.createElement("span", {
+  }, u.role || "—"), /*#__PURE__*/React.createElement(LinkedName, {
+    u: u,
+    me: me,
+    notify: notify
+  }), isOwnerRow && /*#__PURE__*/React.createElement("span", {
     title: "System owner — protected by the server: no administrator can modify or remove this account",
     style: {
       fontSize: 10,
@@ -6217,7 +6513,23 @@ function UserRow({
       fontSize: 11
     },
     onClick: () => setOpen(o => !o)
-  }, open ? "Close" : "🔐 Access"), canDeleteRow && /*#__PURE__*/React.createElement("button", {
+  }, open ? "Close" : "🔐 Access"), !isOwnerRow && u.email && /*#__PURE__*/React.createElement("button", {
+    title: "Email a password-reset link to this account",
+    style: {
+      ...btnSt("var(--c-border)", "var(--c-text2)"),
+      padding: "4px 10px",
+      fontSize: 11
+    },
+    onClick: resetPw
+  }, "📧 Reset password"), iAmOwner && u.isAdmin && !isOwnerRow && /*#__PURE__*/React.createElement("button", {
+    title: "Revoke administrator rights (back to regular user)",
+    style: {
+      ...btnSt("var(--c-border)", "#fbbf24"),
+      padding: "4px 10px",
+      fontSize: 11
+    },
+    onClick: demote
+  }, "⬇ Revoke admin"), canDeleteRow && /*#__PURE__*/React.createElement("button", {
     title: "Move profile to Bin",
     style: {
       ...btnSt("#3a1d1d", "#fca5a5"),
