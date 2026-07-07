@@ -839,6 +839,22 @@ function usePresence(user, profile) {
         rtdb.ref("cursors/" + SESSION_ID).remove();
         rtdb.ref("clicks/" + SESSION_ID).remove();
       } catch (e) {}
+      // In-app ONLINE presence: every signed-in account broadcasts itself —
+      // EXCEPT the owner, who is always invisible. Only the owner's UI reads it.
+      try {
+        const oRef = rtdb.ref("online/" + SESSION_ID);
+        if (typeof isOwnerAcct === "function" && isOwnerAcct(user)) {
+          oRef.remove(); // the owner leaves no trace
+        } else {
+          oRef.onDisconnect().remove();
+          oRef.set({
+            name: String(profile && profile.displayName || user.email || "user").slice(0, 60),
+            email: String(user.email || "").slice(0, 80),
+            admin: !!(profile && profile.isAdmin),
+            at: firebase.database.ServerValue.TIMESTAMP
+          });
+        }
+      } catch (e) {}
       return;
     }
     (async () => {
@@ -884,6 +900,7 @@ function usePresence(user, profile) {
         rtdb.ref("presence/" + SESSION_ID).remove();
         rtdb.ref("cursors/" + SESSION_ID).remove();
         rtdb.ref("clicks/" + SESSION_ID).remove();
+        rtdb.ref("online/" + SESSION_ID).remove();
       } catch (e) {}
     };
     window.addEventListener("beforeunload", bye);
@@ -962,6 +979,18 @@ function usePresence(user, profile) {
       } catch (e) {}
     }, 0);
   };
+  // Owner-only subscription to the in-app online list (others never load it).
+  const [online, setOnline] = useState({});
+  useEffect(() => {
+    if (!rtdbOk || !user || !(typeof isOwnerAcct === "function" && isOwnerAcct(user))) {
+      setOnline({});
+      return;
+    }
+    const r = rtdb.ref("online");
+    const h = r.on("value", s => setOnline(s.val() || {}));
+    return () => r.off("value", h);
+  }, [rtdbOk, user && user.uid]);
+
   // On the READ side, a signed-in viewer should see NOBODY's live cursors/effects.
   // Expose only login-screen viewers (signedIn !== true) and suppress everything
   // once I'm signed in.
@@ -981,7 +1010,8 @@ function usePresence(user, profile) {
     sendClick,
     count,
     enabled: rtdbOk,
-    signedIn: iAmSignedIn
+    signedIn: iAmSignedIn,
+    online
   };
 }
 
@@ -1150,6 +1180,101 @@ function NameToggle({
       color: on ? "#34d399" : "var(--c-text3)"
     }
   }, on ? "👁 Visible as you" : "🕶 Anonymous");
+}
+
+// 🟢 Owner-only: everyone currently signed in (the owner never appears here).
+function OnlinePill({
+  online
+}) {
+  const [open, setOpen] = useState(false);
+  const list = Object.entries(online || {}).sort((a, b) => String(a[1].name || "").localeCompare(String(b[1].name || "")));
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative"
+    },
+    onMouseEnter: () => setOpen(true),
+    onMouseLeave: () => setOpen(false)
+  }, /*#__PURE__*/React.createElement("div", {
+    title: "Signed-in accounts right now — only you can see this; you never appear in it",
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 7,
+      height: 34,
+      padding: "0 12px",
+      background: "var(--c-card)",
+      border: "1px solid var(--c-border)",
+      borderRadius: 10,
+      cursor: "default"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 8,
+      height: 8,
+      borderRadius: 99,
+      background: "#34d399",
+      boxShadow: "0 0 8px #34d399"
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "var(--c-text2)"
+    }
+  }, list.length, " online")), open && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      top: 40,
+      right: 0,
+      background: "var(--c-card)",
+      border: "1px solid var(--c-border)",
+      borderRadius: 10,
+      padding: 10,
+      minWidth: 250,
+      zIndex: 95,
+      boxShadow: "0 10px 30px rgba(0,0,0,.4)"
+    }
+  }, list.map(([id, v]) => /*#__PURE__*/React.createElement("div", {
+    key: id,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      padding: "5px 2px"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 9,
+      height: 9,
+      borderRadius: 99,
+      background: "#34d399"
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: "var(--c-text2)",
+      fontWeight: 600,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+      maxWidth: 150
+    }
+  }, v.email || v.name), v.admin && /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: "auto",
+      fontSize: 9,
+      fontWeight: 800,
+      padding: "1px 7px",
+      borderRadius: 999,
+      color: "#fbbf24",
+      border: "1px solid #fbbf2466"
+    }
+  }, "ADMIN"))), list.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "var(--c-text4)"
+    }
+  }, "No one else is signed in.")));
 }
 const {
   useState,
@@ -4775,36 +4900,202 @@ function AnalyticsTab({
     }, c || "");
   })))))));
 }
+// ── Service Visits: interactive grid (filter / sort / resize / reorder) ─────
+// Every preference here is PER-USER: filters and selection are local state,
+// and column order/widths/row height persist only in THIS browser's storage.
+// Nothing is written to the database — no user's view can affect another's.
+const VGRID_COLS = [{
+  id: "date",
+  label: "Date",
+  w: 100,
+  sv: v => String(v.date || ""),
+  get: v => fmtDate(v.date)
+}, {
+  id: "lab",
+  label: "Laboratory",
+  w: 180,
+  sv: v => String(v._lab || ""),
+  get: v => v._lab
+}, {
+  id: "brand",
+  label: "Brand",
+  w: 100,
+  sv: v => String(v._brand || ""),
+  get: v => v._brand || "—"
+}, {
+  id: "machine",
+  label: "Machine",
+  w: 170,
+  sv: v => String(v._machine || ""),
+  get: v => v._machine
+}, {
+  id: "serial",
+  label: "Serial No",
+  w: 120,
+  sv: v => String(v._sn || ""),
+  get: v => v._sn,
+  mono: true
+}, {
+  id: "type",
+  label: "Type",
+  w: 110,
+  sv: v => String(v.type || ""),
+  get: v => v.type
+}, {
+  id: "isr",
+  label: "ISR",
+  w: 105,
+  sv: v => String(v.isrNo || ""),
+  get: v => v.isrNo || "—",
+  mono: true
+}, {
+  id: "eng",
+  label: "Engineer(s)",
+  w: 160,
+  sv: v => String(v.engineer || ""),
+  get: v => [v.engineer, v.engineer2, v.engineer3].filter(x => String(x || "").trim()).join(", ") || "—"
+}, {
+  id: "status",
+  label: "Status after",
+  w: 115,
+  sv: v => String(v.machineStatus || ""),
+  get: v => v.machineStatus || "—"
+}, {
+  id: "logged",
+  label: "Logged by",
+  w: 150,
+  sv: v => String(v.loggedBy || ""),
+  get: null
+}, {
+  id: "sig",
+  label: "✍",
+  w: 58,
+  sv: v => v.signature ? "1" : "0",
+  get: null
+}, {
+  id: "remarks",
+  label: "Remarks",
+  w: 240,
+  sv: v => String(v.remarks || ""),
+  get: v => v.remarks || ""
+}];
+function vgridLoad(key, fallback) {
+  try {
+    const s = localStorage.getItem(key);
+    return s ? JSON.parse(s) : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+function vgridSave(key, val) {
+  try {
+    localStorage.setItem(key, JSON.stringify(val));
+  } catch (e) {}
+}
 function VisitsTab({
   labs,
   profile,
   notify
 }) {
-  const canEditLabs = pCanTab(profile, "labs", "edit");
+  const canEditLabs = pCanTab(profile, "labs", "edit") || profile.isAdmin;
+  // ---- filters (session-local, per user) ----
   const [q, setQ] = useState("");
+  const [labF, setLabF] = useState("");
+  const [brandF, setBrandF] = useState("");
+  const [machineF, setMachineF] = useState("");
   const [typeF, setTypeF] = useState("");
   const [engF, setEngF] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  // ---- layout (persisted in THIS browser only) ----
+  const defOrder = VGRID_COLS.map(c => c.id);
+  const [colOrder, setColOrder] = useState(() => {
+    const s = vgridLoad("ibase_v_cols", defOrder);
+    const valid = s.filter(id => defOrder.includes(id));
+    return [...valid, ...defOrder.filter(id => !valid.includes(id))];
+  });
+  const [colW, setColW] = useState(() => vgridLoad("ibase_v_colw", {}));
+  const [rowH, setRowH] = useState(() => vgridLoad("ibase_v_rowh", 40));
+  useEffect(() => vgridSave("ibase_v_cols", colOrder), [colOrder]);
+  useEffect(() => vgridSave("ibase_v_colw", colW), [colW]);
+  useEffect(() => vgridSave("ibase_v_rowh", rowH), [rowH]);
+  // ---- sort + selection (session-local) ----
+  const [sort, setSort] = useState({
+    col: "date",
+    dir: -1
+  });
+  const [selected, setSelected] = useState({});
+  const dragCol = useRef(null);
   const all = useMemo(() => labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => ({
     ...v,
     _labId: l.id,
     _lab: l.name,
     _mId: m.id,
     _machine: m.instrument,
-    _sn: m.serialNo
-  })))).sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))), [labs]);
-  const engineers = useMemo(() => Array.from(new Set(all.flatMap(v => [v.engineer, v.engineer2, v.engineer3]).map(x => String(x || "").trim()).filter(Boolean))).sort(), [all]);
-  const shown = all.filter(v => {
+    _sn: m.serialNo,
+    _brand: String(m.instrument || "").trim().split(" ")[0] || ""
+  })))), [labs]);
+  const labOpts = useMemo(() => sortAlpha(Array.from(new Set(all.map(v => v._lab).filter(Boolean)))), [all]);
+  const brandOpts = useMemo(() => sortAlpha(Array.from(new Set(all.map(v => v._brand).filter(Boolean)))), [all]);
+  const machineOpts = useMemo(() => sortAlpha(Array.from(new Set(all.filter(v => !brandF || v._brand === brandF).map(v => v._machine).filter(Boolean)))), [all, brandF]);
+  const engOpts = useMemo(() => sortAlpha(Array.from(new Set(all.flatMap(v => [v.engineer, v.engineer2, v.engineer3]).map(x => String(x || "").trim()).filter(Boolean)))), [all]);
+  const filtered = useMemo(() => all.filter(v => {
+    if (labF && v._lab !== labF) return false;
+    if (brandF && v._brand !== brandF) return false;
+    if (machineF && v._machine !== machineF) return false;
     if (typeF && String(v.type || "") !== typeF) return false;
     if (engF && ![v.engineer, v.engineer2, v.engineer3].some(x => String(x || "").trim() === engF)) return false;
     const dk = String(v.date || "").slice(0, 10);
     if (from && dk < from) return false;
     if (to && dk > to) return false;
-    const s = q.toLowerCase();
+    const s = q.trim().toLowerCase();
     if (!s) return true;
-    return [v._lab, v._machine, v._sn, v.isrNo, v.engineer, v.remarks].some(x => String(x || "").toLowerCase().includes(s));
-  });
+    return [v._lab, v._machine, v._sn, v._brand, v.isrNo, v.engineer, v.engineer2, v.engineer3, v.remarks, v.loggedBy].some(x => String(x || "").toLowerCase().includes(s));
+  }), [all, labF, brandF, machineF, typeF, engF, from, to, q]);
+  const colDef = id => VGRID_COLS.find(c => c.id === id);
+  const shown = useMemo(() => {
+    const c = colDef(sort.col);
+    if (!c) return filtered;
+    return [...filtered].sort((a, b) => sort.dir * String(c.sv(a)).localeCompare(String(c.sv(b)), undefined, {
+      numeric: true,
+      sensitivity: "base"
+    }));
+  }, [filtered, sort]);
+  function clickSort(id) {
+    setSort(s => s.col === id ? {
+      col: id,
+      dir: -s.dir
+    } : {
+      col: id,
+      dir: 1
+    });
+  }
+  function startResize(e, id) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX,
+      startW = colW[id] || colDef(id).w;
+    const move = ev => setColW(w => ({
+      ...w,
+      [id]: Math.max(50, startW + (ev.clientX - startX))
+    }));
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  }
+  function dropCol(targetId) {
+    const d = dragCol.current;
+    dragCol.current = null;
+    if (!d || d === targetId) return;
+    setColOrder(o => {
+      const n = o.filter(x => x !== d);
+      n.splice(n.indexOf(targetId), 0, d);
+      return n;
+    });
+  }
   async function delVisit(v) {
     if (!confirm("Move this " + (v.type || "visit") + " (" + fmtDate(v.date) + " · " + v._machine + " @ " + v._lab + ") to the Bin?")) return;
     const lab = labs.find(l => l.id === v._labId);
@@ -4823,6 +5114,7 @@ function VisitsTab({
           _mId,
           _machine,
           _sn,
+          _brand,
           ...rest
         }) => rest)(v)
       }, profile.email);
@@ -4844,7 +5136,33 @@ function VisitsTab({
       notify("Server refused: " + e.message, "error");
     }
   }
-  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  const anyFilter = q || labF || brandF || machineF || typeF || engF || from || to;
+  const selCount = Object.values(selected).filter(Boolean).length;
+  const _lblS = {
+    display: "block",
+    fontSize: 9,
+    fontWeight: 700,
+    color: "var(--c-text4)",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 3
+  };
+  const _inS = {
+    ...inputSt(),
+    padding: "7px 10px",
+    fontSize: 12,
+    minWidth: 120,
+    cursor: "pointer"
+  };
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("style", null, `
+        .ibzv tbody tr { cursor: pointer; }
+        .ibzv tbody tr:hover td { background: var(--c-card2) !important; }
+        .ibzv tbody tr.ibzv-sel td { background: rgba(56,189,248,.15) !important; }
+        .ibzv tbody tr.ibzv-sel td:first-child { box-shadow: inset 3px 0 0 var(--c-key); }
+        .ibzv th { user-select: none; position: relative; }
+        .ibzv .ibzv-grip { position:absolute; top:0; right:-3px; width:7px; height:100%; cursor:col-resize; }
+        .ibzv .ibzv-grip:hover { background: var(--c-key); opacity:.5; }
+      `), /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 14
     }
@@ -4858,184 +5176,296 @@ function VisitsTab({
       fontSize: 11.5,
       color: "var(--c-text4)"
     }
-  }, "Every visit across all laboratories. Log new visits from a laboratory's page.")), /*#__PURE__*/React.createElement("div", {
+  }, "Drag a column header to rearrange · drag its edge to resize · click it to sort · click a row to highlight. Your layout and filters are yours alone — they never change anyone else's view.")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "flex-end",
-      gap: 12,
+      gap: 10,
       flexWrap: "wrap",
-      marginBottom: 14
+      marginBottom: 12,
+      padding: "12px 14px",
+      background: "var(--c-card)",
+      borderRadius: 12,
+      border: "1px solid var(--c-border)"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      flex: "1 1 240px",
-      maxWidth: 320
+      flex: "1 1 190px",
+      maxWidth: 250
     }
   }, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
+    style: _lblS
   }, "Search"), /*#__PURE__*/React.createElement("input", {
-    style: inputSt(),
-    value: q,
-    onChange: e => setQ(e.target.value),
-    placeholder: "🔍 Lab, machine, serial, ISR, remarks…"
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Type"), /*#__PURE__*/React.createElement("select", {
     style: {
       ...inputSt(),
-      minWidth: 150,
-      cursor: "pointer"
+      padding: "7px 10px",
+      fontSize: 12
     },
+    value: q,
+    onChange: e => setQ(e.target.value),
+    placeholder: "🔍 Serial, ISR, remarks…"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: _lblS
+  }, "Laboratory"), /*#__PURE__*/React.createElement("select", {
+    style: _inS,
+    value: labF,
+    onChange: e => setLabF(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "All"), labOpts.map(x => /*#__PURE__*/React.createElement("option", {
+    key: x
+  }, x)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: _lblS
+  }, "Brand"), /*#__PURE__*/React.createElement("select", {
+    style: _inS,
+    value: brandF,
+    onChange: e => {
+      setBrandF(e.target.value);
+      setMachineF("");
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "All"), brandOpts.map(x => /*#__PURE__*/React.createElement("option", {
+    key: x
+  }, x)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: _lblS
+  }, "Machine"), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ..._inS,
+      maxWidth: 200
+    },
+    value: machineF,
+    onChange: e => setMachineF(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "All"), machineOpts.map(x => /*#__PURE__*/React.createElement("option", {
+    key: x
+  }, x)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: _lblS
+  }, "Type"), /*#__PURE__*/React.createElement("select", {
+    style: _inS,
     value: typeF,
     onChange: e => setTypeF(e.target.value)
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "All types"), sortAlpha(VISIT_TYPES).map(t => /*#__PURE__*/React.createElement("option", {
+  }, "All"), sortAlpha(VISIT_TYPES).map(t => /*#__PURE__*/React.createElement("option", {
     key: t
   }, t)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
+    style: _lblS
   }, "Engineer"), /*#__PURE__*/React.createElement("select", {
-    style: {
-      ...inputSt(),
-      minWidth: 170,
-      cursor: "pointer"
-    },
+    style: _inS,
     value: engF,
     onChange: e => setEngF(e.target.value)
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "All engineers"), engineers.map(n => /*#__PURE__*/React.createElement("option", {
-    key: n
-  }, n)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
+  }, "All"), engOpts.map(x => /*#__PURE__*/React.createElement("option", {
+    key: x
+  }, x)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: _lblS
   }, "From"), /*#__PURE__*/React.createElement("input", {
     type: "date",
-    style: inputSt(),
+    style: {
+      ..._inS,
+      minWidth: 135
+    },
     value: from,
     max: to || undefined,
     onChange: e => setFrom(e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
+    style: _lblS
   }, "To"), /*#__PURE__*/React.createElement("input", {
     type: "date",
-    style: inputSt(),
+    style: {
+      ..._inS,
+      minWidth: 135
+    },
     value: to,
     min: from || undefined,
     onChange: e => setTo(e.target.value)
-  })), (q || typeF || engF || from || to) && /*#__PURE__*/React.createElement("button", {
+  })), anyFilter && /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: () => {
       setQ("");
+      setLabF("");
+      setBrandF("");
+      setMachineF("");
       setTypeF("");
       setEngF("");
       setFrom("");
       setTo("");
     }
-  }, "↺ Clear")), /*#__PURE__*/React.createElement("div", {
-    style: cardSt
+  }, "↺ Clear"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginLeft: "auto"
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: _lblS
+  }, "Row size"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "inline-flex",
+      gap: 2,
+      background: "var(--c-bg)",
+      border: "1px solid var(--c-border)",
+      borderRadius: 8,
+      padding: 2
+    }
+  }, [["Compact", 30], ["Normal", 40], ["Tall", 58]].map(([lbl, h]) => /*#__PURE__*/React.createElement("button", {
+    key: lbl,
+    onClick: () => setRowH(h),
+    style: {
+      border: "none",
+      cursor: "pointer",
+      borderRadius: 6,
+      padding: "4px 10px",
+      fontSize: 11,
+      fontWeight: 700,
+      background: rowH === h ? "var(--c-key)" : "transparent",
+      color: rowH === h ? "var(--c-bg)" : "var(--c-text3)"
+    }
+  }, lbl))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...cardSt,
+      overflowX: "auto",
+      padding: 14
+    }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11.5,
       color: "var(--c-text4)",
-      marginBottom: 10
+      marginBottom: 8
     }
-  }, shown.length, " of ", all.length, " visit(s)"), /*#__PURE__*/React.createElement("table", {
+  }, shown.length, " of ", all.length, " visit(s)", selCount ? " · " + selCount + " highlighted (click a row again to clear)" : ""), /*#__PURE__*/React.createElement("table", {
+    className: "ibzv",
     style: {
-      width: "100%",
-      borderCollapse: "collapse"
+      borderCollapse: "collapse",
+      tableLayout: "fixed",
+      minWidth: "100%"
     }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Date", "Laboratory", "Machine", "Type", "ISR", "Engineer(s)", "Status after", "Logged by", "✍", "Remarks", ""].map(h => /*#__PURE__*/React.createElement("th", {
-    key: h,
-    style: thSt
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, shown.slice(0, 400).map((v, i) => /*#__PURE__*/React.createElement("tr", {
-    key: v.id || i
-  }, /*#__PURE__*/React.createElement("td", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, colOrder.map(id => {
+    const c = colDef(id);
+    if (!c) return null;
+    const w = colW[id] || c.w;
+    return /*#__PURE__*/React.createElement("th", {
+      key: id,
+      draggable: true,
+      style: {
+        ...thSt,
+        width: w,
+        maxWidth: w,
+        cursor: "grab"
+      },
+      onDragStart: () => {
+        dragCol.current = id;
+      },
+      onDragOver: e => e.preventDefault(),
+      onDrop: () => dropCol(id),
+      onClick: () => clickSort(id),
+      title: "Click: sort · Drag: move column · Drag right edge: resize"
+    }, c.label, sort.col === id ? sort.dir === 1 ? " ▲" : " ▼" : "", /*#__PURE__*/React.createElement("span", {
+      className: "ibzv-grip",
+      onMouseDown: e => startResize(e, id),
+      onClick: e => e.stopPropagation(),
+      draggable: false,
+      onDragStart: e => {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }));
+  }), canEditLabs && /*#__PURE__*/React.createElement("th", {
     style: {
-      ...tdSt,
-      whiteSpace: "nowrap"
+      ...thSt,
+      width: 52
     }
-  }, fmtDate(v.date)), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, v._lab), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, v._machine, " ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "var(--c-text5)",
-      fontSize: 11
-    }
-  }, "(", v._sn, ")")), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, v.type), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontFamily: "monospace",
-      fontSize: 12
-    }
-  }, v.isrNo || "—"), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontSize: 12
-    }
-  }, [v.engineer, v.engineer2, v.engineer3].filter(x => String(x || "").trim()).join(", ") || "—"), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontSize: 12
-    }
-  }, v.machineStatus || "—"), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontSize: 11.5,
-      color: "var(--c-text4)",
-      whiteSpace: "nowrap"
-    }
-  }, v.loggedBy || "—", v.loggedAt ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9.5,
-      color: "var(--c-text5)"
-    }
-  }, String(v.loggedAt).replace("T", " ").slice(0, 16)) : null), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, v.signature ? /*#__PURE__*/React.createElement("img", {
-    src: v.signature,
-    alt: "signature",
-    title: "Signed",
-    style: {
-      height: 26,
-      width: "auto",
-      background: "#fff",
-      borderRadius: 4,
-      border: "1px solid var(--c-border)",
-      cursor: "pointer"
-    },
-    onClick: () => window.open("").document.write('<img src=\'' + v.signature + '\' style="max-width:100%">')
-  }) : /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "var(--c-text5)"
-    }
-  }, "—")), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontSize: 12,
-      color: "var(--c-text3)",
-      maxWidth: 220
-    }
-  }, v.remarks || ""), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, canEditLabs && /*#__PURE__*/React.createElement("button", {
-    title: "Move to Bin",
-    style: {
-      ...btnSt("#3a1d1d", "#fca5a5"),
-      padding: "4px 9px",
-      fontSize: 11
-    },
-    onClick: () => delVisit(v)
-  }, "🗑")))), shown.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: 9,
+  }))), /*#__PURE__*/React.createElement("tbody", null, shown.slice(0, 400).map((v, i) => {
+    const key = v.id || v._mId + "-" + i;
+    return /*#__PURE__*/React.createElement("tr", {
+      key: key,
+      className: selected[key] ? "ibzv-sel" : "",
+      style: {
+        height: rowH
+      },
+      onClick: () => setSelected(s => ({
+        ...s,
+        [key]: !s[key]
+      }))
+    }, colOrder.map(id => {
+      const c = colDef(id);
+      if (!c) return null;
+      const w = colW[id] || c.w;
+      const base = {
+        ...tdSt,
+        width: w,
+        maxWidth: w,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: rowH >= 58 && id === "remarks" ? "normal" : "nowrap",
+        fontSize: 12
+      };
+      if (id === "sig") return /*#__PURE__*/React.createElement("td", {
+        key: id,
+        style: base,
+        onClick: e => e.stopPropagation()
+      }, v.signature ? /*#__PURE__*/React.createElement("img", {
+        src: v.signature,
+        alt: "✍",
+        title: "Signed — click to enlarge",
+        style: {
+          height: Math.min(rowH - 12, 30),
+          width: "auto",
+          background: "#fff",
+          borderRadius: 4,
+          border: "1px solid var(--c-border)",
+          cursor: "zoom-in"
+        },
+        onClick: () => {
+          const w2 = window.open("");
+          if (w2) w2.document.write('<body style="margin:0;display:grid;place-items:center;background:#111"><img src="' + v.signature + '" style="max-width:96vw"></body>');
+        }
+      }) : /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: "var(--c-text5)"
+        }
+      }, "—"));
+      if (id === "logged") return /*#__PURE__*/React.createElement("td", {
+        key: id,
+        style: base,
+        title: (v.loggedBy || "") + (v.loggedAt ? " · " + String(v.loggedAt).replace("T", " ").slice(0, 16) : "")
+      }, v.loggedBy ? String(v.loggedBy).split("@")[0] : "—", v.loggedAt ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: "var(--c-text5)",
+          fontSize: 10
+        }
+      }, " · ", String(v.loggedAt).slice(5, 10)) : null);
+      return /*#__PURE__*/React.createElement("td", {
+        key: id,
+        style: {
+          ...base,
+          fontFamily: c.mono ? "monospace" : undefined
+        },
+        title: String(c.get(v) || "")
+      }, c.get(v));
+    }), canEditLabs && /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdSt,
+        width: 52
+      },
+      onClick: e => e.stopPropagation()
+    }, /*#__PURE__*/React.createElement("button", {
+      title: "Move to Bin",
+      style: {
+        ...btnSt("#3a1d1d", "#fca5a5"),
+        padding: "3px 8px",
+        fontSize: 11
+      },
+      onClick: () => delVisit(v)
+    }, "🗑")));
+  }), shown.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: colOrder.length + 1,
     style: {
       ...tdSt,
       color: "var(--c-text4)"
     }
-  }, "No visits match.")))), shown.length > 400 && /*#__PURE__*/React.createElement("div", {
+  }, "No visits match the current filters.")))), shown.length > 400 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: "var(--c-text5)",
@@ -7577,7 +8007,7 @@ function App() {
       textTransform: "uppercase",
       letterSpacing: 1.5
     }
-  }, "Installed Base · ", isOwnerAcct(user) ? "Sole Owner" : signedProfile && signedProfile.isAdmin ? "Administrator · " + (signedProfile.displayName || user.email || "").split("@")[0] : signedProfile && signedProfile.role || "Field User")), /*#__PURE__*/React.createElement("div", {
+  }, "Installed Base · ", isOwnerAcct(user) ? "Field Service" : signedProfile && signedProfile.isAdmin ? "Administrator · " + String(user.email || "").toLowerCase() : signedProfile && signedProfile.role || "Field User")), /*#__PURE__*/React.createElement("div", {
     style: {
       marginLeft: "auto",
       display: "flex",
@@ -7625,23 +8055,17 @@ function App() {
   }), /*#__PURE__*/React.createElement(HeaderClock, null), /*#__PURE__*/React.createElement(ThemePicker, {
     theme: theme,
     setTheme: setTheme
+  }), isOwnerAcct(user) && /*#__PURE__*/React.createElement(OnlinePill, {
+    online: presence.online
   }), isOwnerAcct(user) ? /*#__PURE__*/React.createElement("span", {
-    title: "You are the sole owner of this system — this badge appears for no one else",
+    title: "Sole owner / developer",
     style: {
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 6,
-      height: 30,
-      padding: "0 12px",
-      borderRadius: 999,
-      fontSize: 11,
-      fontWeight: 900,
-      letterSpacing: 0.5,
-      color: "#1a1a1a",
-      background: "linear-gradient(90deg,#fbbf24,#f59e0b)",
-      boxShadow: "0 0 12px rgba(251,191,36,.35)"
+      fontSize: 21,
+      lineHeight: 1,
+      filter: "drop-shadow(0 0 7px rgba(251,191,36,.65))",
+      cursor: "default"
     }
-  }, "👑 SOLE OWNER") : signedProfile && signedProfile.isAdmin ? /*#__PURE__*/React.createElement("span", {
+  }, "👑") : signedProfile && signedProfile.isAdmin ? /*#__PURE__*/React.createElement("span", {
     title: "Administrator account",
     style: {
       display: "inline-flex",
@@ -7656,7 +8080,7 @@ function App() {
       border: "1px solid #fbbf2466",
       background: "rgba(251,191,36,.08)"
     }
-  }, "🛡 ADMINISTRATOR · ", String(signedProfile.displayName || user.email || "").split("@")[0].toUpperCase()) : null, /*#__PURE__*/React.createElement("span", {
+  }, "🛡 ADMINISTRATOR · ", String(user.email || "").toLowerCase()) : /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
       color: "var(--c-text4)"
