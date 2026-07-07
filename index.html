@@ -3001,6 +3001,7 @@ function LabDetail({
   }), editVisit && /*#__PURE__*/React.createElement(VisitModal, {
     machine: editVisit.machine,
     engineerOptions: engineerOptions,
+    customFields: catalog && catalog.visitFields || [],
     initial: editVisit.visit,
     onClose: () => setEditVisit(null),
     onSave: async (v, newStatus, pending) => {
@@ -3129,6 +3130,7 @@ function LabDetail({
   }), visitFor && /*#__PURE__*/React.createElement(VisitModal, {
     machine: visitFor,
     engineerOptions: engineerOptions,
+    customFields: catalog && catalog.visitFields || [],
     onClose: () => setVisitFor(null),
     onSave: async (v, newStatus, pending) => {
       let attMetas = [];
@@ -3378,6 +3380,14 @@ function fileToAttachment(file) {
     }
   });
 }
+// Uniform display of a visit's extra data (imported columns / custom fields):
+// folded next to remarks everywhere it is shown or exported.
+function extraFold(v) {
+  const ex = v && v.extra;
+  if (!ex || typeof ex !== "object") return "";
+  const parts = Object.keys(ex).filter(k => String(ex[k] || "").trim()).map(k => k + ": " + ex[k]);
+  return parts.length ? "[Details] " + parts.join(" · ") : "";
+}
 // What changed between two versions of a visit (for the edit log).
 const VISIT_DIFF_FIELDS = [["date", "Date"], ["type", "Type"], ["isrNo", "ISR"], ["engineer", "Engineer"], ["engineer2", "Engineer 2"], ["engineer3", "Engineer 3"], ["machineStatus", "Status after"], ["dtDeparture", "Departure"], ["dtArrivalHome", "Arrival home"], ["dtWorkStarted", "Work started"], ["dtWorkEnded", "Work ended"], ["remarks", "Remarks"], ["signedByName", "Signed by (name)"]];
 function visitDiff(oldV, newV) {
@@ -3388,6 +3398,7 @@ function visitDiff(oldV, newV) {
     if (a !== b) changes.push(label + ": \u201C" + (a || "—") + "\u201D \u2192 \u201C" + (b || "—") + "\u201D");
   });
   if (String(oldV.signature || "") !== String(newV.signature || "")) changes.push("Signature: " + (newV.signature ? "updated" : "removed"));
+  if (JSON.stringify(oldV.extra || {}) !== JSON.stringify(newV.extra || {})) changes.push("Additional fields: updated");
   const oa = (oldV.attachments || []).length,
     na = (newV.attachments || []).length;
   if (na > oa) changes.push("Attachments: +" + (na - oa) + " file(s)");
@@ -3561,6 +3572,7 @@ function NameSelect({
 function VisitModal({
   machine,
   engineerOptions,
+  customFields,
   initial,
   onClose,
   onSave
@@ -3580,7 +3592,10 @@ function VisitModal({
     remarks: initial.remarks || "",
     signature: initial.signature || "",
     signedByName: initial.signedByName || "",
-    attachments: [...(initial.attachments || [])]
+    attachments: [...(initial.attachments || [])],
+    extra: {
+      ...(initial.extra || {})
+    }
   } : {
     date: today(),
     type: "PM",
@@ -3596,7 +3611,8 @@ function VisitModal({
     remarks: "",
     signature: "",
     signedByName: "",
-    attachments: []
+    attachments: [],
+    extra: {}
   });
   const set = (k, v) => setF(x => ({
     ...x,
@@ -3720,7 +3736,37 @@ function VisitModal({
     style: inputSt(),
     value: f.remarks,
     onChange: e => set("remarks", e.target.value)
-  }))), /*#__PURE__*/React.createElement("div", {
+  }))), (customFields || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 12
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Additional details"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 10
+    }
+  }, sortAlpha(customFields).map(name => /*#__PURE__*/React.createElement("div", {
+    key: name
+  }, /*#__PURE__*/React.createElement("label", {
+    style: {
+      ...labelSt,
+      textTransform: "none",
+      fontSize: 10.5
+    }
+  }, name), /*#__PURE__*/React.createElement("input", {
+    style: inputSt(),
+    value: f.extra && f.extra[name] || "",
+    onChange: e => setF(x => ({
+      ...x,
+      extra: {
+        ...(x.extra || {}),
+        [name]: e.target.value
+      }
+    }))
+  }))))), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 14,
       display: "grid",
@@ -5826,8 +5872,8 @@ const VGRID_COLS = [{
   id: "remarks",
   label: "Remarks",
   w: 240,
-  sv: v => String(v.remarks || ""),
-  get: v => v.remarks || ""
+  sv: v => String(v.remarks || "") + " " + extraFold(v),
+  get: v => (v.remarks || "") + (extraFold(v) ? (v.remarks ? "  " : "") + extraFold(v) : "") || ""
 }];
 function vgridLoad(key, fallback) {
   try {
@@ -5903,7 +5949,7 @@ function VisitsTab({
     if (to && dk > to) return false;
     const s = q.trim().toLowerCase();
     if (!s) return true;
-    return [v._lab, v._machine, v._sn, v._brand, v.isrNo, v.engineer, v.engineer2, v.engineer3, v.remarks, v.loggedBy].some(x => String(x || "").toLowerCase().includes(s));
+    return [v._lab, v._machine, v._sn, v._brand, v.isrNo, v.engineer, v.engineer2, v.engineer3, v.remarks, v.loggedBy, extraFold(v)].some(x => String(x || "").toLowerCase().includes(s));
   }), [all, labF, brandF, machineF, typeF, engF, from, to, q]);
   const colDef = id => VGRID_COLS.find(c => c.id === id);
   const shown = useMemo(() => {
@@ -6434,7 +6480,7 @@ function buildBackupSheets({
   const S = {};
   S["Laboratories"] = [["Laboratory", "Location", "Machines"]].concat(labs.map(l => [l.name || "", l.location || "", (l.machines || []).length]));
   S["Equipment Register"] = [["Laboratory", "Instrument", "Serial No", "Installed", "Last PM", "PM Interval", "Next PM", "Status", "Visits"]].concat(labs.flatMap(l => (l.machines || []).map(m => [l.name || "", m.instrument || "", m.serialNo || "", m.installDate || "", m.lastPM || "", m.pmInterval || "", m.nextPM || "", m.status || "", (m.visits || []).length])));
-  S["Service Visits"] = [["Date", "Laboratory", "Machine", "Serial", "Type", "ISR", "Engineer", "Engineer 2", "Engineer 3", "Status after", "Departure", "Arrival home", "Work started", "Work ended", "Logged By", "Logged At", "Signed", "Signed by (name)", "Attachments", "Edit Log", "Remarks"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => [v.date || "", l.name || "", m.instrument || "", m.serialNo || "", v.type || "", v.isrNo || "", v.engineer || "", v.engineer2 || "", v.engineer3 || "", v.machineStatus || "", v.dtDeparture || "", v.dtArrivalHome || "", v.dtWorkStarted || "", v.dtWorkEnded || "", v.loggedBy || "", v.loggedAt || "", v.signature ? "Yes" : "", v.signedByName || "", (v.attachments || []).map(a => a.name).join(", "), (v.editLog || []).map(e => e.by + " @ " + e.at + ": " + e.changes.join("; ")).join(" | "), v.remarks || ""]))));
+  S["Service Visits"] = [["Date", "Laboratory", "Machine", "Serial", "Type", "ISR", "Engineer", "Engineer 2", "Engineer 3", "Status after", "Departure", "Arrival home", "Work started", "Work ended", "Logged By", "Logged At", "Signed", "Signed by (name)", "Attachments", "Edit Log", "Remarks"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => [v.date || "", l.name || "", m.instrument || "", m.serialNo || "", v.type || "", v.isrNo || "", v.engineer || "", v.engineer2 || "", v.engineer3 || "", v.machineStatus || "", v.dtDeparture || "", v.dtArrivalHome || "", v.dtWorkStarted || "", v.dtWorkEnded || "", v.loggedBy || "", v.loggedAt || "", v.signature ? "Yes" : "", v.signedByName || "", (v.attachments || []).map(a => a.name).join(", "), (v.editLog || []).map(e => e.by + " @ " + e.at + ": " + e.changes.join("; ")).join(" | "), (v.remarks || "") + (extraFold(v) ? (v.remarks ? "\n" : "") + extraFold(v) : "")]))));
   S["Visit Attachments"] = [["Laboratory", "Machine", "Serial", "Visit Date", "Visit Type", "File", "Kind", "Size KB", "Uploaded (visit logged by)"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).flatMap(v => (v.attachments || []).map(a => [l.name || "", m.instrument || "", m.serialNo || "", v.date || "", v.type || "", a.name || "", a.kind || "", Math.round((a.size || 0) / 1024), v.loggedBy || ""])))));
   S["Machine Inventory"] = [["Brand", "Model", "Serial No", "Item Code", "Condition", "Status", "Location", "Dealer", "Remarks"]].concat(inventory.map(it => [it.brand || "", it.machineModel || "", it.serialNo || "", it.itemCode || "", it.condition || "", it.status || "", it.location || "", it.dealer || "", it.remarks || ""]));
   S["Spare Parts"] = [["Brand", "Part No", "Description", "On Hand"]].concat(spareParts.map(p => [p.brand || "", p.partNumber || "", p.description || "", (p.receipts || []).reduce((s, r) => s + (Number(r.qty) || 0), 0) - (p.issues || []).reduce((s, r) => s + (Number(r.qty) || 0), 0)]));
@@ -7797,19 +7843,19 @@ function OtSettingsModal({
 // live database exactly as if entered by hand. The OLDEST visit date of each
 // machine becomes its installation date.
 const IMP_SYN = {
-  date: ["date", "visitdate", "dateofvisit", "servicedate", "dov"],
-  lab: ["laboratory", "lab", "labname", "account", "accountname", "institution", "hospital", "customer", "client", "site"],
-  location: ["location", "address", "region", "area", "city"],
+  date: ["date", "visitdate", "dateofvisit", "servicedate", "dov", "dateofservice", "dateperformed", "dateconducted", "dateofpm", "pmdate", "dateofrepair", "datevisited", "dateofwork", "visitdt", "dt"],
+  lab: ["laboratory", "lab", "labname", "account", "accountname", "institution", "hospital", "customer", "client", "site", "enduser", "endusername", "clientname", "customername", "hospitalname", "institutionname", "facility", "facilityname", "branch", "nameofinstitution", "nameofhospital", "accountlaboratory", "laboratoryname", "labaccount", "companyname"],
+  location: ["location", "address", "region", "area", "city", "province"],
   subRegion: ["subregion", "subarea", "district"],
-  instrument: ["machine", "instrument", "model", "machinemodel", "equipment", "unit", "analyzer", "item"],
-  serial: ["serial", "serialno", "serialnumber", "sn", "serialnum"],
-  type: ["type", "visittype", "typeofvisit", "servicetype", "service", "nature", "natureofvisit", "activity"],
-  isr: ["isr", "isrno", "isrnumber", "reportno", "srno", "jobno", "jobordernumber", "reference"],
-  engineer: ["engineer", "engineer1", "fse", "technician", "attendedby", "performedby", "servicedby"],
-  engineer2: ["engineer2", "fse2", "technician2"],
-  engineer3: ["engineer3", "fse3"],
-  status: ["status", "machinestatus", "statusafter", "unitstatus"],
-  remarks: ["remarks", "workdescription", "description", "work", "findings", "actiontaken", "action", "notes", "comment", "comments", "details"]
+  instrument: ["machine", "instrument", "model", "machinemodel", "equipment", "unit", "analyzer", "item", "equipmentname", "instrumentname", "machinename", "product", "productname", "unitmodel", "modelname", "typeofmachine", "machinetype", "brandmodel", "equipmentmodel", "machineinstrument"],
+  serial: ["serial", "serialno", "serialnumber", "sn", "serialnum", "snno", "serialnonumber", "machineserial", "equipmentserial", "serialn", "esn"],
+  type: ["type", "visittype", "typeofvisit", "servicetype", "service", "nature", "natureofvisit", "activity", "category", "classification", "jobtype", "natureofservice", "typeofservice", "kindofvisit", "visitcategory", "natureofwork"],
+  isr: ["isr", "isrno", "isrnumber", "reportno", "srno", "jobno", "jobordernumber", "reference", "refno", "servicereportno", "reportnumber", "jo", "jonumber", "ticketno", "ticket"],
+  engineer: ["engineer", "engineer1", "fse", "technician", "attendedby", "performedby", "servicedby", "engineername", "fsename", "assignedengineer", "engr", "engrname", "personnel", "staff", "serviceengineer", "attendingengineer"],
+  engineer2: ["engineer2", "fse2", "technician2", "engr2"],
+  engineer3: ["engineer3", "fse3", "engr3"],
+  status: ["status", "machinestatus", "statusafter", "unitstatus", "equipmentstatus", "condition"],
+  remarks: ["remarks", "workdescription", "description", "work", "findings", "actiontaken", "action", "notes", "comment", "comments", "details", "workdone", "workperformed", "jobdescription", "problem", "complaint", "resolution", "servicereport", "actiondone", "report", "observation", "recommendation"]
 };
 function impNormHeader(h) {
   return String(h || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -7846,6 +7892,56 @@ function impDate(v) {
   }
   return "";
 }
+// Build normalized visit rows from a grid given a header index + column map.
+// Used by BOTH the automatic detector and the manual column-mapping panel.
+function impRowsFromGrid(grid, hi, map) {
+  const rows = [];
+  const mappedIdx = {};
+  Object.keys(map).forEach(k => {
+    if (map[k] !== undefined) mappedIdx[map[k]] = true;
+  });
+  const header = grid[hi] || [];
+  const unmapped = header.map((h, i) => ({
+    h: String(h || "").trim(),
+    i
+  })).filter(x => x.h && !mappedIdx[x.i]);
+  for (let i = hi + 1; i < grid.length; i++) {
+    const r = grid[i] || [];
+    if (!r.some(x => String(x == null ? "" : x).trim())) continue;
+    const g = k => map[k] === undefined ? "" : String(r[map[k]] == null ? "" : r[map[k]]).trim();
+    const date = impDate(map.date !== undefined ? r[map.date] : "");
+    const lab = g("lab") || "(Unassigned imports)";
+    const serial = g("serial");
+    const instrument = g("instrument") || (serial ? "" : "(Unspecified machine)");
+    const extra = {};
+    unmapped.forEach(u => {
+      const v = r[u.i];
+      const sv = String(v == null ? "" : v).trim();
+      if (sv) extra[u.h] = sv.slice(0, 300);
+    });
+    rows.push({
+      date,
+      lab,
+      location: g("location"),
+      subRegion: g("subRegion"),
+      instrument,
+      serial,
+      type: g("type") || "Corrective",
+      isr: g("isr"),
+      engineer: g("engineer"),
+      engineer2: g("engineer2"),
+      engineer3: g("engineer3"),
+      status: g("status"),
+      remarks: g("remarks"),
+      extra,
+      missingBits: [!date && "date", !g("lab") && "laboratory", !serial && !g("instrument") && "machine"].filter(Boolean)
+    });
+  }
+  return {
+    rows,
+    unmapped: unmapped.map(u => u.h)
+  };
+}
 function impParseWorkbook(wb) {
   const rows = [];
   const sheetInfo = [];
@@ -7858,9 +7954,13 @@ function impParseWorkbook(wb) {
     });
     let hi = -1,
       map = null;
-    for (let i = 0; i < Math.min(grid.length, 10); i++) {
+    for (let i = 0; i < Math.min(grid.length, 25); i++) {
+      // scan deeper (title rows are common)
       const m = impMapHeaders(grid[i] || []);
-      if (m.date !== undefined && (m.serial !== undefined || m.instrument !== undefined) && m.lab !== undefined) {
+      const core = ["date", "lab", "serial", "instrument"].filter(k => m[k] !== undefined).length;
+      const any = Object.keys(m).length;
+      // relaxed: any 2 core columns, or 1 core (serial/instrument/lab) + 2 other recognized headers
+      if (core >= 2 || (m.serial !== undefined || m.instrument !== undefined || m.lab !== undefined) && any >= 3) {
         hi = i;
         map = m;
         break;
@@ -7873,55 +7973,14 @@ function impParseWorkbook(wb) {
       });
       return;
     }
-    // columns the recognizer did NOT map — offered to the owner as "missing" data
-    const mappedIdx = {};
-    Object.keys(map).forEach(k => mappedIdx[map[k]] = true);
-    const header = grid[hi] || [];
-    const unmapped = header.map((h, i) => ({
-      h: String(h || "").trim(),
-      i
-    })).filter(x => x.h && !mappedIdx[x.i]);
-    let n = 0;
-    for (let i = hi + 1; i < grid.length; i++) {
-      const r = grid[i] || [];
-      if (!r.some(x => String(x == null ? "" : x).trim())) continue; // truly empty line
-      const g = k => map[k] === undefined ? "" : String(r[map[k]] == null ? "" : r[map[k]]).trim();
-      const date = impDate(map.date !== undefined ? r[map.date] : "");
-      // EVERY row is kept: missing pieces get explicit fallbacks instead of being dropped.
-      const lab = g("lab") || "(Unassigned imports)";
-      const serial = g("serial");
-      const instrument = g("instrument") || (serial ? "" : "(Unspecified machine)");
-      const extra = {};
-      unmapped.forEach(u => {
-        const v = r[u.i];
-        const sv = String(v == null ? "" : v).trim();
-        if (sv) extra[u.h] = sv.slice(0, 300);
-      });
-      rows.push({
-        date,
-        lab,
-        location: g("location"),
-        subRegion: g("subRegion"),
-        instrument,
-        serial,
-        type: g("type") || "Corrective",
-        isr: g("isr"),
-        engineer: g("engineer"),
-        engineer2: g("engineer2"),
-        engineer3: g("engineer3"),
-        status: g("status"),
-        remarks: g("remarks"),
-        extra,
-        missingBits: [!date && "date", !g("lab") && "laboratory", !serial && !g("instrument") && "machine"].filter(Boolean)
-      });
-      n++;
-    }
+    const built = impRowsFromGrid(grid, hi, map);
+    built.rows.forEach(r => rows.push(r));
     sheetInfo.push({
       name,
       used: true,
-      rows: n,
+      rows: built.rows.length,
       map,
-      unmapped: unmapped.map(u => u.h)
+      unmapped: built.unmapped
     });
   });
   const unmappedAll = Array.from(new Set(sheetInfo.flatMap(s => s.unmapped || [])));
@@ -7939,15 +7998,33 @@ function impVisitKey(v) {
 }
 function impBuildPlan(rows, labs, importerEmail, includeExtras) {
   const nowIso = auditNow ? auditNow() : new Date().toISOString();
+  // Redundancy removal: a serial that ALREADY EXISTS anywhere in the system
+  // routes its rows to that machine's current laboratory — even if the file
+  // spells the laboratory differently — so no duplicate machine is created.
+  const serialHome = {};
+  labs.forEach(l => (l.machines || []).forEach(m => {
+    const s = String(m.serialNo || "").trim().toLowerCase();
+    if (s && !serialHome[s]) serialHome[s] = {
+      key: labNameNorm(l.name),
+      name: l.name
+    };
+  }));
   const byLab = {};
   rows.forEach(r => {
-    const k = labNameNorm(r.lab);
+    const s = String(r.serial || "").trim().toLowerCase();
+    const home = s && serialHome[s];
+    const k = home ? home.key : labNameNorm(r.lab);
+    const display = home ? home.name : r.lab;
     (byLab[k] = byLab[k] || {
-      name: r.lab,
+      name: display,
       location: r.location,
       subRegion: r.subRegion,
       rows: []
     }).rows.push(r);
+    if (s && !serialHome[s]) serialHome[s] = {
+      key: k,
+      name: display
+    }; // in-file consistency too
   });
   const ops = [];
   let tNewLabs = 0,
@@ -7993,7 +8070,6 @@ function impBuildPlan(rows, labs, importerEmail, includeExtras) {
         dup++;
         return;
       }
-      const extraTxt = includeExtras && r.extra && Object.keys(r.extra).length ? Object.keys(r.extra).map(k => k + ": " + r.extra[k]).join(" · ") : "";
       m.visits.push({
         id: uid(),
         date: r.date,
@@ -8007,7 +8083,7 @@ function impBuildPlan(rows, labs, importerEmail, includeExtras) {
         dtArrivalHome: "",
         dtWorkStarted: "",
         dtWorkEnded: "",
-        remarks: (r.remarks || "") + (extraTxt ? (r.remarks ? "\n" : "") + "[Imported columns] " + extraTxt : ""),
+        remarks: r.remarks || "",
         signature: "",
         signedByName: "",
         attachments: [],
@@ -8069,6 +8145,9 @@ function ImportExcel({
   const [meta, setMeta] = useState(null);
   const [rawRows, setRawRows] = useState(null);
   const [withExtras, setWithExtras] = useState(false);
+  const [grids, setGrids] = useState(null); // { sheetName: grid } for manual mapping
+  const [mapUI, setMapUI] = useState(null); // { sheet, headerRow, assigns:{colIdx:field} }
+  const [fieldsAdded, setFieldsAdded] = useState(false);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
   async function onFile(e) {
@@ -8081,14 +8160,49 @@ function ImportExcel({
         type: "array",
         cellDates: true
       });
+      const g = {};
+      wb.SheetNames.forEach(n => g[n] = XLSX.utils.sheet_to_json(wb.Sheets[n], {
+        header: 1,
+        raw: true,
+        defval: ""
+      }));
+      setGrids({
+        file: file.name,
+        sheets: g,
+        names: wb.SheetNames
+      });
       const parsed = impParseWorkbook(wb);
       if (!parsed.rows.length) {
-        notify("No usable rows found — no sheet had recognizable headers.", "error");
+        // Auto-detection failed → open the MANUAL column mapper instead of giving up.
+        const first = wb.SheetNames[0];
+        const grid = g[first] || [];
+        let hr = 0;
+        for (let i = 0; i < Math.min(grid.length, 25); i++) {
+          if ((grid[i] || []).filter(x => String(x == null ? "" : x).trim()).length >= 2) {
+            hr = i;
+            break;
+          }
+        }
+        const guess = impMapHeaders(grid[hr] || []);
+        const assigns = {};
+        Object.keys(guess).forEach(k => {
+          assigns[guess[k]] = k;
+        });
+        setMapUI({
+          sheet: first,
+          headerRow: hr,
+          assigns
+        });
         setPlan(null);
         setMeta(null);
         setRawRows(null);
+        setWithExtras(false);
+        setFieldsAdded(false);
+        notify("I couldn't recognize the headers automatically — assign the columns below and press Apply.", "error");
         return;
       }
+      setMapUI(null);
+      setFieldsAdded(false);
       setRawRows(parsed.rows);
       setWithExtras(false);
       const p = impBuildPlan(parsed.rows, labs, profile.email, false);
@@ -8143,6 +8257,44 @@ function ImportExcel({
     setPlan(null);
     setMeta(null);
     setRawRows(null);
+    setGrids(null);
+    setMapUI(null);
+    setFieldsAdded(false);
+  }
+  function applyManualMap() {
+    const grid = grids.sheets[mapUI.sheet] || [];
+    const map = {};
+    Object.keys(mapUI.assigns).forEach(ci => {
+      const f = mapUI.assigns[ci];
+      if (f && f !== "ignore" && map[f] === undefined) map[f] = Number(ci);
+    });
+    if (Object.keys(map).length === 0) {
+      notify("Assign at least one column first.", "error");
+      return;
+    }
+    const built = impRowsFromGrid(grid, mapUI.headerRow, map);
+    if (!built.rows.length) {
+      notify("No data rows found under that header row.", "error");
+      return;
+    }
+    const p = impBuildPlan(built.rows, labs, profile.email, false);
+    setRawRows(built.rows);
+    setWithExtras(false);
+    setMeta({
+      file: grids.file,
+      rows: built.rows.length,
+      skipped: 0,
+      sheets: [{
+        name: mapUI.sheet,
+        used: true,
+        rows: built.rows.length,
+        unmapped: built.unmapped
+      }],
+      unmapped: built.unmapped,
+      incomplete: built.rows.filter(r => r.missingBits.length).length
+    });
+    setPlan(p);
+    setMapUI(null);
   }
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -8176,7 +8328,156 @@ function ImportExcel({
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     disabled: busy,
     onClick: () => fileRef.current && fileRef.current.click()
-  }, "📂 Choose Excel file…"), plan && meta && /*#__PURE__*/React.createElement("div", {
+  }, "📂 Choose Excel file…"), mapUI && grids && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 12,
+      padding: 12,
+      background: "var(--c-bg)",
+      borderRadius: 10,
+      border: "1px dashed #f59e0b"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      fontWeight: 800,
+      marginBottom: 6
+    }
+  }, "🔧 Manual column mapping — ", grids.file), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      flexWrap: "wrap",
+      marginBottom: 8,
+      fontSize: 12
+    }
+  }, /*#__PURE__*/React.createElement("label", null, "Sheet", " ", /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      padding: "5px 8px",
+      fontSize: 12
+    },
+    value: mapUI.sheet,
+    onChange: e => {
+      const s = e.target.value;
+      const grid = grids.sheets[s] || [];
+      let hr = 0;
+      for (let i = 0; i < Math.min(grid.length, 25); i++) {
+        if ((grid[i] || []).filter(x => String(x == null ? "" : x).trim()).length >= 2) {
+          hr = i;
+          break;
+        }
+      }
+      const guess = impMapHeaders(grid[hr] || []);
+      const assigns = {};
+      Object.keys(guess).forEach(k => {
+        assigns[guess[k]] = k;
+      });
+      setMapUI({
+        sheet: s,
+        headerRow: hr,
+        assigns
+      });
+    }
+  }, grids.names.map(n => /*#__PURE__*/React.createElement("option", {
+    key: n
+  }, n)))), /*#__PURE__*/React.createElement("label", null, "Header row #", " ", /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    min: 1,
+    style: {
+      ...inputSt(),
+      width: 70,
+      padding: "5px 8px",
+      fontSize: 12
+    },
+    value: mapUI.headerRow + 1,
+    onChange: e => {
+      const hr = Math.max(0, (Number(e.target.value) || 1) - 1);
+      const grid = grids.sheets[mapUI.sheet] || [];
+      const guess = impMapHeaders(grid[hr] || []);
+      const assigns = {};
+      Object.keys(guess).forEach(k => {
+        assigns[guess[k]] = k;
+      });
+      setMapUI({
+        ...mapUI,
+        headerRow: hr,
+        assigns
+      });
+    }
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxHeight: 220,
+      overflowY: "auto"
+    }
+  }, ((grids.sheets[mapUI.sheet] || [])[mapUI.headerRow] || []).map((h, ci) => {
+    const hv = String(h == null ? "" : h).trim();
+    if (!hv) return null;
+    const sample = ((grids.sheets[mapUI.sheet] || [])[mapUI.headerRow + 1] || [])[ci];
+    return /*#__PURE__*/React.createElement("div", {
+      key: ci,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "3px 0",
+        fontSize: 12
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        minWidth: 170,
+        fontWeight: 700,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      },
+      title: hv
+    }, hv), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: "var(--c-text5)",
+        fontSize: 11,
+        minWidth: 110,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      },
+      title: String(sample == null ? "" : sample)
+    }, String(sample == null ? "" : sample).slice(0, 20) || "…"), /*#__PURE__*/React.createElement("select", {
+      style: {
+        ...inputSt(),
+        padding: "4px 8px",
+        fontSize: 12,
+        maxWidth: 190
+      },
+      value: mapUI.assigns[ci] || "ignore",
+      onChange: e => setMapUI({
+        ...mapUI,
+        assigns: {
+          ...mapUI.assigns,
+          [ci]: e.target.value
+        }
+      })
+    }, /*#__PURE__*/React.createElement("option", {
+      value: "ignore"
+    }, "— keep as extra column —"), [["date", "Date"], ["lab", "Laboratory"], ["location", "Location"], ["subRegion", "Sub-region"], ["instrument", "Machine / Instrument"], ["serial", "Serial No"], ["type", "Visit type"], ["isr", "ISR / Report no"], ["engineer", "Engineer"], ["engineer2", "Engineer 2"], ["engineer3", "Engineer 3"], ["status", "Status after"], ["remarks", "Remarks / Work description"]].map(([v, l]) => /*#__PURE__*/React.createElement("option", {
+      key: v,
+      value: v
+    }, l))));
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-key)", "var(--c-bg)"),
+    onClick: applyManualMap
+  }, "✅ Apply this mapping"), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: () => {
+      setMapUI(null);
+      setGrids(null);
+    }
+  }, "Cancel"))), plan && meta && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 12,
       padding: 12,
@@ -8215,7 +8516,13 @@ function ImportExcel({
       color: "var(--c-text3)",
       marginBottom: 6
     }
-  }, meta.unmapped.join(" · ")), !withExtras ? /*#__PURE__*/React.createElement("button", {
+  }, meta.unmapped.join(" · ")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap"
+    }
+  }, !withExtras ? /*#__PURE__*/React.createElement("button", {
     style: btnSt("#f59e0b", "#1a1a1a"),
     onClick: () => {
       const p = impBuildPlan(rawRows, labs, profile.email, true);
@@ -8229,12 +8536,35 @@ function ImportExcel({
       setWithExtras(false);
       setPlan(p);
     }
-  }, "Skip the extra columns instead"), /*#__PURE__*/React.createElement("div", {
+  }, "Skip the extra columns instead"), !fieldsAdded ? /*#__PURE__*/React.createElement("button", {
+    title: "Adds these as permanent input fields on the + Visit form, so future manual visits can fill them too",
+    style: btnSt("var(--c-border)", "#38bdf8"),
+    onClick: async () => {
+      if (!confirm("Add " + meta.unmapped.length + " new input field(s) to the Visit form for everyone?\n\n" + meta.unmapped.join(", ") + "\n\nYou can hide them later by editing config/catalog in the console.")) return;
+      try {
+        await db.doc("config/catalog").set({
+          visitFields: firebase.firestore.FieldValue.arrayUnion(...meta.unmapped)
+        }, {
+          merge: true
+        });
+        setFieldsAdded(true);
+        notify("🧩 The Visit form now has these fields — every future manual visit can fill them in.", "ok");
+      } catch (e) {
+        notify("Could not save the fields: " + e.message, "error");
+      }
+    }
+  }, "🧩 Also add them as input fields on the Visit form") : /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#10b981",
+      fontWeight: 700,
+      alignSelf: "center"
+    }
+  }, "🧩 Added to the Visit form ✓")), /*#__PURE__*/React.createElement("div", {
     style: {
       color: "var(--c-text5)",
       marginTop: 6
     }
-  }, "When added, each value is saved on its visit and shown in Remarks as “[Imported columns] Header: value”.")), /*#__PURE__*/React.createElement("div", {
+  }, "Values are saved on each visit and appear with the remarks everywhere (Visits tab, laboratory log, ⬇ Download).")), /*#__PURE__*/React.createElement("div", {
     style: {
       maxHeight: 150,
       overflowY: "auto",
@@ -9363,6 +9693,17 @@ function App() {
       }).catch(() => {});
     }
   }, [users, signedProfile && signedProfile.isAdmin, JSON.stringify(catalog && catalog.engineers)]);
+
+  // Audit every sign-in (once per browser session). Everyone is traced —
+  // including the owner — but the owner's entries are visible only to himself.
+  useEffect(() => {
+    if (!signedProfile) return;
+    try {
+      if (sessionStorage.getItem("ibase_login_audited") === signedProfile.id) return;
+      sessionStorage.setItem("ibase_login_audited", signedProfile.id);
+    } catch (e) {}
+    logAudit(signedProfile, "auth.login", signedProfile.email || "");
+  }, [signedProfile && signedProfile.id]);
   const otSettingsDoc = useDoc("config/otSettings", !!signedProfile && signedProfile.isAdmin);
   const holidaysDoc = useDoc("config/holidays", !!signedProfile && signedProfile.isAdmin);
   // Header KPI stats (v126-style)
