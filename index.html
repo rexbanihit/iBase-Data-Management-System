@@ -2596,9 +2596,55 @@ function LabDetail({
   const [visitFor, setVisitFor] = useState(null);
   const [editingLab, setEditingLab] = useState(false);
   const [pmFor, setPmFor] = useState(null);
+  const [editVisit, setEditVisit] = useState(null); // { machine, visit } being corrected
+  const [attView, setAttView] = useState(null); // attachments being viewed
   const [rvQ, setRvQ] = useState("");
   const [rvType, setRvType] = useState("");
   const [rvMach, setRvMach] = useState("");
+  // Upload the freshly-picked files to the shared attachments store; returns metadata.
+  async function uploadAtts(pending, machineId, visitId) {
+    const metas = [];
+    for (const a of pending) {
+      const ref = await db.collection("attachments").add({
+        name: a.name,
+        mime: a.mime,
+        kind: a.kind,
+        size: a.size,
+        dataUrl: a.dataUrl,
+        labId: lab.id,
+        machineId,
+        visitId,
+        by: profile.email,
+        at: auditNow()
+      });
+      metas.push({
+        id: ref.id,
+        name: a.name,
+        mime: a.mime,
+        kind: a.kind,
+        size: a.size
+      });
+    }
+    return metas;
+  }
+  async function openAtts(v) {
+    try {
+      const list = [];
+      for (const meta of v.attachments || []) {
+        const d = await db.collection("attachments").doc(meta.id).get();
+        list.push({
+          ...meta,
+          dataUrl: d.exists ? d.data().dataUrl : null
+        });
+      }
+      setAttView({
+        visit: v,
+        list
+      });
+    } catch (e) {
+      notify("Could not load attachments: " + e.message, "error");
+    }
+  }
   async function saveMachines(machines, okMsg, kind) {
     try {
       await db.collection("labs").doc(lab.id).update({
@@ -2850,8 +2896,8 @@ function LabDetail({
       width: "100%",
       borderCollapse: "collapse"
     }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Date", "Machine", "Type", "ISR", "Engineer", "Status after", "Logged by"].map(h => /*#__PURE__*/React.createElement("th", {
-    key: h,
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Date", "Machine", "Type", "ISR", "Engineer", "Status after", "Logged by", ""].map((h, i) => /*#__PURE__*/React.createElement("th", {
+    key: i,
     style: thSt
   }, h)))), /*#__PURE__*/React.createElement("tbody", null, (lab.machines || []).flatMap(m => (m.visits || []).map(v => ({
     ...v,
@@ -2882,7 +2928,44 @@ function LabDetail({
       fontSize: 11.5,
       color: "var(--c-text4)"
     }
-  }, v.loggedBy || "—", v.loggedAt ? " · " + String(v.loggedAt).slice(0, 10) : "")))))), canManage && addingM && /*#__PURE__*/React.createElement(MachineModal, {
+  }, v.loggedBy || "—", v.loggedAt ? " · " + String(v.loggedAt).slice(0, 10) : "", (v.editLog || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+    title: v.editLog.map(e => "✎ " + e.by + " · " + String(e.at).replace("T", " ").slice(0, 16) + "\n   " + e.changes.join("\n   ")).join("\n"),
+    style: {
+      fontSize: 10,
+      color: "#f59e0b",
+      cursor: "help"
+    }
+  }, "✎ edited by ", String(v.editLog[v.editLog.length - 1].by).split("@")[0], " · ", String(v.editLog[v.editLog.length - 1].at).slice(0, 10), " (", v.editLog.reduce((s, e) => s + e.changes.length, 0), " change", v.editLog.reduce((s, e) => s + e.changes.length, 0) !== 1 ? "s" : "", ")")), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...tdSt,
+      whiteSpace: "nowrap"
+    }
+  }, (v.attachments || []).length > 0 && /*#__PURE__*/React.createElement("button", {
+    title: "View attachments",
+    style: {
+      ...btnSt("var(--c-border)", "var(--c-text2)"),
+      padding: "3px 8px",
+      fontSize: 11
+    },
+    onClick: () => {
+      const mm = (lab.machines || []).find(m => (m.visits || []).some(x => x.id === v.id));
+      openAtts(v);
+    }
+  }, "📎", v.attachments.length), " ", String(v.loggedBy || "") === String(profile.email || "") && /*#__PURE__*/React.createElement("button", {
+    title: "Correct this visit (you logged it) — every change is recorded",
+    style: {
+      ...btnSt("var(--c-border)", "#f59e0b"),
+      padding: "3px 8px",
+      fontSize: 11
+    },
+    onClick: () => {
+      const mm = (lab.machines || []).find(m => (m.visits || []).some(x => x.id === v.id));
+      if (mm) setEditVisit({
+        machine: mm,
+        visit: (mm.visits || []).find(x => x.id === v.id)
+      });
+    }
+  }, "✏️"))))))), canManage && addingM && /*#__PURE__*/React.createElement(MachineModal, {
     onClose: () => setAddingM(false),
     onSave: async m => {
       if (await saveMachines([...(lab.machines || []), m], "Machine added.")) setAddingM(false);
@@ -2893,7 +2976,114 @@ function LabDetail({
     onSave: async m => {
       if (await saveMachines((lab.machines || []).map(x => x.id === m.id ? m : x), "Machine updated.")) setEditingM(null);
     }
-  }), canService && pmFor && /*#__PURE__*/React.createElement(UpdatePMModal, {
+  }), editVisit && /*#__PURE__*/React.createElement(VisitModal, {
+    machine: editVisit.machine,
+    engineerOptions: engineerOptions,
+    initial: editVisit.visit,
+    onClose: () => setEditVisit(null),
+    onSave: async (v, newStatus, pending) => {
+      const orig = editVisit.visit;
+      if (String(orig.loggedBy || "") !== String(profile.email || "")) {
+        notify("Only the person who logged this visit can correct it.", "error");
+        return;
+      }
+      let attMetas = [];
+      try {
+        attMetas = await uploadAtts(pending || [], editVisit.machine.id, orig.id);
+      } catch (e) {
+        notify("Attachment upload refused: " + e.message, "error");
+        return;
+      }
+      const updated = {
+        ...orig,
+        ...v,
+        attachments: [...(v.attachments || []), ...attMetas],
+        loggedBy: orig.loggedBy,
+        loggedAt: orig.loggedAt
+      };
+      const changes = visitDiff(orig, updated);
+      if (!changes.length) {
+        setEditVisit(null);
+        return;
+      }
+      updated.editLog = [...(orig.editLog || []), {
+        by: profile.email,
+        at: auditNow(),
+        changes
+      }];
+      const machines = (lab.machines || []).map(m => {
+        if (m.id !== editVisit.machine.id) return m;
+        let nm = {
+          ...m,
+          visits: (m.visits || []).map(x => x.id === orig.id ? updated : x)
+        };
+        // keep the PM schedule truthful after a corrected PM date/type
+        const pmDates = nm.visits.filter(x => String(x.type || "").toUpperCase() === "PM" && x.date).map(x => x.date).sort();
+        if (pmDates.length && (!nm.lastPM || pmDates[pmDates.length - 1] !== nm.lastPM)) {
+          nm.lastPM = pmDates[pmDates.length - 1];
+          const nx = nextPMDate(pmAnchor(nm), nm.pmInterval);
+          if (nx) nm.nextPM = nx;
+        }
+        return nm;
+      });
+      if (await saveMachines(machines, "✎ Visit corrected — change recorded in its log.")) {
+        logAudit(profile, "visit.edit", editVisit.machine.instrument + " @ " + lab.name + " · " + (v.date || "") + " — " + changes.length + " change(s)");
+        setEditVisit(null);
+      }
+    }
+  }), attView && /*#__PURE__*/React.createElement(Modal, {
+    title: "📎 Attachments — " + (attView.visit.date ? fmtDate(attView.visit.date) : "visit"),
+    onClose: () => setAttView(null),
+    wide: true
+  }, attView.list.map((a, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("span", null, a.kind === "image" ? "🖼" : "📄"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 700,
+      fontSize: 12.5
+    }
+  }, a.name), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "var(--c-text5)",
+      fontSize: 11
+    }
+  }, Math.round((a.size || 0) / 1024), "KB"), a.dataUrl && /*#__PURE__*/React.createElement("a", {
+    href: a.dataUrl,
+    download: a.name,
+    style: {
+      marginLeft: "auto",
+      fontSize: 11.5,
+      color: "var(--c-key)"
+    }
+  }, "⬇ Download")), a.kind === "image" && a.dataUrl && /*#__PURE__*/React.createElement("img", {
+    src: a.dataUrl,
+    alt: a.name,
+    style: {
+      maxWidth: "100%",
+      borderRadius: 10,
+      border: "1px solid var(--c-border)"
+    }
+  }), !a.dataUrl && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "#f87171"
+    }
+  }, "File record missing (it may have been purged)."))), attView.list.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "var(--c-text4)"
+    }
+  }, "No attachments on this visit.")), canService && pmFor && /*#__PURE__*/React.createElement(UpdatePMModal, {
     machine: pmFor,
     onClose: () => setPmFor(null),
     onSave: async newLastPM => {
@@ -2918,9 +3108,17 @@ function LabDetail({
     machine: visitFor,
     engineerOptions: engineerOptions,
     onClose: () => setVisitFor(null),
-    onSave: async (v, newStatus) => {
+    onSave: async (v, newStatus, pending) => {
+      let attMetas = [];
+      try {
+        attMetas = await uploadAtts(pending || [], visitFor.id, v.id);
+      } catch (e) {
+        notify("Attachment upload refused: " + e.message, "error");
+        return;
+      }
       const stamped = {
         ...v,
+        attachments: [...(v.attachments || []), ...attMetas],
         loggedBy: profile.email,
         loggedAt: auditNow()
       };
@@ -3117,6 +3315,63 @@ function MachineModal({
     })
   }, "Save machine"));
 }
+// Read a picked file; images are downscaled/compressed so they fit the free
+// plan's 1MB document limit. Returns {name, mime, kind, size, dataUrl} or throws.
+function fileToAttachment(file) {
+  return new Promise((resolve, reject) => {
+    const isImg = /^image\//.test(file.type);
+    const finish = dataUrl => {
+      if (!dataUrl) return reject(new Error("Could not read the file."));
+      if (dataUrl.length > 940000) return reject(new Error(file.name + " is too large even after compression (free-plan limit ≈ 700KB per file). Use a smaller file."));
+      resolve({
+        name: String(file.name || "file").slice(0, 120),
+        mime: file.type || "application/octet-stream",
+        kind: isImg ? "image" : "file",
+        size: Math.round(dataUrl.length * 3 / 4),
+        dataUrl
+      });
+    };
+    if (isImg) {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1280;
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.width * scale);
+        c.height = Math.round(img.height * scale);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        finish(c.toDataURL("image/jpeg", 0.72));
+      };
+      img.onerror = () => reject(new Error("Could not read the image."));
+      const r = new FileReader();
+      r.onload = e => img.src = e.target.result;
+      r.onerror = () => reject(new Error("Read failed"));
+      r.readAsDataURL(file);
+    } else {
+      if (file.size > 700 * 1024) return reject(new Error(file.name + " is " + Math.round(file.size / 1024) + "KB — the free plan allows about 700KB per attached file."));
+      const r = new FileReader();
+      r.onload = e => finish(e.target.result);
+      r.onerror = () => reject(new Error("Read failed"));
+      r.readAsDataURL(file);
+    }
+  });
+}
+// What changed between two versions of a visit (for the edit log).
+const VISIT_DIFF_FIELDS = [["date", "Date"], ["type", "Type"], ["isrNo", "ISR"], ["engineer", "Engineer"], ["engineer2", "Engineer 2"], ["engineer3", "Engineer 3"], ["machineStatus", "Status after"], ["dtDeparture", "Departure"], ["dtArrivalHome", "Arrival home"], ["dtWorkStarted", "Work started"], ["dtWorkEnded", "Work ended"], ["remarks", "Remarks"], ["signedByName", "Signed by (name)"]];
+function visitDiff(oldV, newV) {
+  const changes = [];
+  VISIT_DIFF_FIELDS.forEach(([k, label]) => {
+    const a = String(oldV[k] || ""),
+      b = String(newV[k] || "");
+    if (a !== b) changes.push(label + ": \u201C" + (a || "—") + "\u201D \u2192 \u201C" + (b || "—") + "\u201D");
+  });
+  if (String(oldV.signature || "") !== String(newV.signature || "")) changes.push("Signature: " + (newV.signature ? "updated" : "removed"));
+  const oa = (oldV.attachments || []).length,
+    na = (newV.attachments || []).length;
+  if (na > oa) changes.push("Attachments: +" + (na - oa) + " file(s)");
+  if (na < oa) changes.push("Attachments: removed " + (oa - na) + " file(s)");
+  return changes;
+}
 function SignaturePad({
   value,
   onChange
@@ -3284,10 +3539,27 @@ function NameSelect({
 function VisitModal({
   machine,
   engineerOptions,
+  initial,
   onClose,
   onSave
 }) {
-  const [f, setF] = useState({
+  const [f, setF] = useState(initial ? {
+    date: initial.date || today(),
+    type: initial.type || "PM",
+    isrNo: initial.isrNo || "",
+    engineer: initial.engineer || "",
+    engineer2: initial.engineer2 || "",
+    engineer3: initial.engineer3 || "",
+    machineStatus: initial.machineStatus || "Active",
+    dtDeparture: initial.dtDeparture || "",
+    dtArrivalHome: initial.dtArrivalHome || "",
+    dtWorkStarted: initial.dtWorkStarted || "",
+    dtWorkEnded: initial.dtWorkEnded || "",
+    remarks: initial.remarks || "",
+    signature: initial.signature || "",
+    signedByName: initial.signedByName || "",
+    attachments: [...(initial.attachments || [])]
+  } : {
     date: today(),
     type: "PM",
     isrNo: "",
@@ -3300,17 +3572,40 @@ function VisitModal({
     dtWorkStarted: "",
     dtWorkEnded: "",
     remarks: "",
-    signature: ""
+    signature: "",
+    signedByName: "",
+    attachments: []
   });
   const set = (k, v) => setF(x => ({
     ...x,
     [k]: v
   }));
+  const [pending, setPending] = useState([]); // new files chosen now (uploaded on save)
+  const fileRef = useRef(null);
+  const camRef = useRef(null);
+  async function pick(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    for (const file of files) {
+      try {
+        const att = await fileToAttachment(file);
+        setPending(p => [...p, att]);
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+  }
   return /*#__PURE__*/React.createElement(Modal, {
-    title: "Log Visit — " + machine.instrument + " (" + machine.serialNo + ")",
+    title: (initial ? "Edit Visit — " : "Log Visit — ") + machine.instrument + " (" + machine.serialNo + ")",
     onClose: onClose,
     wide: true
-  }, /*#__PURE__*/React.createElement("div", {
+  }, initial && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "#f59e0b",
+      marginBottom: 10
+    }
+  }, "✎ Correcting a logged visit. Every change is recorded — who edited, when, and exactly what changed — and shown on the visit."), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr",
@@ -3405,22 +3700,132 @@ function VisitModal({
     onChange: e => set("remarks", e.target.value)
   }))), /*#__PURE__*/React.createElement("div", {
     style: {
-      marginTop: 14
+      marginTop: 14,
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 12
     }
-  }, /*#__PURE__*/React.createElement("label", {
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Signature"), /*#__PURE__*/React.createElement(SignaturePad, {
     value: f.signature,
     onChange: v => set("signature", v)
-  })), /*#__PURE__*/React.createElement("button", {
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Name of signatory"), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      marginBottom: 12
+    },
+    value: f.signedByName,
+    onChange: e => set("signedByName", e.target.value),
+    placeholder: "Printed name of the person signing"
+  }), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Attachments — file / photo"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    ref: fileRef,
+    type: "file",
+    multiple: true,
+    style: {
+      display: "none"
+    },
+    onChange: pick
+  }), /*#__PURE__*/React.createElement("input", {
+    ref: camRef,
+    type: "file",
+    accept: "image/*",
+    capture: "environment",
+    style: {
+      display: "none"
+    },
+    onChange: pick
+  }), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: () => fileRef.current && fileRef.current.click()
+  }, "📎 Add file"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: () => camRef.current && camRef.current.click()
+  }, "📷 Take photo")), (f.attachments || []).map((a, i) => /*#__PURE__*/React.createElement("div", {
+    key: "e" + i,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      fontSize: 11.5,
+      padding: "3px 0"
+    }
+  }, /*#__PURE__*/React.createElement("span", null, a.kind === "image" ? "🖼" : "📄"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, a.name), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "var(--c-text5)"
+    }
+  }, Math.round((a.size || 0) / 1024), "KB"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    title: "Remove from this visit",
+    style: {
+      marginLeft: "auto",
+      background: "none",
+      border: "none",
+      color: "#f87171",
+      cursor: "pointer"
+    },
+    onClick: () => set("attachments", f.attachments.filter((_, j) => j !== i))
+  }, "✕"))), pending.map((a, i) => /*#__PURE__*/React.createElement("div", {
+    key: "p" + i,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      fontSize: 11.5,
+      padding: "3px 0"
+    }
+  }, /*#__PURE__*/React.createElement("span", null, a.kind === "image" ? "🖼" : "📄"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, a.name), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "var(--c-text5)"
+    }
+  }, Math.round(a.size / 1024), "KB · new"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    style: {
+      marginLeft: "auto",
+      background: "none",
+      border: "none",
+      color: "#f87171",
+      cursor: "pointer"
+    },
+    onClick: () => setPending(p => p.filter((_, j) => j !== i))
+  }, "✕"))), !((f.attachments || []).length + pending.length) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "var(--c-text5)"
+    }
+  }, "No attachments yet. Photos are compressed automatically; files up to ~700KB (free-plan limit)."))), /*#__PURE__*/React.createElement("button", {
     style: {
       ...btnSt("var(--c-key)", "var(--c-bg)"),
       marginTop: 16
     },
     onClick: () => onSave({
-      id: uid(),
+      id: initial ? initial.id : uid(),
       ...f
-    }, f.machineStatus)
+    }, f.machineStatus, pending)
   }, "Save visit"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10.5,
@@ -5905,13 +6310,23 @@ function VisitsTab({
       if (id === "logged") return /*#__PURE__*/React.createElement("td", {
         key: id,
         style: base,
-        title: (v.loggedBy || "") + (v.loggedAt ? " · " + String(v.loggedAt).replace("T", " ").slice(0, 16) : "")
+        title: (v.loggedBy || "") + (v.loggedAt ? " · " + String(v.loggedAt).replace("T", " ").slice(0, 16) : "") + ((v.editLog || []).length ? "\n" + v.editLog.map(e => "✎ " + e.by + " · " + String(e.at).replace("T", " ").slice(0, 16) + ": " + e.changes.join("; ")).join("\n") : "")
       }, grip, v.loggedBy ? String(v.loggedBy).split("@")[0] : "—", v.loggedAt ? /*#__PURE__*/React.createElement("span", {
         style: {
           color: "var(--c-text5)",
           fontSize: 10
         }
-      }, " · ", String(v.loggedAt).slice(5, 10)) : null);
+      }, " · ", String(v.loggedAt).slice(5, 10)) : null, (v.editLog || []).length ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: "#f59e0b",
+          fontSize: 10
+        }
+      }, " ✎", v.editLog.length) : null, (v.attachments || []).length ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: "var(--c-text4)",
+          fontSize: 10
+        }
+      }, " 📎", v.attachments.length) : null);
       return /*#__PURE__*/React.createElement("td", {
         key: id,
         style: {
@@ -5978,7 +6393,8 @@ function buildBackupSheets({
   const S = {};
   S["Laboratories"] = [["Laboratory", "Location", "Machines"]].concat(labs.map(l => [l.name || "", l.location || "", (l.machines || []).length]));
   S["Equipment Register"] = [["Laboratory", "Instrument", "Serial No", "Installed", "Last PM", "PM Interval", "Next PM", "Status", "Visits"]].concat(labs.flatMap(l => (l.machines || []).map(m => [l.name || "", m.instrument || "", m.serialNo || "", m.installDate || "", m.lastPM || "", m.pmInterval || "", m.nextPM || "", m.status || "", (m.visits || []).length])));
-  S["Service Visits"] = [["Date", "Laboratory", "Machine", "Serial", "Type", "ISR", "Engineer", "Engineer 2", "Engineer 3", "Status after", "Departure", "Arrival home", "Work started", "Work ended", "Logged By", "Logged At", "Signed", "Remarks"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => [v.date || "", l.name || "", m.instrument || "", m.serialNo || "", v.type || "", v.isrNo || "", v.engineer || "", v.engineer2 || "", v.engineer3 || "", v.machineStatus || "", v.dtDeparture || "", v.dtArrivalHome || "", v.dtWorkStarted || "", v.dtWorkEnded || "", v.loggedBy || "", v.loggedAt || "", v.signature ? "Yes" : "", v.remarks || ""]))));
+  S["Service Visits"] = [["Date", "Laboratory", "Machine", "Serial", "Type", "ISR", "Engineer", "Engineer 2", "Engineer 3", "Status after", "Departure", "Arrival home", "Work started", "Work ended", "Logged By", "Logged At", "Signed", "Signed by (name)", "Attachments", "Edit Log", "Remarks"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => [v.date || "", l.name || "", m.instrument || "", m.serialNo || "", v.type || "", v.isrNo || "", v.engineer || "", v.engineer2 || "", v.engineer3 || "", v.machineStatus || "", v.dtDeparture || "", v.dtArrivalHome || "", v.dtWorkStarted || "", v.dtWorkEnded || "", v.loggedBy || "", v.loggedAt || "", v.signature ? "Yes" : "", v.signedByName || "", (v.attachments || []).map(a => a.name).join(", "), (v.editLog || []).map(e => e.by + " @ " + e.at + ": " + e.changes.join("; ")).join(" | "), v.remarks || ""]))));
+  S["Visit Attachments"] = [["Laboratory", "Machine", "Serial", "Visit Date", "Visit Type", "File", "Kind", "Size KB", "Uploaded (visit logged by)"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).flatMap(v => (v.attachments || []).map(a => [l.name || "", m.instrument || "", m.serialNo || "", v.date || "", v.type || "", a.name || "", a.kind || "", Math.round((a.size || 0) / 1024), v.loggedBy || ""])))));
   S["Machine Inventory"] = [["Brand", "Model", "Serial No", "Item Code", "Condition", "Status", "Location", "Dealer", "Remarks"]].concat(inventory.map(it => [it.brand || "", it.machineModel || "", it.serialNo || "", it.itemCode || "", it.condition || "", it.status || "", it.location || "", it.dealer || "", it.remarks || ""]));
   S["Spare Parts"] = [["Brand", "Part No", "Description", "On Hand"]].concat(spareParts.map(p => [p.brand || "", p.partNumber || "", p.description || "", (p.receipts || []).reduce((s, r) => s + (Number(r.qty) || 0), 0) - (p.issues || []).reduce((s, r) => s + (Number(r.qty) || 0), 0)]));
   S["Spare Parts History"] = [["Brand", "Part No", "Direction", "Qty", "Date", "Reference", "By"]].concat(spareParts.flatMap(p => [...(p.receipts || []).map(r => [p.brand || "", p.partNumber || "", "IN", Number(r.qty) || 0, r.date || "", r.ref || "", r.by || ""]), ...(p.issues || []).map(r => [p.brand || "", p.partNumber || "", "OUT", Number(r.qty) || 0, r.date || "", r.ref || "", r.by || ""])]));
