@@ -7744,11 +7744,423 @@ function OtSettingsModal({
 }
 
 // ── Settings: user management + brand catalog ───────────────────────────────
+
+// ═══ OWNER-ONLY: Import historical data from Excel ═══════════════════════════
+// Reads .xlsx/.xls/.csv, auto-detects columns by header synonyms, groups rows
+// into Laboratories → Machines (by serial) → Visits, then merges them into the
+// live database exactly as if entered by hand. The OLDEST visit date of each
+// machine becomes its installation date.
+const IMP_SYN = {
+  date: ["date", "visitdate", "dateofvisit", "servicedate", "dov"],
+  lab: ["laboratory", "lab", "labname", "account", "accountname", "institution", "hospital", "customer", "client", "site"],
+  location: ["location", "address", "region", "area", "city"],
+  subRegion: ["subregion", "subarea", "district"],
+  instrument: ["machine", "instrument", "model", "machinemodel", "equipment", "unit", "analyzer", "item"],
+  serial: ["serial", "serialno", "serialnumber", "sn", "serialnum"],
+  type: ["type", "visittype", "typeofvisit", "servicetype", "service", "nature", "natureofvisit", "activity"],
+  isr: ["isr", "isrno", "isrnumber", "reportno", "srno", "jobno", "jobordernumber", "reference"],
+  engineer: ["engineer", "engineer1", "fse", "technician", "attendedby", "performedby", "servicedby"],
+  engineer2: ["engineer2", "fse2", "technician2"],
+  engineer3: ["engineer3", "fse3"],
+  status: ["status", "machinestatus", "statusafter", "unitstatus"],
+  remarks: ["remarks", "workdescription", "description", "work", "findings", "actiontaken", "action", "notes", "comment", "comments", "details"]
+};
+function impNormHeader(h) {
+  return String(h || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+function impMapHeaders(headerRow) {
+  const map = {};
+  headerRow.forEach((h, i) => {
+    const n = impNormHeader(h);
+    if (!n) return;
+    for (const key in IMP_SYN) if (map[key] === undefined && IMP_SYN[key].indexOf(n) !== -1) {
+      map[key] = i;
+      return;
+    }
+  });
+  return map;
+}
+function impDate(v) {
+  if (v == null || v === "") return "";
+  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0, 10);
+  if (typeof v === "number" && v > 20000 && v < 60000) {
+    // Excel serial
+    return new Date(Math.round((v - 25569) * 86400000)).toISOString().slice(0, 10);
+  }
+  const s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const t = Date.parse(s);
+  if (!isNaN(t)) return new Date(t).toISOString().slice(0, 10);
+  const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/); // dd/mm/yyyy fallback
+  if (m) {
+    const [, a, b, y0] = m;
+    const y = y0.length === 2 ? "20" + y0 : y0;
+    const d = new Date(Date.UTC(+y, +b - 1, +a));
+    if (!isNaN(d)) return d.toISOString().slice(0, 10);
+  }
+  return "";
+}
+function impParseWorkbook(wb) {
+  const rows = [];
+  const sheetInfo = [];
+  let skipped = 0;
+  wb.SheetNames.forEach(name => {
+    const grid = XLSX.utils.sheet_to_json(wb.Sheets[name], {
+      header: 1,
+      raw: true,
+      defval: ""
+    });
+    let hi = -1,
+      map = null;
+    for (let i = 0; i < Math.min(grid.length, 10); i++) {
+      const m = impMapHeaders(grid[i] || []);
+      if (m.date !== undefined && (m.serial !== undefined || m.instrument !== undefined) && m.lab !== undefined) {
+        hi = i;
+        map = m;
+        break;
+      }
+    }
+    if (hi === -1) {
+      sheetInfo.push({
+        name,
+        used: false
+      });
+      return;
+    }
+    let n = 0;
+    for (let i = hi + 1; i < grid.length; i++) {
+      const r = grid[i] || [];
+      const g = k => map[k] === undefined ? "" : String(r[map[k]] == null ? "" : r[map[k]]).trim();
+      const date = impDate(map.date !== undefined ? r[map.date] : "");
+      const lab = g("lab"),
+        serial = g("serial"),
+        instrument = g("instrument");
+      if (!date || !lab || !serial && !instrument) {
+        if (r.some(x => String(x).trim())) skipped++;
+        continue;
+      }
+      rows.push({
+        date,
+        lab,
+        location: g("location"),
+        subRegion: g("subRegion"),
+        instrument,
+        serial,
+        type: g("type") || "Corrective",
+        isr: g("isr"),
+        engineer: g("engineer"),
+        engineer2: g("engineer2"),
+        engineer3: g("engineer3"),
+        status: g("status"),
+        remarks: g("remarks")
+      });
+      n++;
+    }
+    sheetInfo.push({
+      name,
+      used: true,
+      rows: n,
+      map
+    });
+  });
+  return {
+    rows,
+    sheetInfo,
+    skipped
+  };
+}
+function impVisitKey(v) {
+  return [v.date, String(v.type || "").toLowerCase(), String(v.isr || v.isrNo || "").toLowerCase(), String(v.engineer || "").toLowerCase()].join("|");
+}
+function impBuildPlan(rows, labs, importerEmail) {
+  const nowIso = auditNow ? auditNow() : new Date().toISOString();
+  const byLab = {};
+  rows.forEach(r => {
+    const k = labNameNorm(r.lab);
+    (byLab[k] = byLab[k] || {
+      name: r.lab,
+      location: r.location,
+      subRegion: r.subRegion,
+      rows: []
+    }).rows.push(r);
+  });
+  const ops = [];
+  let tNewLabs = 0,
+    tNewMachines = 0,
+    tNewVisits = 0,
+    tDupes = 0;
+  Object.keys(byLab).forEach(k => {
+    const grp = byLab[k];
+    const existing = labs.find(l => labNameNorm(l.name) === k);
+    const machines = existing ? JSON.parse(JSON.stringify(existing.machines || [])) : [];
+    const findM = r => machines.find(m => r.serial && String(m.serialNo || "").trim().toLowerCase() === r.serial.toLowerCase() || !r.serial && String(m.instrument || "").trim().toLowerCase() === r.instrument.toLowerCase());
+    let newM = 0,
+      newV = 0,
+      dup = 0;
+    grp.rows.forEach(r => {
+      let m = findM(r);
+      if (!m) {
+        m = {
+          id: uid(),
+          instrument: r.instrument || "Unknown instrument",
+          serialNo: r.serial || "",
+          installDate: "",
+          installedBy: "",
+          lastPM: "",
+          pmInterval: "",
+          nextPM: "",
+          status: "Active",
+          visits: [],
+          createdAt: nowIso
+        };
+        machines.push(m);
+        newM++;
+      }
+      const existingKeys = {};
+      (m.visits || []).forEach(v => existingKeys[impVisitKey({
+        date: String(v.date || "").slice(0, 10),
+        type: v.type,
+        isr: v.isrNo,
+        engineer: v.engineer
+      })] = 1);
+      const key = impVisitKey(r);
+      if (existingKeys[key]) {
+        dup++;
+        return;
+      }
+      m.visits.push({
+        id: uid(),
+        date: r.date,
+        type: r.type,
+        isrNo: r.isr,
+        engineer: r.engineer,
+        engineer2: r.engineer2,
+        engineer3: r.engineer3,
+        machineStatus: r.status || "",
+        dtDeparture: "",
+        dtArrivalHome: "",
+        dtWorkStarted: "",
+        dtWorkEnded: "",
+        remarks: r.remarks || "",
+        signature: "",
+        signedByName: "",
+        attachments: [],
+        loggedBy: importerEmail,
+        loggedAt: nowIso,
+        imported: true
+      });
+      newV++;
+    });
+    // Rule: the OLDEST visit date becomes the installation date; PM history re-anchors the schedule.
+    machines.forEach(m => {
+      const ds = (m.visits || []).map(v => String(v.date || "").slice(0, 10)).filter(Boolean).sort();
+      if (ds.length && (!m.installDate || ds[0] < m.installDate)) m.installDate = ds[0];
+      const pmDs = (m.visits || []).filter(v => String(v.type || "").toUpperCase() === "PM" && v.date).map(v => String(v.date).slice(0, 10)).sort();
+      if (pmDs.length && (!m.lastPM || pmDs[pmDs.length - 1] > m.lastPM)) {
+        m.lastPM = pmDs[pmDs.length - 1];
+        if (m.pmInterval) {
+          const nx = nextPMDate(pmAnchor(m), m.pmInterval);
+          if (nx) m.nextPM = nx;
+        }
+      }
+    });
+    if (newV || newM || !existing) {
+      ops.push({
+        labId: existing ? existing.id : null,
+        name: existing ? existing.name : grp.name,
+        location: existing ? existing.location || grp.location || "" : grp.location || "",
+        subRegion: existing ? existing.subRegion || grp.subRegion || "" : grp.subRegion || "",
+        machines,
+        newM,
+        newV,
+        dup
+      });
+      if (!existing) tNewLabs++;
+      tNewMachines += newM;
+      tNewVisits += newV;
+      tDupes += dup;
+    } else {
+      tDupes += dup;
+    }
+  });
+  return {
+    ops,
+    tNewLabs,
+    tNewMachines,
+    tNewVisits,
+    tDupes
+  };
+}
+function ImportExcel({
+  labs,
+  profile,
+  notify
+}) {
+  const [plan, setPlan] = useState(null);
+  const [meta, setMeta] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
+  async function onFile(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, {
+        type: "array",
+        cellDates: true
+      });
+      const parsed = impParseWorkbook(wb);
+      if (!parsed.rows.length) {
+        notify("No usable rows found. The sheet needs at least Date, Laboratory and Serial (or Machine) columns.", "error");
+        setPlan(null);
+        setMeta(null);
+        return;
+      }
+      const p = impBuildPlan(parsed.rows, labs, profile.email);
+      setMeta({
+        file: file.name,
+        rows: parsed.rows.length,
+        skipped: parsed.skipped,
+        sheets: parsed.sheetInfo
+      });
+      setPlan(p);
+    } catch (err) {
+      notify("Could not read the file: " + err.message, "error");
+    }
+  }
+  async function run() {
+    if (!plan) return;
+    setBusy(true);
+    let done = 0,
+      failed = 0;
+    for (const op of plan.ops) {
+      const clean = JSON.parse(JSON.stringify({
+        name: op.name,
+        location: op.location,
+        subRegion: op.subRegion,
+        machines: op.machines
+      }));
+      if (JSON.stringify(clean).length > 900000) {
+        failed++;
+        notify("\"" + op.name + "\" is too large for one record (free-plan 1MB limit) — split its history and retry.", "error");
+        continue;
+      }
+      try {
+        if (op.labId) await db.collection("labs").doc(op.labId).update({
+          machines: clean.machines,
+          location: clean.location,
+          subRegion: clean.subRegion
+        });else await db.collection("labs").add({
+          ...clean,
+          createdAt: FieldValue.serverTimestamp()
+        });
+        done++;
+      } catch (e) {
+        failed++;
+        notify("\"" + op.name + "\" refused: " + e.message, "error");
+      }
+    }
+    logAudit(profile, "import.excel", (meta ? meta.file : "") + " → " + plan.tNewVisits + " visit(s), " + plan.tNewMachines + " machine(s), " + plan.tNewLabs + " lab(s)");
+    notify(failed ? "Import finished with " + failed + " failure(s) — " + done + " laborator" + (done === 1 ? "y" : "ies") + " written." : "✅ Import complete — " + plan.tNewVisits + " visit(s), " + plan.tNewMachines + " machine(s), " + plan.tNewLabs + " new lab(s). Oldest visit dates registered as installation dates.", failed ? "error" : "ok");
+    setBusy(false);
+    setPlan(null);
+    setMeta(null);
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...cardSt,
+      border: "1px solid #38bdf855"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "var(--c-key)",
+      textTransform: "uppercase",
+      marginBottom: 4
+    }
+  }, "📥 Import history from Excel — owner only"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text5)",
+      marginBottom: 10,
+      lineHeight: 1.5
+    }
+  }, "Upload a .xlsx / .xls / .csv holding your service history (visits, machines, serials, work descriptions…). Columns are detected automatically by their headers. Rows become permanent laboratories, machines and visits — exactly as if typed in by hand — duplicates are skipped, and each machine's ", /*#__PURE__*/React.createElement("b", null, "installation date is set to its oldest visit"), ". 💡 Take a ⬇ Backup first."), /*#__PURE__*/React.createElement("input", {
+    ref: fileRef,
+    type: "file",
+    accept: ".xlsx,.xls,.csv",
+    style: {
+      display: "none"
+    },
+    onChange: onFile
+  }), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-key)", "var(--c-bg)"),
+    disabled: busy,
+    onClick: () => fileRef.current && fileRef.current.click()
+  }, "📂 Choose Excel file…"), plan && meta && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 12,
+      padding: 12,
+      background: "var(--c-bg)",
+      borderRadius: 10,
+      border: "1px solid var(--c-border)"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      fontWeight: 800,
+      marginBottom: 6
+    }
+  }, "Preview — ", meta.file), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "var(--c-text2)",
+      lineHeight: 1.7
+    }
+  }, meta.rows, " row(s) read", meta.skipped ? " · " + meta.skipped + " unreadable row(s) skipped" : "", " · sheets used: ", meta.sheets.filter(s => s.used).map(s => s.name + " (" + s.rows + ")").join(", ") || "none", /*#__PURE__*/React.createElement("br", null), "Will write: ", /*#__PURE__*/React.createElement("b", null, plan.tNewLabs), " new laborator", plan.tNewLabs === 1 ? "y" : "ies", " · ", /*#__PURE__*/React.createElement("b", null, plan.tNewMachines), " new machine(s) · ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits), " new visit(s) · ", /*#__PURE__*/React.createElement("b", null, plan.tDupes), " duplicate visit(s) skipped"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxHeight: 150,
+      overflowY: "auto",
+      marginTop: 8
+    }
+  }, plan.ops.map((op, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text4)",
+      padding: "2px 0"
+    }
+  }, op.labId ? "◦ merge into" : "★ create", " ", /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: "var(--c-text2)"
+    }
+  }, op.name), " — +", op.newM, " machine(s), +", op.newV, " visit(s)", op.dup ? ", " + op.dup + " duplicate(s) skipped" : ""))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-key)", "var(--c-bg)"),
+    disabled: busy || !(plan.tNewVisits || plan.tNewMachines || plan.tNewLabs),
+    onClick: run
+  }, busy ? "Importing…" : "✅ Import " + plan.tNewVisits + " visit(s) now"), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    disabled: busy,
+    onClick: () => {
+      setPlan(null);
+      setMeta(null);
+    }
+  }, "Cancel"))));
+}
 function SettingsTab({
   profile,
   users,
   catalog,
   tabsCfg,
+  labs,
   notify
 }) {
   const iAmOwner = isOwnerAcct(profile) || isOwnerAcct(auth.currentUser);
@@ -7765,7 +8177,11 @@ function SettingsTab({
       notify("SERVER REFUSED:\n" + e.message, "error");
     }
   }
-  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(CreateUser, {
+  return /*#__PURE__*/React.createElement("div", null, iAmOwner && /*#__PURE__*/React.createElement(ImportExcel, {
+    labs: labs,
+    profile: profile,
+    notify: notify
+  }), /*#__PURE__*/React.createElement(CreateUser, {
     brands: brands,
     roleOptions: roleOptions,
     notify: notify,
@@ -9151,6 +9567,7 @@ function App() {
     users: users,
     catalog: catalog,
     tabsCfg: tabsCfg,
+    labs: labs,
     notify: notify
   }))), /*#__PURE__*/React.createElement("div", {
     style: {
