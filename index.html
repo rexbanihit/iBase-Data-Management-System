@@ -1545,7 +1545,7 @@ function Toast({
     const t = setTimeout(onClose, 6500);
     return () => clearTimeout(t);
   }, []);
-  const color = kind === "error" ? "#f87171" : kind === "ok" ? "#34d399" : "var(--c-key)";
+  const color = kind === "error" ? "#f87171" : kind === "ok" ? "#34d399" : kind === "bin" ? "#f97316" : "var(--c-key)";
   return /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
@@ -1570,7 +1570,7 @@ function Toast({
       color,
       fontWeight: 800
     }
-  }, kind === "error" ? "⛔" : kind === "ok" ? "✓" : "ℹ"), /*#__PURE__*/React.createElement("div", {
+  }, kind === "error" ? "⛔" : kind === "ok" ? "✓" : kind === "bin" ? "🗑" : "ℹ"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: "var(--c-text2)",
@@ -2030,12 +2030,14 @@ function LabsTab({
     } catch (e) {}
   }, [view]);
   const [instF, setInstF] = useState("");
+  const [brandF, setBrandF] = useState("");
   const [flagF, setFlagF] = useState("");
   const [tSort, setTSort] = useState({
     col: "lab",
     dir: 1
   });
   const instrumentOpts = useMemo(() => sortAlpha(Array.from(new Set(labs.flatMap(l => (l.machines || []).map(m => String(m.instrument || "").trim())).filter(Boolean)))), [labs]);
+  const brandOpts = useMemo(() => sortAlpha(Array.from(new Set(labs.flatMap(l => (l.machines || []).map(m => String(m.instrument || "").trim().split(" ")[0])).filter(Boolean)))), [labs]);
   // flat register: every instrument across ALL institutions
   const allMachines = useMemo(() => labs.flatMap(l => (l.machines || []).map(m => ({
     ...m,
@@ -2044,9 +2046,9 @@ function LabsTab({
     _flag: pmFlag(m),
     _next: pmComputedNext(m)
   }))), [labs]);
-  const matchesFilters = m => (!instF || String(m.instrument || "").trim() === instF) && (!flagF || pmFlag(m) === flagF);
+  const matchesFilters = m => (!instF || String(m.instrument || "").trim() === instF) && (!brandF || String(m.instrument || "").trim().split(" ")[0] === brandF) && (!flagF || pmFlag(m) === flagF);
   const shown = labs.filter(l => {
-    if ((instF || flagF) && !(l.machines || []).some(matchesFilters)) return false;
+    if ((instF || brandF || flagF) && !(l.machines || []).some(matchesFilters)) return false;
     const s = q.toLowerCase();
     if (!s) return true;
     return String(l.name || "").toLowerCase().includes(s) || String(l.location || "").toLowerCase().includes(s) || (l.machines || []).some(m => String(m.serialNo || "").toLowerCase().includes(s) || String(m.instrument || "").toLowerCase().includes(s));
@@ -2055,6 +2057,10 @@ function LabsTab({
     id: "lab",
     label: "Laboratory",
     sv: m => m._lab || ""
+  }, {
+    id: "brand",
+    label: "Brand",
+    sv: m => String(m.instrument || "").trim().split(" ")[0]
   }, {
     id: "inst",
     label: "Instrument",
@@ -2093,7 +2099,7 @@ function LabsTab({
       sensitivity: "base"
     }));
   }, [allMachines, q, instF, flagF, tSort]);
-  async function addLab(name, location) {
+  async function addLab(name, location, subRegion) {
     const dup = labs.find(l => labNameNorm(l.name) === labNameNorm(name));
     if (dup) {
       notify("A laboratory with that name already exists: " + dup.name, "error");
@@ -2103,6 +2109,7 @@ function LabsTab({
       await db.collection("labs").add({
         name: name.trim(),
         location: location.trim(),
+        subRegion: String(subRegion || "").trim(),
         machines: [],
         createdAt: FieldValue.serverTimestamp()
       });
@@ -2133,6 +2140,22 @@ function LabsTab({
   }), /*#__PURE__*/React.createElement("select", {
     style: {
       ...inputSt(),
+      maxWidth: 150,
+      cursor: "pointer"
+    },
+    value: brandF,
+    onChange: e => {
+      setBrandF(e.target.value);
+      setInstF("");
+    },
+    title: "Filter by brand across all institutions"
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "All brands"), brandOpts.map(x => /*#__PURE__*/React.createElement("option", {
+    key: x
+  }, x))), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
       maxWidth: 230,
       cursor: "pointer"
     },
@@ -2141,7 +2164,7 @@ function LabsTab({
     title: "Every instrument across all institutions"
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "All instruments (all institutions)"), instrumentOpts.map(x => /*#__PURE__*/React.createElement("option", {
+  }, "All instruments (all institutions)"), (brandF ? instrumentOpts.filter(x => x.split(" ")[0] === brandF) : instrumentOpts).map(x => /*#__PURE__*/React.createElement("option", {
     key: x
   }, x))), /*#__PURE__*/React.createElement("select", {
     style: {
@@ -2155,11 +2178,12 @@ function LabsTab({
     value: ""
   }, "All PM flags"), ["Overdue", "Due This Week", "Due This Month", "Due Next Month", "OK"].map(f => /*#__PURE__*/React.createElement("option", {
     key: f
-  }, f))), (q || instF || flagF) && /*#__PURE__*/React.createElement("button", {
+  }, f))), (q || instF || brandF || flagF) && /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: () => {
       setQ("");
       setInstF("");
+      setBrandF("");
       setFlagF("");
     }
   }, "↺"), /*#__PURE__*/React.createElement("div", {
@@ -2234,6 +2258,12 @@ function LabsTab({
       fontWeight: 600
     }
   }, m._lab), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...tdSt,
+      fontWeight: 700,
+      color: "var(--c-key)"
+    }
+  }, String(m.instrument || "").trim().split(" ")[0] || "—"), /*#__PURE__*/React.createElement("td", {
     style: tdSt
   }, m.instrument), /*#__PURE__*/React.createElement("td", {
     style: {
@@ -2345,7 +2375,7 @@ function LabsTab({
         fontSize: 11,
         color: "var(--c-text5)"
       }
-    }, "📍 ", lab.location || "—")), /*#__PURE__*/React.createElement("div", {
+    }, "📍 ", lab.location || "—", lab.subRegion ? " · " + lab.subRegion : "")), /*#__PURE__*/React.createElement("div", {
       style: {
         borderTop: "1px solid var(--c-border2)",
         paddingTop: 8,
@@ -2375,7 +2405,7 @@ function LabsTab({
         }
       }), /*#__PURE__*/React.createElement("span", {
         style: {
-          color: "var(--c-text2)",
+          color: accent,
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
@@ -2403,8 +2433,8 @@ function LabsTab({
       fontSize: 13
     }
   }, "No laboratories", q ? " match the search." : " yet.")), adding && /*#__PURE__*/React.createElement(LabModal, {
-    onSave: async (n, loc) => {
-      if (await addLab(n, loc)) setAdding(false);
+    onSave: async (n, loc, sub) => {
+      if (await addLab(n, loc, sub)) setAdding(false);
     },
     onClose: () => setAdding(false)
   })), live && /*#__PURE__*/React.createElement(LabDetail, {
@@ -2423,6 +2453,7 @@ function LabModal({
 }) {
   const [n, setN] = useState(initial ? initial.name : "");
   const [loc, setLoc] = useState(initial ? initial.location : "");
+  const [sub, setSub] = useState(initial ? initial.subRegion || "" : "");
   return /*#__PURE__*/React.createElement(Modal, {
     title: initial ? "Edit Laboratory" : "New Laboratory",
     onClose: onClose
@@ -2440,14 +2471,24 @@ function LabModal({
   }, "Location / Region"), /*#__PURE__*/React.createElement("input", {
     style: {
       ...inputSt(),
-      marginBottom: 16
+      marginBottom: 12
     },
     value: loc,
     onChange: e => setLoc(e.target.value)
+  }), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Sub-region (optional)"), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      marginBottom: 16
+    },
+    value: sub,
+    onChange: e => setSub(e.target.value),
+    placeholder: "e.g. NCR — East, Region IV-A — Laguna"
   }), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     disabled: !n.trim(),
-    onClick: () => onSave(n, loc)
+    onClick: () => onSave(n, loc, sub)
   }, "Save"));
 }
 function Modal({
@@ -2555,19 +2596,22 @@ function LabDetail({
   const [visitFor, setVisitFor] = useState(null);
   const [editingLab, setEditingLab] = useState(false);
   const [pmFor, setPmFor] = useState(null);
-  async function saveMachines(machines, okMsg) {
+  const [rvQ, setRvQ] = useState("");
+  const [rvType, setRvType] = useState("");
+  const [rvMach, setRvMach] = useState("");
+  async function saveMachines(machines, okMsg, kind) {
     try {
       await db.collection("labs").doc(lab.id).update({
         machines
       });
-      notify(okMsg || "Saved.", "ok");
+      notify(okMsg || "Saved.", kind || "ok");
       return true;
     } catch (e) {
       notify("Server refused: " + e.message, "error");
       return false;
     }
   }
-  async function renameLab(n, loc) {
+  async function renameLab(n, loc, sub) {
     const dup = labs.find(l => l.id !== lab.id && labNameNorm(l.name) === labNameNorm(n));
     if (dup) {
       notify("A laboratory with that name already exists.", "error");
@@ -2576,7 +2620,8 @@ function LabDetail({
     try {
       await db.collection("labs").doc(lab.id).update({
         name: n.trim(),
-        location: loc.trim()
+        location: loc.trim(),
+        subRegion: String(sub || "").trim()
       });
       notify("Laboratory updated.", "ok");
       setEditingLab(false);
@@ -2628,7 +2673,7 @@ function LabDetail({
       }
       try {
         await db.collection("labs").doc(lab.id).delete();
-        notify("Laboratory moved to Bin.", "ok");
+        notify("Laboratory moved to Bin.", "bin");
         onBack();
       } catch (e) {
         notify("Server refused: " + e.message, "error");
@@ -2735,7 +2780,7 @@ function LabDetail({
           notify("Bin write refused: " + e.message, "error");
           return;
         }
-        saveMachines((lab.machines || []).filter(x => x.id !== m.id), "Machine moved to Bin.");
+        saveMachines((lab.machines || []).filter(x => x.id !== m.id), "🗑 Machine moved to the Bin.", "bin");
       }
     }, "🗑")));
   }), (lab.machines || []).length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
@@ -2748,13 +2793,59 @@ function LabDetail({
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
     style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      flexWrap: "wrap",
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
       fontSize: 12,
       fontWeight: 800,
       color: "var(--c-text3)",
-      textTransform: "uppercase",
-      marginBottom: 10
+      textTransform: "uppercase"
     }
-  }, "Recent Service Visits"), /*#__PURE__*/React.createElement("table", {
+  }, "Recent Service Visits"), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      maxWidth: 180,
+      padding: "6px 10px",
+      fontSize: 12,
+      marginLeft: "auto"
+    },
+    value: rvQ,
+    onChange: e => setRvQ(e.target.value),
+    placeholder: "🔍 Filter…"
+  }), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      maxWidth: 150,
+      padding: "6px 10px",
+      fontSize: 12,
+      cursor: "pointer"
+    },
+    value: rvType,
+    onChange: e => setRvType(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "All types"), sortAlpha(VISIT_TYPES).map(t => /*#__PURE__*/React.createElement("option", {
+    key: t
+  }, t))), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      maxWidth: 170,
+      padding: "6px 10px",
+      fontSize: 12,
+      cursor: "pointer"
+    },
+    value: rvMach,
+    onChange: e => setRvMach(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "All machines"), sortAlpha(Array.from(new Set((lab.machines || []).map(m => m.instrument).filter(Boolean)))).map(x => /*#__PURE__*/React.createElement("option", {
+    key: x
+  }, x)))), /*#__PURE__*/React.createElement("table", {
     style: {
       width: "100%",
       borderCollapse: "collapse"
@@ -2766,7 +2857,7 @@ function LabDetail({
     ...v,
     _m: m.instrument,
     _sn: m.serialNo
-  }))).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 25).map((v, i) => /*#__PURE__*/React.createElement("tr", {
+  }))).filter(v => (!rvType || v.type === rvType) && (!rvMach || v._m === rvMach) && (!rvQ || [v._m, v._sn, v.isrNo, v.engineer, v.remarks, v.loggedBy].some(x => String(x || "").toLowerCase().includes(rvQ.toLowerCase())))).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 25).map((v, i) => /*#__PURE__*/React.createElement("tr", {
     key: i
   }, /*#__PURE__*/React.createElement("td", {
     style: tdSt
@@ -3443,7 +3534,7 @@ function MachineInv({
     }
     try {
       await db.collection("inventory").doc(it.id).delete();
-      notify("Moved to Bin.", "ok");
+      notify("Moved to Bin.", "bin");
     } catch (e) {
       notify("SERVER REFUSED the delete:\n" + e.message, "error");
     }
@@ -3826,7 +3917,7 @@ function SpareParts({
     }
     try {
       await db.collection("spareParts").doc(p.id).delete();
-      notify("Moved to Bin.", "ok");
+      notify("Moved to Bin.", "bin");
     } catch (e) {
       notify("SERVER REFUSED:\n" + e.message, "error");
     }
@@ -5408,7 +5499,7 @@ function VisitsTab({
     const startY = e.clientY;
     const move = ev => setRowHeights(h => ({
       ...h,
-      [key]: Math.max(24, Math.min(200, startH + (ev.clientY - startY)))
+      [key]: Math.max(1, Math.min(200, startH + (ev.clientY - startY)))
     }));
     const up = () => {
       window.removeEventListener("mousemove", move);
@@ -5462,7 +5553,7 @@ function VisitsTab({
         machines
       });
       logAudit(profile, "visit.delete", v._machine + " @ " + v._lab + " · " + v.date);
-      notify("Visit moved to Bin.", "ok");
+      notify("🗑 Visit moved to the Bin.", "bin");
     } catch (e) {
       notify("Server refused: " + e.message, "error");
     }
@@ -5668,12 +5759,12 @@ function VisitsTab({
     }
   }, lbl)), /*#__PURE__*/React.createElement("input", {
     type: "number",
-    min: 24,
+    min: 1,
     max: 200,
     value: rowH,
-    title: "Exact row height in pixels (24–200)",
+    title: "Exact row height in pixels — 1 (thinnest) to 200 (maximum allowable)",
     onChange: e => {
-      const n = Math.max(24, Math.min(200, Number(e.target.value) || 40));
+      const n = Math.max(1, Math.min(200, Number(e.target.value) || 40));
       setRowH(n);
     },
     style: {
@@ -7777,6 +7868,32 @@ function AdminManager({
   const admins = sortAlpha(users.filter(u => u.isAdmin && !isOwnerAcct(u)), u => u.email);
   const regulars = sortAlpha(users.filter(u => !u.isAdmin && !isOwnerAcct(u)), u => u.email);
   const [pick, setPick] = useState("");
+  const [pickDemote, setPickDemote] = useState("");
+  async function demoteSel() {
+    const u = admins.find(x => x.id === pickDemote);
+    if (!u) return;
+    const self = u.id === me.id;
+    if (!confirm(self ? "⚠️ You are demoting YOURSELF — administrator access disappears immediately. Continue?" : "Demote " + u.email + " to a REGULAR USER? Their per-tab permissions apply again, instantly.")) return;
+    const patch = {
+      isAdmin: false
+    };
+    const hasPerms = u.permissions && Object.values(u.permissions).some(p => p && (p.view || p.edit));
+    if (!hasPerms) patch.permissions = {
+      ...blankPermissions(),
+      dashboard: {
+        view: true,
+        edit: false
+      }
+    };
+    try {
+      await db.collection("users").doc(u.id).update(patch);
+      logAudit(me, "user.demote-ADMIN", u.email + (self ? " (self)" : ""));
+      notify("⬇ " + u.email + " is now a regular user.", "ok");
+      setPickDemote("");
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+  }
   async function promote() {
     const u = regulars.find(x => x.id === pick);
     if (!u) return;
@@ -7848,7 +7965,32 @@ function AdminManager({
     style: btnSt("#fbbf24", "#1a1a1a"),
     disabled: !pick,
     onClick: promote
-  }, "👑 Make administrator")));
+  }, "👑 Make administrator")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      alignItems: "center",
+      marginTop: 10,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      maxWidth: 280,
+      cursor: "pointer"
+    },
+    value: pickDemote,
+    onChange: e => setPickDemote(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "Demote an administrator…"), admins.map(u => /*#__PURE__*/React.createElement("option", {
+    key: u.id,
+    value: u.id
+  }, u.email, u.displayName ? " — " + u.displayName : ""))), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "#fbbf24"),
+    disabled: !pickDemote,
+    onClick: demoteSel
+  }, "⬇ Demote to regular user")));
 }
 
 // Recover an orphan login (Auth account exists but its profile document is missing)
@@ -8032,7 +8174,7 @@ function UserRow({
     }
     try {
       await db.collection("users").doc(u.id).delete();
-      notify("Profile moved to Bin.", "ok");
+      notify("🗑 Profile moved to the Bin.", "bin");
     } catch (e) {
       notify("SERVER REFUSED:\n" + e.message, "error");
     }
@@ -8252,6 +8394,7 @@ function App() {
   } : null;
   const labs = useCol("labs", !!signedProfile && (pCanTab(signedProfile, "labs", "view") || pCanTab(signedProfile, "overtime", "view") || pCanTab(signedProfile, "dashboard", "view") || pCanTab(signedProfile, "analytics", "view") || pCanTab(signedProfile, "visits", "view")), notify);
   const users = useCol("users", !!signedProfile && signedProfile.isAdmin, notify);
+  const binItems = useCol("bin", !!signedProfile && signedProfile.isAdmin, notify);
   const catalog = useDoc("config/catalog", !!signedProfile);
   const tabsCfg = useDoc("config/tabs", !!signedProfile);
   // Sync the REGISTERED employee names (from user profiles) into the shared
@@ -8387,9 +8530,29 @@ function App() {
       }
     }, /*#__PURE__*/React.createElement("span", {
       style: {
-        fontSize: 19
+        fontSize: 19,
+        position: "relative"
       }
-    }, icon), /*#__PURE__*/React.createElement("span", {
+    }, icon, t.id === "bin" && binItems.length > 0 && /*#__PURE__*/React.createElement("span", {
+      title: binItems.length + " item(s) waiting in the Bin",
+      style: {
+        position: "absolute",
+        top: -6,
+        right: -13,
+        minWidth: 16,
+        height: 16,
+        padding: "0 4px",
+        borderRadius: 999,
+        background: "#f97316",
+        color: "#1a1a1a",
+        fontSize: 9.5,
+        fontWeight: 900,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        boxShadow: "0 0 6px rgba(249,115,22,.6)"
+      }
+    }, binItems.length)), /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 8.5,
         fontWeight: 800,
@@ -8406,7 +8569,11 @@ function App() {
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       borderBottom: "1px solid var(--c-border)",
-      background: "var(--c-bg2)"
+      background: "var(--c-bg2)",
+      position: "sticky",
+      top: 0,
+      zIndex: 50,
+      boxShadow: "0 4px 14px rgba(0,0,0,.25)"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
