@@ -2009,17 +2009,90 @@ const MACHINE_STATUSES = ["Active", "Under Repair", "For Follow-up", "Pulled-out
 function LabsTab({
   labs,
   profile,
+  catalog,
   notify
 }) {
   const canEdit = pCanTab(profile, "labs", "edit");
   const [openLab, setOpenLab] = useState(null);
   const [adding, setAdding] = useState(false);
   const [q, setQ] = useState("");
+  // 🃏 Cards / ☰ Table view (per user, remembered in this browser)
+  const [view, setView] = useState(() => {
+    try {
+      return localStorage.getItem("ibase_labs_view") || "cards";
+    } catch (e) {
+      return "cards";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("ibase_labs_view", view);
+    } catch (e) {}
+  }, [view]);
+  const [instF, setInstF] = useState("");
+  const [flagF, setFlagF] = useState("");
+  const [tSort, setTSort] = useState({
+    col: "lab",
+    dir: 1
+  });
+  const instrumentOpts = useMemo(() => sortAlpha(Array.from(new Set(labs.flatMap(l => (l.machines || []).map(m => String(m.instrument || "").trim())).filter(Boolean)))), [labs]);
+  // flat register: every instrument across ALL institutions
+  const allMachines = useMemo(() => labs.flatMap(l => (l.machines || []).map(m => ({
+    ...m,
+    _labId: l.id,
+    _lab: l.name,
+    _flag: pmFlag(m),
+    _next: pmComputedNext(m)
+  }))), [labs]);
+  const matchesFilters = m => (!instF || String(m.instrument || "").trim() === instF) && (!flagF || pmFlag(m) === flagF);
   const shown = labs.filter(l => {
+    if ((instF || flagF) && !(l.machines || []).some(matchesFilters)) return false;
     const s = q.toLowerCase();
     if (!s) return true;
     return String(l.name || "").toLowerCase().includes(s) || String(l.location || "").toLowerCase().includes(s) || (l.machines || []).some(m => String(m.serialNo || "").toLowerCase().includes(s) || String(m.instrument || "").toLowerCase().includes(s));
   }).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const TCOLS = [{
+    id: "lab",
+    label: "Laboratory",
+    sv: m => m._lab || ""
+  }, {
+    id: "inst",
+    label: "Instrument",
+    sv: m => m.instrument || ""
+  }, {
+    id: "serial",
+    label: "Serial No",
+    sv: m => m.serialNo || ""
+  }, {
+    id: "inst2",
+    label: "Installed",
+    sv: m => m.installDate || ""
+  }, {
+    id: "next",
+    label: "Next PM",
+    sv: m => m._next || ""
+  }, {
+    id: "flag",
+    label: "PM Flag",
+    sv: m => m._flag || ""
+  }, {
+    id: "status",
+    label: "Status",
+    sv: m => m.status || ""
+  }];
+  const tableRows = useMemo(() => {
+    const rows = allMachines.filter(m => {
+      if (!matchesFilters(m)) return false;
+      const s = q.toLowerCase();
+      if (!s) return true;
+      return [m._lab, m.instrument, m.serialNo].some(x => String(x || "").toLowerCase().includes(s));
+    });
+    const c = TCOLS.find(x => x.id === tSort.col) || TCOLS[0];
+    return rows.sort((a, b) => tSort.dir * String(c.sv(a)).localeCompare(String(c.sv(b)), undefined, {
+      numeric: true,
+      sensitivity: "base"
+    }));
+  }, [allMachines, q, instF, flagF, tSort]);
   async function addLab(name, location) {
     const dup = labs.find(l => labNameNorm(l.name) === labNameNorm(name));
     if (dup) {
@@ -2052,18 +2125,152 @@ function LabsTab({
   }, /*#__PURE__*/React.createElement("input", {
     style: {
       ...inputSt(),
-      maxWidth: 340
+      maxWidth: 300
     },
     value: q,
     onChange: e => setQ(e.target.value),
     placeholder: "🔍 Search lab, location, serial, instrument…"
-  }), canEdit && /*#__PURE__*/React.createElement("button", {
-    style: btnSt("var(--c-key)", "var(--c-bg)"),
+  }), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      maxWidth: 230,
+      cursor: "pointer"
+    },
+    value: instF,
+    onChange: e => setInstF(e.target.value),
+    title: "Every instrument across all institutions"
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "All instruments (all institutions)"), instrumentOpts.map(x => /*#__PURE__*/React.createElement("option", {
+    key: x
+  }, x))), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      maxWidth: 160,
+      cursor: "pointer"
+    },
+    value: flagF,
+    onChange: e => setFlagF(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "All PM flags"), ["Overdue", "Due This Week", "Due This Month", "Due Next Month", "OK"].map(f => /*#__PURE__*/React.createElement("option", {
+    key: f
+  }, f))), (q || instF || flagF) && /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: () => {
+      setQ("");
+      setInstF("");
+      setFlagF("");
+    }
+  }, "↺"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "inline-flex",
+      gap: 2,
+      background: "var(--c-bg)",
+      border: "1px solid var(--c-border)",
+      borderRadius: 8,
+      padding: 2
+    }
+  }, [["cards", "🃏 Cards"], ["table", "☰ Table"]].map(([id, lbl]) => /*#__PURE__*/React.createElement("button", {
+    key: id,
+    onClick: () => setView(id),
+    style: {
+      border: "none",
+      cursor: "pointer",
+      borderRadius: 6,
+      padding: "5px 11px",
+      fontSize: 11.5,
+      fontWeight: 700,
+      background: view === id ? "var(--c-key)" : "transparent",
+      color: view === id ? "var(--c-bg)" : "var(--c-text3)"
+    }
+  }, lbl))), canEdit && /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnSt("var(--c-key)", "var(--c-bg)"),
+      marginLeft: "auto"
+    },
     onClick: () => setAdding(true)
-  }, "+ New Laboratory")), /*#__PURE__*/React.createElement("div", {
+  }, "+ New Laboratory")), view === "table" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...cardSt,
+      overflowX: "auto"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text4)",
+      marginBottom: 8
+    }
+  }, tableRows.length, " instrument record(s) across ", labs.length, " institution(s) — click a row to open its laboratory · click a header to sort"), /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: "100%",
+      borderCollapse: "collapse"
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, TCOLS.map(c => /*#__PURE__*/React.createElement("th", {
+    key: c.id,
+    style: {
+      ...thSt,
+      cursor: "pointer",
+      userSelect: "none"
+    },
+    onClick: () => setTSort(s => s.col === c.id ? {
+      col: c.id,
+      dir: -s.dir
+    } : {
+      col: c.id,
+      dir: 1
+    })
+  }, c.label, tSort.col === c.id ? tSort.dir === 1 ? " ▲" : " ▼" : "")))), /*#__PURE__*/React.createElement("tbody", null, tableRows.map((m, i) => /*#__PURE__*/React.createElement("tr", {
+    key: (m.id || i) + "-" + m._labId,
+    onClick: () => setOpenLab(m._labId),
+    style: {
+      cursor: "pointer"
+    },
+    onMouseEnter: e => e.currentTarget.style.background = "var(--c-card2)",
+    onMouseLeave: e => e.currentTarget.style.background = ""
+  }, /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...tdSt,
+      fontWeight: 600
+    }
+  }, m._lab), /*#__PURE__*/React.createElement("td", {
+    style: tdSt
+  }, m.instrument), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...tdSt,
+      fontFamily: "monospace",
+      fontSize: 12
+    }
+  }, m.serialNo), /*#__PURE__*/React.createElement("td", {
+    style: tdSt
+  }, m.installDate ? fmtDate(m.installDate) : "—"), /*#__PURE__*/React.createElement("td", {
+    style: tdSt
+  }, m._next ? fmtDate(m._next) : "—"), /*#__PURE__*/React.createElement("td", {
+    style: tdSt
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10.5,
+      fontWeight: 800,
+      padding: "2px 9px",
+      borderRadius: 999,
+      color: FLAG_COLORS[m._flag],
+      border: "1px solid " + FLAG_COLORS[m._flag] + "55"
+    }
+  }, m._flag)), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...tdSt,
+      fontSize: 12
+    }
+  }, m.status || "—"))), tableRows.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: 7,
+    style: {
+      ...tdSt,
+      color: "var(--c-text4)"
+    }
+  }, "No instruments match."))))), view === "cards" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
-      gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))",
+      gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))",
       gap: 12
     }
   }, shown.map(lab => {
@@ -2116,11 +2323,11 @@ function LabsTab({
         display: "flex",
         alignItems: "baseline",
         gap: 8,
-        marginBottom: 6
+        marginBottom: 8
       }
     }, /*#__PURE__*/React.createElement("span", {
       style: {
-        fontSize: 32,
+        fontSize: 28,
         fontWeight: 900,
         color: accent,
         lineHeight: 1
@@ -2132,12 +2339,64 @@ function LabsTab({
         textTransform: "uppercase",
         fontWeight: 700
       }
-    }, "machine", ms.length !== 1 ? "s" : "")), /*#__PURE__*/React.createElement("div", {
+    }, "machine", ms.length !== 1 ? "s" : ""), /*#__PURE__*/React.createElement("span", {
+      style: {
+        marginLeft: "auto",
+        fontSize: 11,
+        color: "var(--c-text5)"
+      }
+    }, "📍 ", lab.location || "—")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        borderTop: "1px solid var(--c-border2)",
+        paddingTop: 8,
+        maxHeight: 132,
+        overflowY: "auto"
+      }
+    }, (instF || flagF ? (lab.machines || []).filter(matchesFilters) : lab.machines || []).map(m => {
+      const f = pmFlag(m);
+      return /*#__PURE__*/React.createElement("div", {
+        key: m.id,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          padding: "3.5px 0",
+          fontSize: 11.5
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          width: 7,
+          height: 7,
+          borderRadius: 99,
+          flexShrink: 0,
+          background: FLAG_COLORS[f],
+          boxShadow: isPull(m) ? "none" : "0 0 5px " + FLAG_COLORS[f],
+          opacity: isPull(m) ? .35 : 1
+        }
+      }), /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: "var(--c-text2)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          textDecoration: isPull(m) ? "line-through" : "none",
+          opacity: isPull(m) ? .55 : 1
+        }
+      }, m.instrument), /*#__PURE__*/React.createElement("span", {
+        style: {
+          marginLeft: "auto",
+          fontFamily: "monospace",
+          fontSize: 10.5,
+          color: "var(--c-text5)",
+          flexShrink: 0
+        }
+      }, m.serialNo));
+    }), (lab.machines || []).length === 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 11,
         color: "var(--c-text5)"
       }
-    }, "📍 ", lab.location || "—"));
+    }, "No machines yet.")));
   }), shown.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: "var(--c-text4)",
@@ -2152,6 +2411,7 @@ function LabsTab({
     lab: live,
     labs: labs,
     profile: profile,
+    catalog: catalog,
     notify: notify,
     onBack: () => setOpenLab(null)
   }));
@@ -2281,10 +2541,11 @@ function LabDetail({
   lab,
   labs,
   profile,
+  catalog,
   notify,
   onBack
 }) {
-  const engineerOptions = React.useMemo(() => Array.from(new Set([...(typeof window !== "undefined" && window.__ibaseEngineers || []), ...(labs || []).flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).flatMap(v => [v.engineer, v.engineer2, v.engineer3])))].map(x => String(x || "").trim()).filter(Boolean))).sort(), [labs]);
+  const engineerOptions = React.useMemo(() => Array.from(new Set([...(catalog && Array.isArray(catalog.engineers) ? catalog.engineers : []), ...(typeof window !== "undefined" && window.__ibaseEngineers || []), ...(labs || []).flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).flatMap(v => [v.engineer, v.engineer2, v.engineer3])))].map(x => String(x || "").trim()).filter(Boolean))).sort(), [labs]);
   // "Service" rights (labs.edit): add a visit, update Last PM — NOT structural.
   // "Manage" rights (admins only): add/edit/delete laboratories and machines.
   const canService = pCanTab(profile, "labs", "edit");
@@ -2874,6 +3135,61 @@ function SignaturePad({
     }
   }, "Clear")));
 }
+
+// Dropdown of all REGISTERED names (alphabetical) with a type-your-own option.
+function NameSelect({
+  value,
+  onChange,
+  options,
+  placeholder
+}) {
+  const inList = !value || (options || []).includes(value);
+  const [custom, setCustom] = useState(!inList);
+  if (custom) return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    autoFocus: true,
+    style: inputSt(),
+    value: value,
+    onChange: e => onChange(e.target.value),
+    placeholder: placeholder || "Type a name"
+  }), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    title: "Back to the registered-names list",
+    style: {
+      ...btnSt("var(--c-border)", "var(--c-text2)"),
+      padding: "6px 10px"
+    },
+    onClick: () => {
+      setCustom(false);
+      onChange("");
+    }
+  }, "▾"));
+  return /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      cursor: "pointer"
+    },
+    value: value,
+    onChange: e => {
+      const v = e.target.value;
+      if (v === "__custom") {
+        setCustom(true);
+        onChange("");
+      } else onChange(v);
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "— select a name —"), (options || []).map(n => /*#__PURE__*/React.createElement("option", {
+    key: n,
+    value: n
+  }, n)), /*#__PURE__*/React.createElement("option", {
+    value: "__custom"
+  }, "✏️ Type a name…"));
+}
 function VisitModal({
   machine,
   engineerOptions,
@@ -2932,12 +3248,11 @@ function VisitModal({
     onChange: e => set("isrNo", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Engineer"), /*#__PURE__*/React.createElement("input", {
-    list: "ibase-eng-list",
-    style: inputSt(),
+  }, "Engineer"), /*#__PURE__*/React.createElement(NameSelect, {
     value: f.engineer,
-    onChange: e => set("engineer", e.target.value),
-    placeholder: "Pick or type a name"
+    onChange: v => set("engineer", v),
+    options: engineerOptions,
+    placeholder: "Engineer name"
   }), /*#__PURE__*/React.createElement("datalist", {
     id: "ibase-eng-list"
   }, (engineerOptions || []).map(n => /*#__PURE__*/React.createElement("option", {
@@ -2945,18 +3260,16 @@ function VisitModal({
     value: n
   })))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Engineer 2 (optional)"), /*#__PURE__*/React.createElement("input", {
-    list: "ibase-eng-list",
-    style: inputSt(),
+  }, "Engineer 2 (optional)"), /*#__PURE__*/React.createElement(NameSelect, {
     value: f.engineer2,
-    onChange: e => set("engineer2", e.target.value)
+    onChange: v => set("engineer2", v),
+    options: engineerOptions
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Engineer 3 (optional)"), /*#__PURE__*/React.createElement("input", {
-    list: "ibase-eng-list",
-    style: inputSt(),
+  }, "Engineer 3 (optional)"), /*#__PURE__*/React.createElement(NameSelect, {
     value: f.engineer3,
-    onChange: e => set("engineer3", e.target.value)
+    onChange: v => set("engineer3", v),
+    options: engineerOptions
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Departure (from home/office)"), /*#__PURE__*/React.createElement("input", {
@@ -4995,6 +5308,7 @@ function vgridSave(key, val) {
 function VisitsTab({
   labs,
   profile,
+  catalog,
   notify
 }) {
   const canEditLabs = pCanTab(profile, "labs", "edit") || profile.isAdmin;
@@ -5040,7 +5354,7 @@ function VisitsTab({
   const labOpts = useMemo(() => sortAlpha(Array.from(new Set(all.map(v => v._lab).filter(Boolean)))), [all]);
   const brandOpts = useMemo(() => sortAlpha(Array.from(new Set(all.map(v => v._brand).filter(Boolean)))), [all]);
   const machineOpts = useMemo(() => sortAlpha(Array.from(new Set(all.filter(v => !brandF || v._brand === brandF).map(v => v._machine).filter(Boolean)))), [all, brandF]);
-  const engOpts = useMemo(() => sortAlpha(Array.from(new Set(all.flatMap(v => [v.engineer, v.engineer2, v.engineer3]).map(x => String(x || "").trim()).filter(Boolean)))), [all]);
+  const engOpts = useMemo(() => sortAlpha(Array.from(new Set([...(catalog && Array.isArray(catalog.engineers) ? catalog.engineers : []), ...all.flatMap(v => [v.engineer, v.engineer2, v.engineer3]).map(x => String(x || "").trim())].filter(Boolean)))), [all, catalog && catalog.engineers]);
   const filtered = useMemo(() => all.filter(v => {
     if (labF && v._lab !== labF) return false;
     if (brandF && v._brand !== brandF) return false;
@@ -6973,9 +7287,10 @@ function SettingsTab({
   }, "No users yet. Create one above."), /*#__PURE__*/React.createElement(RecoverProfileTool, {
     me: profile,
     notify: notify
-  })), iAmOwner && /*#__PURE__*/React.createElement(AdminManager, {
+  })), /*#__PURE__*/React.createElement(AdminManager, {
     users: users,
     me: profile,
+    iAmOwner: iAmOwner,
     brands: brands,
     notify: notify
   }), /*#__PURE__*/React.createElement(TabManager, {
@@ -7208,7 +7523,7 @@ function CreateUser({
         await db.collection("users").doc(newUid).set({
           email: email.trim(),
           displayName: name.trim(),
-          isAdmin: iAmOwner && makeAdmin ? true : false,
+          isAdmin: !!makeAdmin,
           role,
           engineerName: engineerName.trim(),
           permissions: perms,
@@ -7228,7 +7543,7 @@ function CreateUser({
           });
         } catch (e) {}
       }
-      logAudit(null, iAmOwner && makeAdmin ? "user.create-ADMIN" : "user.create", email.trim());
+      logAudit(null, makeAdmin ? "user.create-ADMIN" : "user.create", email.trim());
       notify("✓ Created " + email.trim() + (makeAdmin ? " as an ADMINISTRATOR." : ".") + " They appear in the list below and can sign in now.", "ok");
       setEmail("");
       setPw("");
@@ -7331,7 +7646,7 @@ function CreateUser({
       marginTop: 6,
       lineHeight: 1.5
     }
-  }, "Grants full system access (all tabs, user management, Bin, Audit). Only you — the owner (rexbanihit@gmail.com) — can create or revoke administrators; they can never modify or remove you, or each other's admin rights. When ticked, the per-tab permission checkboxes are hidden because administrators get everything.")), !makeAdmin && /*#__PURE__*/React.createElement(PermEditor, {
+  }, "Grants full system access (all tabs, user management, Bin, Audit) — and the power to promote or demote other administrators. Nobody can ever modify or remove the system owner. When ticked, the per-tab permission checkboxes are hidden because administrators get everything.")), !makeAdmin && /*#__PURE__*/React.createElement(PermEditor, {
     perms: perms,
     setPerms: setPerms,
     brands: brands
@@ -7455,6 +7770,7 @@ function LinkedName({
 function AdminManager({
   users,
   me,
+  iAmOwner,
   brands,
   notify
 }) {
@@ -7464,7 +7780,7 @@ function AdminManager({
   async function promote() {
     const u = regulars.find(x => x.id === pick);
     if (!u) return;
-    if (!confirm("Make " + u.email + " an ADMINISTRATOR? They gain full system access (all tabs, users, Bin, Audit) — but can never modify you or other administrators.")) return;
+    if (!confirm("Make " + u.email + " an ADMINISTRATOR? They gain full system access (all tabs, users, Bin, Audit) and can themselves promote or demote administrators. Only the owner is beyond their reach.")) return;
     try {
       await db.collection("users").doc(u.id).update({
         isAdmin: true
@@ -7489,13 +7805,13 @@ function AdminManager({
       textTransform: "uppercase",
       marginBottom: 4
     }
-  }, "👑 Administrators (", admins.length, ") — visible only to you"), /*#__PURE__*/React.createElement("div", {
+  }, "👑 Administrators (", admins.length, ")"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11.5,
       color: "var(--c-text5)",
       marginBottom: 12
     }
-  }, "Administrators are hidden from the Users section for everyone. Only you can promote, demote, or manage them. You yourself never appear anywhere."), admins.map(u => /*#__PURE__*/React.createElement(UserRow, {
+  }, iAmOwner ? "Administrators are hidden from the Users section. You and every administrator can promote or demote; the owner (you) can never be touched by anyone and never appears anywhere." : "Fellow administrators. You can promote users to administrator and demote administrators — changes apply to their screens instantly. The system owner is beyond everyone's reach and is not listed."), admins.map(u => /*#__PURE__*/React.createElement(UserRow, {
     key: u.id,
     u: u,
     brands: brands,
@@ -7682,12 +7998,22 @@ function UserRow({
     }
   }
   async function demote() {
-    if (!confirm("Revoke ADMINISTRATOR rights from " + u.email + "? They become a regular user (their per-tab permissions apply again).")) return;
+    const self = u.id === me.id;
+    if (!confirm(self ? "⚠️ You are demoting YOURSELF. You will lose administrator access IMMEDIATELY — Settings, Bin, Audit and this panel will disappear, and only another administrator or the owner can restore you. Continue?" : "Revoke ADMINISTRATOR rights from " + u.email + "? They become a regular user (their per-tab permissions apply again) — their screen updates instantly.")) return;
+    const patch = {
+      isAdmin: false
+    };
+    const hasPerms = u.permissions && Object.values(u.permissions).some(p => p && (p.view || p.edit));
+    if (!hasPerms) patch.permissions = {
+      ...blankPermissions(),
+      dashboard: {
+        view: true,
+        edit: false
+      }
+    }; // safe landing: at least the Dashboard
     try {
-      await db.collection("users").doc(u.id).update({
-        isAdmin: false
-      });
-      logAudit(me, "user.demote-ADMIN", u.email);
+      await db.collection("users").doc(u.id).update(patch);
+      logAudit(me, "user.demote-ADMIN", u.email + (self ? " (self)" : ""));
       notify("Administrator rights revoked.", "ok");
     } catch (e) {
       notify("SERVER REFUSED:\n" + e.message, "error");
@@ -7783,7 +8109,7 @@ function UserRow({
       fontSize: 11
     },
     onClick: resetPw
-  }, "📧 Reset password"), iAmOwner && u.isAdmin && !isOwnerRow && /*#__PURE__*/React.createElement("button", {
+  }, "📧 Reset password"), (iAmOwner || me && me.isAdmin) && u.isAdmin && !isOwnerRow && /*#__PURE__*/React.createElement("button", {
     title: "Revoke administrator rights (back to regular user)",
     style: {
       ...btnSt("var(--c-border)", "#fbbf24"),
@@ -7928,13 +8254,25 @@ function App() {
   const users = useCol("users", !!signedProfile && signedProfile.isAdmin, notify);
   const catalog = useDoc("config/catalog", !!signedProfile);
   const tabsCfg = useDoc("config/tabs", !!signedProfile);
-  // Publish the known engineer names (from user profiles) so the visit form's
-  // picklist includes staff who have no logged visits yet.
+  // Sync the REGISTERED employee names (from user profiles) into the shared
+  // catalog so EVERY user's visit form offers the full alphabetical roster —
+  // non-admins can't read /users, but everyone can read /config. Admin
+  // sessions keep it up to date automatically.
   useEffect(() => {
     try {
       window.__ibaseEngineers = (users || []).map(u => u.engineerName).filter(Boolean);
     } catch (e) {}
-  }, [users]);
+    if (!signedProfile || !signedProfile.isAdmin || !users.length) return;
+    const names = Array.from(new Set(users.map(u => String(u.engineerName || "").trim()).filter(Boolean))).sort();
+    const current = Array.isArray(catalog && catalog.engineers) ? [...catalog.engineers].sort() : [];
+    if (JSON.stringify(names) !== JSON.stringify(current)) {
+      db.doc("config/catalog").set({
+        engineers: names
+      }, {
+        merge: true
+      }).catch(() => {});
+    }
+  }, [users, signedProfile && signedProfile.isAdmin, JSON.stringify(catalog && catalog.engineers)]);
   const otSettingsDoc = useDoc("config/otSettings", !!signedProfile && signedProfile.isAdmin);
   const holidaysDoc = useDoc("config/holidays", !!signedProfile && signedProfile.isAdmin);
   // Header KPI stats (v126-style)
@@ -8199,12 +8537,14 @@ function App() {
   }), tab === "labs" && pCanTab(signedProfile, "labs", "view") && /*#__PURE__*/React.createElement(LabsTab, {
     labs: labs,
     profile: signedProfile,
+    catalog: catalog,
     notify: notify
   }), tab === "analytics" && (signedProfile.isAdmin || pCanTab(signedProfile, "analytics", "view")) && /*#__PURE__*/React.createElement(AnalyticsTab, {
     labs: labs
   }), tab === "visits" && (signedProfile.isAdmin || pCanTab(signedProfile, "visits", "view")) && /*#__PURE__*/React.createElement(VisitsTab, {
     labs: labs,
     profile: signedProfile,
+    catalog: catalog,
     notify: notify
   }), tab === "inventory" && pCanTab(signedProfile, "inventory", "view") && /*#__PURE__*/React.createElement(InventoryTab, {
     profile: signedProfile,
