@@ -2052,7 +2052,6 @@ function LabsTab({
     } catch (e) {}
   }, [view]);
   const [instF, setInstF] = useState("");
-  const [wiping, setWiping] = useState(false);
   const [brandF, setBrandF] = useState("");
   const [flagF, setFlagF] = useState("");
   const [tSort, setTSort] = useState({
@@ -2237,34 +2236,7 @@ function LabsTab({
       marginLeft: "auto"
     },
     onClick: () => setAdding(true)
-  }, "+ New Laboratory"), isOwnerAcct(profile) && labs.length > 0 && /*#__PURE__*/React.createElement("button", {
-    title: "Owner only: move EVERY laboratory (with all machines & visits) to the Bin — each one stays individually restorable",
-    style: btnSt("#3a1d1d", "#fca5a5"),
-    disabled: wiping,
-    onClick: async () => {
-      const nM = labs.reduce((s, l) => s + (l.machines || []).length, 0);
-      if (!confirm("⚠️ Move ALL " + labs.length + " laboratories (with their " + nM + " machine record(s) and every visit) to the Bin?\n\nEach laboratory becomes a separate Bin entry you can restore one by one.")) return;
-      if (!confirm("FINAL confirmation — this clears the entire Institutions tab. Continue?")) return;
-      setWiping(true);
-      let done = 0,
-        failed = 0;
-      for (const l of labs) {
-        try {
-          await binIt("lab", l.name, {
-            ...l
-          }, profile.email);
-          await db.collection("labs").doc(l.id).delete();
-          done++;
-        } catch (e) {
-          failed++;
-          notify("\"" + l.name + "\" refused: " + e.message, "error");
-        }
-      }
-      logAudit(profile, "labs.deleteALL", done + " laborator" + (done === 1 ? "y" : "ies") + " → Bin" + (failed ? " (" + failed + " failed)" : ""));
-      notify("🗑 " + done + " laborator" + (done === 1 ? "y" : "ies") + " moved to the Bin." + (failed ? " " + failed + " failed." : ""), failed ? "error" : "bin");
-      setWiping(false);
-    }
-  }, wiping ? "Moving to Bin…" : "🗑 Delete ALL laboratories")), view === "table" && /*#__PURE__*/React.createElement("div", {
+  }, "+ New Laboratory")), view === "table" && /*#__PURE__*/React.createElement("div", {
     style: {
       ...cardSt,
       overflowX: "auto"
@@ -4718,7 +4690,36 @@ function BinTab({
   const sorted = entries.slice().sort((a, b) => String(b.deletedAt || "").localeCompare(String(a.deletedAt || "")));
   async function restore(e) {
     try {
-      if (e.kind === "lab") {
+      if (e.kind === "logs") {
+        const lab = labs.find(l => l.id === e.payload.labId) || labs.find(l => labNameNorm(l.name) === labNameNorm(e.payload.labName));
+        if (!lab) {
+          notify("The laboratory \"" + e.payload.labName + "\" no longer exists — restore the laboratory first, then its logs.", "error");
+          return;
+        }
+        const bm = e.payload.byMachine || {};
+        let restoredN = 0,
+          missing = 0;
+        const machines = (lab.machines || []).map(m => {
+          if (!bm[m.id]) return m;
+          const have = {};
+          (m.visits || []).forEach(v => {
+            if (v.id) have[v.id] = 1;
+          });
+          const add = (bm[m.id].visits || []).filter(v => !v.id || !have[v.id]);
+          restoredN += add.length;
+          return {
+            ...m,
+            visits: [...(m.visits || []), ...add]
+          };
+        });
+        Object.keys(bm).forEach(id => {
+          if (!(lab.machines || []).some(m => m.id === id)) missing++;
+        });
+        await db.collection("labs").doc(lab.id).update({
+          machines
+        });
+        if (missing) notify(missing + " machine(s) from this entry no longer exist — their visits were skipped.", "error");
+      } else if (e.kind === "lab") {
         const dup = labs.find(l => labNameNorm(l.name) === labNameNorm(e.payload.name));
         if (dup) {
           notify("A laboratory named \"" + dup.name + "\" already exists — rename or delete it first.", "error");
@@ -6859,6 +6860,56 @@ function AuditTab({
 }
 
 // ── Overtime (full v127 workflow: engine, applications, revert, conversation) ─
+// Any uncaught error inside a tab renders THIS panel instead of blanking the app.
+class TabBoundary extends React.Component {
+  constructor(p) {
+    super(p);
+    this.state = {
+      err: null
+    };
+  }
+  static getDerivedStateFromError(err) {
+    return {
+      err
+    };
+  }
+  componentDidUpdate(prev) {
+    if (prev.tabId !== this.props.tabId && this.state.err) this.setState({
+      err: null
+    });
+  }
+  render() {
+    if (this.state.err) return /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: "var(--c-card)",
+        border: "1px solid #f8717155",
+        borderRadius: 14,
+        padding: 24
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 15,
+        fontWeight: 900,
+        color: "#f87171",
+        marginBottom: 6
+      }
+    }, "⚠ This tab hit an error"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: "var(--c-text3)",
+        marginBottom: 10,
+        fontFamily: "monospace",
+        whiteSpace: "pre-wrap"
+      }
+    }, String(this.state.err && (this.state.err.message || this.state.err))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: "var(--c-text4)"
+      }
+    }, "The rest of iBase keeps working. Switch tabs or reload — and please report this message so it can be fixed."));
+    return this.props.children;
+  }
+}
 function OvertimeTab({
   profile,
   labs,
@@ -6868,7 +6919,24 @@ function OvertimeTab({
   const isMgr = pIsOtManager(profile);
   const editable = pCanTab(profile, "overtime", "edit");
   const myName = profile.engineerName || "";
-  const otSettings = useDoc("config/otSettings", true) || DEFAULT_OT_SETTINGS;
+  const otSettingsRaw = useDoc("config/otSettings", true);
+  // Merge stored settings over the defaults so a PARTIAL document (e.g. missing
+  // the weekly schedule) can never crash the overtime engine into a blank screen.
+  const otSettings = useMemo(() => {
+    const d = DEFAULT_OT_SETTINGS,
+      s = otSettingsRaw || {};
+    return {
+      ...d,
+      ...s,
+      schedule: {
+        ...(d.schedule || {}),
+        ...(s && typeof s.schedule === "object" && s.schedule || {})
+      },
+      graceMinutes: Number(s.graceMinutes != null ? s.graceMinutes : d.graceMinutes) || 0,
+      cutoff1: Number(s.cutoff1 != null ? s.cutoff1 : d.cutoff1) || d.cutoff1,
+      cutoff2: Number(s.cutoff2 != null ? s.cutoff2 : d.cutoff2) || d.cutoff2
+    };
+  }, [JSON.stringify(otSettingsRaw)]);
   const holidaysDoc = useDoc("config/holidays", true);
   const holidays = holidaysDoc && holidaysDoc.list || [];
   const holidayMap = useMemo(() => otHolidayMapFromList(holidays), [holidays]);
@@ -6928,6 +6996,7 @@ function OvertimeTab({
     return l.days.filter(d => otCutoffForDate(d.date, otSettings).key === effKey);
   }
   const periodLabel = period === "__allhist__" ? "All history" : period === "__range__" ? otFrom || otTo ? (otFrom ? fmtDate(otFrom) : "start") + " → " + (otTo ? fmtDate(otTo) : "today") : "All history" : (periodOptions.find(p => p.key === effKey) || {}).label || "Current period";
+  const hasAnyData = visibleEngineers.length > 0 && (visibleEngineers.some(n => ledgers[n] && ledgers[n].days.length > 0) || apps.some(a => visibleEngineers.indexOf(a.engineerName) !== -1));
 
   // application map + mutations (server rules enforce owner/manager)
   const appMap = useMemo(() => {
@@ -7596,7 +7665,32 @@ function OvertimeTab({
       marginLeft: "auto"
     },
     onClick: () => setShowSettings(true)
-  }, "⚙ Office Hours, Holidays & Cutoff")), /*#__PURE__*/React.createElement("div", {
+  }, "⚙ Office Hours, Holidays & Cutoff")), !hasAnyData && /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...cardSt,
+      textAlign: "center",
+      padding: "34px 20px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 30,
+      marginBottom: 8
+    }
+  }, "🕒"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 14,
+      fontWeight: 800,
+      marginBottom: 6
+    }
+  }, isMgr ? "No overtime records yet" : myName ? "You have no overtime records to file" : "No employee name is linked to your account"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "var(--c-text4)",
+      maxWidth: 460,
+      margin: "0 auto",
+      lineHeight: 1.6
+    }
+  }, isMgr ? "Overtime is computed from logged service visits (departure/arrival or work start/end times). Once engineers log visits under their names, their overtime appears here automatically." : myName ? "Overtime is computed from your logged service visits. When a visit under your name (" + myName + ") runs past office hours, it will show up here — nothing to file for now." : "Ask an administrator to link your employee name in Settings → Users (⛓ link) — after that, overtime from your logged visits appears here.")), hasAnyData && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "flex-end",
@@ -7803,7 +7897,7 @@ function OvertimeTab({
     engName: selectedEng
   }), !isMgr && myName && /*#__PURE__*/React.createElement(DayTable, {
     engName: myName
-  }), showSettings && /*#__PURE__*/React.createElement(OtSettingsModal, {
+  })), showSettings && /*#__PURE__*/React.createElement(OtSettingsModal, {
     otSettings: otSettings,
     holidays: holidays,
     notify: notify,
@@ -8824,6 +8918,121 @@ function ImportExcel({
     }
   }, "Cancel"))));
 }
+
+// ═══ OWNER-ONLY Danger zone: mass deletions (everything goes through the Bin) ═══
+function DangerZone({
+  labs,
+  profile,
+  notify
+}) {
+  const [busyL, setBusyL] = useState(false);
+  const [busyV, setBusyV] = useState(false);
+  const nVisits = labs.reduce((s, l) => s + (l.machines || []).reduce((a, m) => a + (m.visits || []).length, 0), 0);
+  const nMachines = labs.reduce((s, l) => s + (l.machines || []).length, 0);
+  async function deleteAllLabs() {
+    if (!labs.length) {
+      notify("There are no laboratories to delete.", "error");
+      return;
+    }
+    if (!confirm("⚠️ Move ALL " + labs.length + " laboratories (with " + nMachines + " machine record(s) and " + nVisits + " visit(s)) to the Bin?\n\nEach laboratory becomes its own Bin entry, restorable one by one.")) return;
+    if (!confirm("FINAL confirmation — this clears the entire Institutions tab. Continue?")) return;
+    setBusyL(true);
+    let done = 0,
+      failed = 0;
+    for (const l of labs) {
+      try {
+        await binIt("lab", l.name, {
+          ...l
+        }, profile.email);
+        await db.collection("labs").doc(l.id).delete();
+        done++;
+      } catch (e) {
+        failed++;
+        notify("\"" + l.name + "\" refused: " + e.message, "error");
+      }
+    }
+    logAudit(profile, "labs.deleteALL", done + " laborator" + (done === 1 ? "y" : "ies") + " → Bin" + (failed ? " (" + failed + " failed)" : ""));
+    notify(failed ? done + " moved, " + failed + " failed." : "🗑 All " + done + " laborator" + (done === 1 ? "y" : "ies") + " moved to the Bin.", failed ? "error" : "bin");
+    setBusyL(false);
+  }
+  async function deleteAllLogs() {
+    if (!nVisits) {
+      notify("There are no visits/logs to delete.", "error");
+      return;
+    }
+    if (!confirm("⚠️ Move ALL " + nVisits + " visit log(s) to the Bin?\n\nLaboratories and machines stay in place — only their visit history is cleared. Each laboratory's logs become ONE restorable Bin entry.")) return;
+    if (!confirm("FINAL confirmation — clear every visit log in the system?")) return;
+    setBusyV(true);
+    let done = 0,
+      failed = 0;
+    for (const l of labs) {
+      const byMachine = {};
+      (l.machines || []).forEach(m => {
+        if ((m.visits || []).length) byMachine[m.id] = {
+          machineLabel: (m.instrument || "") + " (" + (m.serialNo || "") + ")",
+          visits: m.visits
+        };
+      });
+      const count = Object.values(byMachine).reduce((s, x) => s + x.visits.length, 0);
+      if (!count) continue;
+      try {
+        await binIt("logs", "All visits of " + l.name + " (" + count + ")", {
+          labId: l.id,
+          labName: l.name,
+          byMachine
+        }, profile.email);
+        const machines = (l.machines || []).map(m => ({
+          ...m,
+          visits: []
+        }));
+        await db.collection("labs").doc(l.id).update({
+          machines
+        });
+        done += count;
+      } catch (e) {
+        failed++;
+        notify("\"" + l.name + "\" refused: " + e.message, "error");
+      }
+    }
+    logAudit(profile, "logs.deleteALL", done + " visit(s) → Bin" + (failed ? " (" + failed + " lab(s) failed)" : ""));
+    notify(failed ? done + " visit(s) moved; " + failed + " laborator" + (failed === 1 ? "y" : "ies") + " failed." : "🗑 All " + done + " visit log(s) moved to the Bin (grouped per laboratory).", failed ? "error" : "bin");
+    setBusyV(false);
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...cardSt,
+      border: "1px solid #f8717166"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "#f87171",
+      textTransform: "uppercase",
+      marginBottom: 4
+    }
+  }, "☠ Danger zone — owner only"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text5)",
+      marginBottom: 12
+    }
+  }, "Mass deletions. Nothing is destroyed outright — everything lands in the Bin and can be restored (laboratories one by one; logs one entry per laboratory). Take a ⬇ Download first."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#3a1d1d", "#fca5a5"),
+    disabled: busyL || busyV,
+    onClick: deleteAllLabs
+  }, busyL ? "Moving…" : "🗑 Delete all laboratories (" + labs.length + ")"), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#3a1d1d", "#fca5a5"),
+    disabled: busyL || busyV,
+    onClick: deleteAllLogs
+  }, busyV ? "Moving…" : "🗑 Delete all logs (" + nVisits + " visits)")));
+}
 function SettingsTab({
   profile,
   users,
@@ -8847,6 +9056,10 @@ function SettingsTab({
     }
   }
   return /*#__PURE__*/React.createElement("div", null, iAmOwner && /*#__PURE__*/React.createElement(ImportExcel, {
+    labs: labs,
+    profile: profile,
+    notify: notify
+  }), iAmOwner && /*#__PURE__*/React.createElement(DangerZone, {
     labs: labs,
     profile: profile,
     notify: notify
@@ -10211,7 +10424,9 @@ function App() {
       color: "var(--c-text3)",
       lineHeight: 1.6
     }
-  }, "You're signed in, but there's no profile document for your account, so the server grants you nothing. If you're the first administrator, create it once in the Firestore console: collection ", /*#__PURE__*/React.createElement("b", null, "users"), ", document ID = ", /*#__PURE__*/React.createElement("b", null, user.uid), ", fields ", /*#__PURE__*/React.createElement("b", null, "isAdmin"), " (boolean true), ", /*#__PURE__*/React.createElement("b", null, "email"), ", ", /*#__PURE__*/React.createElement("b", null, "displayName"), ".")), signedProfile && /*#__PURE__*/React.createElement(React.Fragment, null, tab === "dashboard" && pCanTab(signedProfile, "dashboard", "view") && /*#__PURE__*/React.createElement(DashboardTab, {
+  }, "You're signed in, but there's no profile document for your account, so the server grants you nothing. If you're the first administrator, create it once in the Firestore console: collection ", /*#__PURE__*/React.createElement("b", null, "users"), ", document ID = ", /*#__PURE__*/React.createElement("b", null, user.uid), ", fields ", /*#__PURE__*/React.createElement("b", null, "isAdmin"), " (boolean true), ", /*#__PURE__*/React.createElement("b", null, "email"), ", ", /*#__PURE__*/React.createElement("b", null, "displayName"), ".")), signedProfile && /*#__PURE__*/React.createElement(TabBoundary, {
+    tabId: tab
+  }, tab === "dashboard" && pCanTab(signedProfile, "dashboard", "view") && /*#__PURE__*/React.createElement(DashboardTab, {
     labs: labs
   }), tab === "labs" && pCanTab(signedProfile, "labs", "view") && /*#__PURE__*/React.createElement(LabsTab, {
     labs: labs,
