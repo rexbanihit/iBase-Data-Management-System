@@ -139,16 +139,45 @@
 </head><body>
 <div id="root"></div>
 <script>
-  var firebaseConfig = {
-    apiKey:            "AIzaSyCfqj0hNsixJuvKAvCCDBl0B6rUxdA6KW0",
-    authDomain:        "ibase-373e6.firebaseapp.com",
-    projectId:         "ibase-373e6",
-    storageBucket:     "ibase-373e6.firebasestorage.app",
-    messagingSenderId: "153032625736",
-    appId:             "1:153032625736:web:4864bc0eaa2e706e9f527d",
-    databaseURL:       "https://ibase-373e6-default-rtdb.asia-southeast1.firebasedatabase.app"
-  };
-  firebase.initializeApp(firebaseConfig);
+/* ── iBase loader guard ─────────────────────────────────────────────────────
+   Checks that every external library actually arrived before the app starts.
+   Static + read-only: it takes no input, renders a fixed message, and adds no
+   attack surface. Real security is enforced SERVER-SIDE by the Firestore/RTDB
+   rules — nothing in this file (visible to anyone) can bypass them. */
+(function () {
+  var missing = [];
+  if (typeof firebase === "undefined") missing.push("Firebase database engine — www.gstatic.com");
+  if (typeof React === "undefined" || typeof ReactDOM === "undefined") missing.push("React interface engine — cdnjs.cloudflare.com");
+  if (typeof XLSX === "undefined") missing.push("Excel engine — cdnjs.cloudflare.com");
+  window.__IBASE_LIBS_OK = missing.length === 0;
+  if (!window.__IBASE_LIBS_OK) {
+    var items = "";
+    for (var k = 0; k < missing.length; k++) items += "<li style='margin:4px 0'>" + missing[k] + "</li>";
+    document.getElementById("root").innerHTML =
+      "<div style='max-width:560px;margin:80px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb'>" +
+      "<div style='font-size:20px;font-weight:800;margin-bottom:10px'>⚠ iBase could not load its libraries</div>" +
+      "<div style='font-size:13.5;color:#9ca3af;line-height:1.7'>The page itself is fine — the browser failed to download:</div>" +
+      "<ul style='font-size:13px;color:#fca5a5;line-height:1.6'>" + items + "</ul>" +
+      "<div style='font-size:13.5;color:#9ca3af;line-height:1.8'>Usual causes:<br>1. No internet connection right now<br>2. An ad-blocker or privacy extension blocking those domains (try an Incognito window)<br>3. An office firewall — ask IT to allow the domains above</div>" +
+      "<button onclick='location.reload()' style='margin-top:18px;padding:10px 22px;border-radius:10px;border:none;background:#38bdf8;color:#0b0d10;font-weight:800;font-size:14px;cursor:pointer'>↻ Try again</button>" +
+      "<div style='margin-top:12px;font-size:11px;color:#6b7280'>Your data is untouched — it lives safely in the cloud and loads once the connection works.</div>" +
+      "</div>";
+  }
+})();
+</script>
+<script>
+  if (window.__IBASE_LIBS_OK) {
+    var firebaseConfig = {
+      apiKey:            "AIzaSyCfqj0hNsixJuvKAvCCDBl0B6rUxdA6KW0",
+      authDomain:        "ibase-373e6.firebaseapp.com",
+      projectId:         "ibase-373e6",
+      storageBucket:     "ibase-373e6.firebasestorage.app",
+      messagingSenderId: "153032625736",
+      appId:             "1:153032625736:web:4864bc0eaa2e706e9f527d",
+      databaseURL:       "https://ibase-373e6-default-rtdb.asia-southeast1.firebasedatabase.app"
+    };
+    firebase.initializeApp(firebaseConfig);
+  }
 </script>
 <script>
 /* iBase computation engines — extracted VERBATIM from iBase v126/v127 (incl. PM schedule engine) */
@@ -488,6 +517,7 @@ function nextPMDate(baseDate, interval) {
 }
 </script>
 <script>
+if (window.__IBASE_LIBS_OK) {
 // ── Interactive "cosmic flow" particle background (Canvas 2D, no external deps) ──
 //    Glowing particles stream from the cursor through a swirling flow field;
 //    left-click drops an attractor that particles orbit. Additively blended over a
@@ -6394,9 +6424,10 @@ function VisitsTab({
   }, /*#__PURE__*/React.createElement("label", {
     style: _lblS
   }, "Columns"), /*#__PURE__*/React.createElement("button", {
+    title: "Show or hide columns — affects only YOUR view, never other users' layouts",
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: () => setColMenu(m => !m)
-  }, "🧩 Columns", hiddenCols.length ? " (" + hiddenCols.length + " hidden)" : ""), colMenu && /*#__PURE__*/React.createElement("div", {
+  }, "👁 Show / Hide", hiddenCols.length ? " (" + hiddenCols.length + " hidden)" : ""), colMenu && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "absolute",
       top: 58,
@@ -6409,7 +6440,13 @@ function VisitsTab({
       minWidth: 200,
       boxShadow: "0 10px 30px rgba(0,0,0,.4)"
     }
-  }, VGRID_COLS.map(c => /*#__PURE__*/React.createElement("label", {
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: "var(--c-text5)",
+      marginBottom: 6
+    }
+  }, "Tick to show, untick to hide — saved for your account on this browser only; other users keep their own view."), VGRID_COLS.map(c => /*#__PURE__*/React.createElement("label", {
     key: c.id,
     style: {
       display: "flex",
@@ -6599,22 +6636,8 @@ function VisitsTab({
       onDragOver: e => e.preventDefault(),
       onDrop: () => dropCol(id),
       onClick: () => clickSort(id),
-      title: "Click: sort · Drag: move column · Drag right edge: resize · ✕ removes this column (for you only)"
+      title: "Click: sort · Drag: move column · Drag right edge: resize · 👁 Show/Hide button manages visibility (your view only)"
     }, c.label, sort.col === id ? sort.dir === 1 ? " ▲" : " ▼" : "", /*#__PURE__*/React.createElement("span", {
-      title: "Remove this column from YOUR view (restore via 🧩 Columns)",
-      onClick: e => {
-        e.stopPropagation();
-        setHiddenCols(h => [...h, id]);
-      },
-      style: {
-        marginLeft: 5,
-        color: "var(--c-text5)",
-        cursor: "pointer",
-        fontWeight: 400
-      },
-      onMouseEnter: e => e.currentTarget.style.color = "#f87171",
-      onMouseLeave: e => e.currentTarget.style.color = "var(--c-text5)"
-    }, "✕"), /*#__PURE__*/React.createElement("span", {
       className: "ibzv-grip",
       onMouseDown: e => startResize(e, id),
       onClick: e => e.stopPropagation(),
@@ -10641,5 +10664,6 @@ function App() {
 }
 ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
 
+}
 </script>
 </body></html>
