@@ -126,6 +126,26 @@
         --c-overlay: rgba(0,0,0,0.88); --c-tooltip-bg: #141414; --c-author: rgba(80,80,80,0.4);
       }
       
+      [data-theme="mono-med"] {
+        color-scheme: dark;
+        --c-bg: #101010; --c-bg2: #191919; --c-card: #181818; --c-card2: #222222;
+        --c-border: #333333; --c-border2: #242424; --c-input-border: #454545;
+        --c-text: #e8e8e8; --c-text2: #c9c9c9; --c-text3: #a8a8a8; --c-text4: #8a8a8a; --c-text5: #757575;
+        --c-key: #e5e5e5; --c-region: #c9c9c9; --c-isr: #e07a7a;
+        --c-overlay: rgba(0,0,0,0.84); --c-tooltip-bg: #181818; --c-author: rgba(90,90,90,0.4);
+      }
+      [data-theme="mono-low"] {
+        color-scheme: dark;
+        --c-bg: #161616; --c-bg2: #1d1d1d; --c-card: #1c1c1c; --c-card2: #262626;
+        --c-border: #2c2c2c; --c-border2: #232323; --c-input-border: #3a3a3a;
+        --c-text: #cfcfcf; --c-text2: #b3b3b3; --c-text3: #9a9a9a; --c-text4: #838383; --c-text5: #707070;
+        --c-key: #c6c6c6; --c-region: #b3b3b3; --c-isr: #c98383;
+        --c-overlay: rgba(0,0,0,0.78); --c-tooltip-bg: #1c1c1c; --c-author: rgba(95,95,95,0.35);
+      }
+      /* shared table kit: hover + selected-row highlight */
+      .ibt table tbody tr:hover td { background: rgba(56,189,248,.07); }
+      .ibt tr.ibt-sel td, table.ibt tr.ibt-sel td { background: rgba(56,189,248,.16) !important; }
+      table.ibt tbody tr:hover td { background: rgba(56,189,248,.07); }
   body { background: var(--c-bg); color: var(--c-text); margin:0; font-family:'DM Sans','Segoe UI',system-ui,sans-serif; font-size:14px; }
   * { box-sizing: border-box; } input, select, button { font-family: inherit; }
 </style>
@@ -139,28 +159,16 @@
 </head><body>
 <div id="root"></div>
 <script>
-/* ── iBase loader guard ─────────────────────────────────────────────────────
-   Checks that every external library actually arrived before the app starts.
-   Static + read-only: it takes no input, renders a fixed message, and adds no
-   attack surface. Real security is enforced SERVER-SIDE by the Firestore/RTDB
-   rules — nothing in this file (visible to anyone) can bypass them. */
+/* iBase loader guard — static + read-only; real security lives in the
+   server-side Firestore/RTDB rules. */
 (function () {
-  var missing = [];
-  if (typeof firebase === "undefined") missing.push("Firebase database engine — www.gstatic.com");
-  if (typeof React === "undefined" || typeof ReactDOM === "undefined") missing.push("React interface engine — cdnjs.cloudflare.com");
-  if (typeof XLSX === "undefined") missing.push("Excel engine — cdnjs.cloudflare.com");
-  window.__IBASE_LIBS_OK = missing.length === 0;
-  if (!window.__IBASE_LIBS_OK) {
-    var items = "";
-    for (var k = 0; k < missing.length; k++) items += "<li style='margin:4px 0'>" + missing[k] + "</li>";
+  var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
+  window.__IBASE_LIBS_OK = okLibs;
+  if (!okLibs) {
     document.getElementById("root").innerHTML =
-      "<div style='max-width:560px;margin:80px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb'>" +
-      "<div style='font-size:20px;font-weight:800;margin-bottom:10px'>⚠ iBase could not load its libraries</div>" +
-      "<div style='font-size:13.5;color:#9ca3af;line-height:1.7'>The page itself is fine — the browser failed to download:</div>" +
-      "<ul style='font-size:13px;color:#fca5a5;line-height:1.6'>" + items + "</ul>" +
-      "<div style='font-size:13.5;color:#9ca3af;line-height:1.8'>Usual causes:<br>1. No internet connection right now<br>2. An ad-blocker or privacy extension blocking those domains (try an Incognito window)<br>3. An office firewall — ask IT to allow the domains above</div>" +
-      "<button onclick='location.reload()' style='margin-top:18px;padding:10px 22px;border-radius:10px;border:none;background:#38bdf8;color:#0b0d10;font-weight:800;font-size:14px;cursor:pointer'>↻ Try again</button>" +
-      "<div style='margin-top:12px;font-size:11px;color:#6b7280'>Your data is untouched — it lives safely in the cloud and loads once the connection works.</div>" +
+      "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
+      "<div style='font-size:17px;font-weight:800;line-height:1.6'>⚠ Could not reach Google's servers — check your internet connection or ad-blocker, then reload.</div>" +
+      "<button onclick='location.reload()' style='margin-top:20px;padding:10px 26px;border-radius:10px;border:none;background:#38bdf8;color:#0b0d10;font-weight:800;font-size:14px;cursor:pointer'>↻ Reload</button>" +
       "</div>";
   }
 })();
@@ -308,6 +316,26 @@ function otAddDays(dateKey, n) {
   return dt.toISOString().slice(0, 10);
 }
 
+
+// Expand the stored holiday list ({name, from, to, type} date ranges) into a
+// per-date lookup map used by computeEngineerOt: { "YYYY-MM-DD": "Name (Type)" }.
+function otHolidayMapFromList(list) {
+  var map = {};
+  (list || []).forEach(function (h) {
+    if (!h) return;
+    var from = String(h.from || h.date || "").slice(0, 10);
+    var to = String(h.to || h.from || h.date || "").slice(0, 10);
+    if (!from) return;
+    if (!to || to < from) to = from;
+    var d = new Date(from + "T00:00:00Z"), end = new Date(to + "T00:00:00Z"), guard = 0;
+    while (d <= end && guard < 400) {
+      map[d.toISOString().slice(0, 10)] = (h.name || "Holiday") + (h.type ? " (" + h.type + ")" : "");
+      d.setUTCDate(d.getUTCDate() + 1); guard++;
+    }
+  });
+  return map;
+}
+
 function computeEngineerOt(engineerName, allVisits, otSettings, holidayMap) {
   var settings = otSettings || DEFAULT_OT_SETTINGS;
   var byDate = {};
@@ -366,6 +394,76 @@ function isOtManagerRoleName(role) {
   if (!r) return false;
   return r === "hr" || r.indexOf("human resource") !== -1 || r.indexOf("accounting") !== -1 || r.indexOf("accountant") !== -1;
 }
+
+// ── extracted VERBATIM from iBase v127 (machine lifecycle state) ──
+var PULLOUT_VISIT_STATUSES = ["pulled-out", "pulled out", "instrument is ready for pull-out", "scrapped", "decommissioned"];
+function latestPullOut(labs, serial) {
+  var sn = String(serial || "").trim().toLowerCase();
+  if (!sn) return null;
+  var best = null, fallback = null;
+  (labs || []).forEach(function (lab) {
+    (lab.machines || []).forEach(function (m) {
+      if (String(m.serialNo || "").trim().toLowerCase() !== sn) return;
+      (m.visits || []).forEach(function (v) {
+        var vs = String(v.machineStatus || "").trim().toLowerCase();
+        var vt = String(v.type || "").trim().toLowerCase();
+        var isPull = vt === "pull-out" || PULLOUT_VISIT_STATUSES.indexOf(vs) !== -1;
+        if (!isPull) return;
+        var mode = (vs === "instrument is ready for pull-out") ? "ready" : "pulled";
+        if (!best || String(v.date || "") > String(best.date || "")) best = { date: v.date || "", mode: mode };
+      });
+      if (String(m.status) === "Pulled-out" && fallback == null) fallback = { date: "", mode: "pulled" };
+    });
+  });
+  return best || fallback;
+}
+
+function invLastOutDate(m) {
+  var d = "";
+  (m.visits || []).forEach(function (v) {
+    var vs = String(v.machineStatus || "").trim().toLowerCase();
+    var vt = String(v.type || "").trim().toLowerCase();
+    var isPull = vt === "pull-out" || PULLOUT_VISIT_STATUSES.indexOf(vs) !== -1;
+    if (isPull && String(v.date || "") > String(d)) d = v.date || "";
+  });
+  return d;
+}
+
+function machineCurrentState(m) {
+  if (!m) return "active";
+  var vs = Array.isArray(m.visits) ? m.visits.slice() : [];
+  vs.sort(function (a, b) {
+    var d = String(a.date || "").localeCompare(String(b.date || ""));
+    if (d !== 0) return d;
+    return String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
+  });
+  var latest = vs.length ? vs[vs.length - 1] : null;
+  if (latest) {
+    var t  = String(latest.type || "").trim().toLowerCase();
+    var ms = String(latest.machineStatus || "").trim().toLowerCase();
+    if (t === "pull-out") return ms === "instrument is ready for pull-out" ? "ready" : "pulled-out";
+    if (ms) {
+      if (ms === "pulled-out" || ms === "pulled out") return "pulled-out";
+      if (ms === "instrument is ready for pull-out") return "ready";
+      if (ms === "scrapped") return "scrapped";
+      if (ms === "decommissioned") return "decommissioned";
+      return "active"; // any other explicit after-status (Operational, Functional, …)
+    }
+    if (t === "installation") return "active"; // (re)installed
+    // otherwise (neutral visit, no after-status) fall through to the status field
+  }
+  var s = String(m.status || "").trim().toLowerCase();
+  if (s === "pulled-out" || s === "pulled out") return "pulled-out";
+  if (s === "scrapped") return "scrapped";
+  if (s === "inactive") return "inactive";
+  return "active";
+}
+// Released = pulled out / ready for pull-out / scrapped / decommissioned (current state).
+function isMachineReleased(m) {
+  var st = machineCurrentState(m);
+  return st === "pulled-out" || st === "ready" || st === "scrapped" || st === "decommissioned";
+}
+// Retired for PM purposes: greyed out + dropped from every PM reminder. Anything not active.
 
 function invPlacement(labs, serial) {
   var sn = String(serial || "").trim().toLowerCase();
@@ -1657,6 +1755,12 @@ const THEMES = [{
 }, {
   id: "mono",
   label: "🖤 High Contrast Mono"
+}, {
+  id: "mono-med",
+  label: "◻ Medium Contrast Mono"
+}, {
+  id: "mono-low",
+  label: "▫ Low Contrast Mono"
 }];
 function ThemePicker({
   theme,
@@ -2000,18 +2104,341 @@ function KPICard({
     }
   }, sub));
 }
+// ═══ Dashboard — ported from iBase v127 (KPIs, installed base, PM donut,
+// compliance gauge, maintenance alerts) on the Firebase data model ═══════════
+
+function ITable({
+  id,
+  cols,
+  rows,
+  rowKey,
+  initSort,
+  onRowClick,
+  maxH,
+  filter,
+  filterPlaceholder,
+  empty
+}) {
+  const KEY = "ibase_tbl_" + id;
+  const load = () => {
+    try {
+      return JSON.parse(localStorage.getItem(KEY) || "{}");
+    } catch (e) {
+      return {};
+    }
+  };
+  const [st, setSt] = useState(load);
+  const save = up => setSt(s => {
+    const n = typeof up === "function" ? up(s) : up;
+    try {
+      localStorage.setItem(KEY, JSON.stringify(n));
+    } catch (e) {}
+    return n;
+  });
+  const [q, setQ] = useState("");
+  const [selKey, setSelKey] = useState(null);
+  const dragCol = useRef(null);
+  const defIds = cols.map(c => c.id);
+  const order = [...(st.order || []).filter(x => defIds.includes(x)), ...defIds.filter(x => !(st.order || []).includes(x))];
+  const sort = st.sort || initSort || null;
+  const colDef = cid => cols.find(c => c.id === cid);
+  const shown = useMemo(() => {
+    let r = rows;
+    if (filter !== false && q.trim()) {
+      const s = q.toLowerCase();
+      r = r.filter(x => cols.some(c => String(c.sv ? c.sv(x) : "").toLowerCase().includes(s)));
+    }
+    if (sort) {
+      const c = colDef(sort.col);
+      if (c && c.sv) r = r.slice().sort((a, b) => sort.dir * String(c.sv(a)).localeCompare(String(c.sv(b)), undefined, {
+        numeric: true,
+        sensitivity: "base"
+      }));
+    }
+    return r;
+  }, [rows, q, sort && sort.col, sort && sort.dir]);
+  function startResize(e, cid) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX,
+      startW = st.w && st.w[cid] || colDef(cid).w || 120;
+    const move = ev => save(s => ({
+      ...s,
+      w: {
+        ...(s.w || {}),
+        [cid]: Math.max(46, startW + (ev.clientX - startX))
+      }
+    }));
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  }
+  const laidOut = st.order && st.order.length || st.w && Object.keys(st.w).length || st.sort;
+  return /*#__PURE__*/React.createElement("div", null, (filter !== false || laidOut) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center",
+      marginBottom: 8,
+      flexWrap: "wrap"
+    }
+  }, filter !== false && /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      maxWidth: 260,
+      padding: "6px 10px",
+      fontSize: 12
+    },
+    value: q,
+    onChange: e => setQ(e.target.value),
+    placeholder: filterPlaceholder || "🔍 Filter…"
+  }), laidOut ? /*#__PURE__*/React.createElement("button", {
+    title: "Restore default column order, widths and sorting (your view only)",
+    style: {
+      ...btnSt("var(--c-border)", "var(--c-text2)"),
+      padding: "6px 10px",
+      fontSize: 11.5
+    },
+    onClick: () => {
+      try {
+        localStorage.removeItem(KEY);
+      } catch (e) {}
+      setSt({});
+    }
+  }, "↺ Reset") : null), /*#__PURE__*/React.createElement("div", {
+    className: "ibt",
+    style: {
+      maxHeight: maxH || 440,
+      overflow: "auto",
+      borderRadius: 8
+    }
+  }, /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: "max-content",
+      minWidth: "100%",
+      borderCollapse: "collapse"
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, order.map(cid => {
+    const c = colDef(cid);
+    if (!c) return null;
+    const w = st.w && st.w[cid] || c.w || 120;
+    return /*#__PURE__*/React.createElement("th", {
+      key: cid,
+      draggable: true,
+      onDragStart: () => {
+        dragCol.current = cid;
+      },
+      onDragOver: e => e.preventDefault(),
+      onDrop: () => {
+        const d = dragCol.current;
+        dragCol.current = null;
+        if (!d || d === cid) return;
+        save(s => {
+          const o = order.filter(x => x !== d);
+          o.splice(o.indexOf(cid), 0, d);
+          return {
+            ...s,
+            order: o
+          };
+        });
+      },
+      onClick: () => save(s => ({
+        ...s,
+        sort: s.sort && s.sort.col === cid ? {
+          col: cid,
+          dir: -s.sort.dir
+        } : {
+          col: cid,
+          dir: 1
+        }
+      })),
+      title: "Click: sort · Drag: move column · Drag right edge: resize",
+      style: {
+        ...thSt,
+        width: w,
+        maxWidth: w,
+        minWidth: w,
+        cursor: "grab",
+        position: "sticky",
+        top: 0,
+        background: "var(--c-bg2)",
+        zIndex: 5,
+        userSelect: "none"
+      }
+    }, c.label, sort && sort.col === cid ? sort.dir === 1 ? " ▲" : " ▼" : "", /*#__PURE__*/React.createElement("span", {
+      onMouseDown: e => startResize(e, cid),
+      onClick: e => e.stopPropagation(),
+      draggable: false,
+      onDragStart: e => {
+        e.preventDefault();
+        e.stopPropagation();
+      },
+      style: {
+        position: "absolute",
+        right: 0,
+        top: 0,
+        bottom: 0,
+        width: 7,
+        cursor: "col-resize"
+      }
+    }));
+  }))), /*#__PURE__*/React.createElement("tbody", null, shown.map((r, i) => {
+    const k = rowKey ? rowKey(r) : i;
+    return /*#__PURE__*/React.createElement("tr", {
+      key: k,
+      className: selKey === k ? "ibt-sel" : undefined,
+      onClick: () => {
+        setSelKey(s => s === k ? null : k);
+        onRowClick && onRowClick(r);
+      }
+    }, order.map(cid => {
+      const c = colDef(cid);
+      if (!c) return null;
+      const w = st.w && st.w[cid] || c.w || 120;
+      return /*#__PURE__*/React.createElement("td", {
+        key: cid,
+        style: {
+          ...tdSt,
+          width: w,
+          maxWidth: w,
+          ...(c.wrap ? {} : {
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap"
+          })
+        }
+      }, c.render ? c.render(r) : String(c.sv ? c.sv(r) : ""));
+    }));
+  }), shown.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: order.length,
+    style: {
+      ...tdSt,
+      color: "var(--c-text4)"
+    }
+  }, empty || "No rows."))))));
+}
+const DASH_FLAG_COLORS = {
+  Overdue: "#ef4444",
+  "Due This Week": "#fb923c",
+  "Due This Month": "#f97316",
+  "Due Next Month": "#eab308",
+  OK: "#10b981"
+};
+const DASH_FLAG_ORDER = {
+  Overdue: 0,
+  "Due This Week": 0.5,
+  "Due This Month": 1,
+  "Due Next Month": 2
+};
+function dashDaysUntil(iso) {
+  if (!iso) return null;
+  const t = new Date(String(iso).slice(0, 10) + "T00:00:00");
+  if (isNaN(t)) return null;
+  const now = new Date(today() + "T00:00:00");
+  return Math.round((t - now) / 86400000);
+}
+function ComplianceGauge({
+  pct
+}) {
+  const R = 62,
+    C = 2 * Math.PI * R;
+  const color = pct >= 90 ? "#10b981" : pct >= 70 ? "#f59e0b" : "#ef4444";
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative",
+      width: 160,
+      height: 160,
+      margin: "0 auto"
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
+    width: "160",
+    height: "160",
+    viewBox: "0 0 160 160"
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "80",
+    cy: "80",
+    r: R,
+    fill: "none",
+    stroke: "var(--c-border)",
+    strokeWidth: "14"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "80",
+    cy: "80",
+    r: R,
+    fill: "none",
+    stroke: color,
+    strokeWidth: "14",
+    strokeLinecap: "round",
+    strokeDasharray: C * pct / 100 + " " + C,
+    transform: "rotate(-90 80 80)"
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      inset: 0,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 32,
+      fontWeight: 900,
+      color
+    }
+  }, pct, "%"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9.5,
+      color: "var(--c-text3)"
+    }
+  }, "units on schedule")));
+}
 function DashboardTab({
   labs
 }) {
-  const machines = labs.flatMap(l => l.machines || []);
-  const active = machines.filter(m => !isPull(m)).length;
-  const flags = machines.filter(m => !isPull(m)).map(pmFlag);
-  const count = f => flags.filter(x => x === f).length;
-  return /*#__PURE__*/React.createElement("div", {
+  const rows = labs.flatMap(l => (l.machines || []).map(m => ({
+    m,
+    lab: l
+  })));
+  const live = rows.filter(r => !isPull(r.m));
+  const machines = rows.length,
+    activeN = live.length;
+  const flagged = live.map(r => ({
+    ...r,
+    flag: pmFlag(r.m),
+    next: pmComputedNext(r.m)
+  }));
+  const count = f => flagged.filter(x => x.flag === f).length;
+  const overdue = count("Overdue");
+  const compliance = Math.round((Math.max(activeN, 0) - overdue) / Math.max(activeN, 1) * 100);
+  // installed base by instrument (active units)
+  const instCounts = {};
+  live.forEach(r => {
+    const n = String(r.m.instrument || "").trim() || "(Unspecified)";
+    instCounts[n] = (instCounts[n] || 0) + 1;
+  });
+  const instData = Object.keys(instCounts).map(n => ({
+    name: n,
+    value: instCounts[n]
+  })).sort((a, b) => b.value - a.value);
+  const instMax = instData.length ? instData[0].value : 1;
+  // PM status distribution
+  const flagData = ["Overdue", "Due This Week", "Due This Month", "Due Next Month", "OK"].map(f => ({
+    label: f,
+    value: count(f),
+    color: DASH_FLAG_COLORS[f]
+  })).filter(d => d.value > 0);
+  // maintenance alerts — rendered through the shared table kit
+  const urgent = flagged.filter(x => x.flag !== "OK");
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 14,
-      flexWrap: "wrap"
+      flexWrap: "wrap",
+      marginBottom: 20
     }
   }, /*#__PURE__*/React.createElement(KPICard, {
     title: "Laboratories",
@@ -2021,25 +2448,25 @@ function DashboardTab({
     sub: "customer sites"
   }), /*#__PURE__*/React.createElement(KPICard, {
     title: "Total Machines",
-    value: machines.length,
+    value: machines,
     icon: "🔬",
     color: "#a78bfa",
     sub: "all instruments"
   }), /*#__PURE__*/React.createElement(KPICard, {
     title: "Active Units",
-    value: active,
+    value: activeN,
     icon: "✅",
     color: "#34d399",
-    sub: machines.length ? Math.round(active / machines.length * 100) + "% of total" : "—"
+    sub: machines ? Math.round(activeN / machines * 100) + "% of total" : "—"
   }), /*#__PURE__*/React.createElement(KPICard, {
     title: "Overdue PM",
-    value: count("Overdue"),
+    value: overdue,
     icon: "🚨",
     color: "#ef4444",
     sub: "urgent"
   }), /*#__PURE__*/React.createElement(KPICard, {
     title: "Due This Month",
-    value: count("Due This Month"),
+    value: count("Due This Week") + count("Due This Month"),
     icon: "⏰",
     color: "#f97316",
     sub: "schedule now"
@@ -2049,7 +2476,242 @@ function DashboardTab({
     icon: "📅",
     color: "#f59e0b",
     sub: "plan ahead"
-  }));
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1.4fr 1fr 0.8fr",
+      gap: 16,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: cardSt
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "var(--c-text3)",
+      textTransform: "uppercase",
+      marginBottom: 10
+    }
+  }, "Installed Base by Instrument"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxHeight: 300,
+      overflowY: "auto",
+      paddingRight: 6
+    }
+  }, instData.map((d, i) => /*#__PURE__*/React.createElement("div", {
+    key: d.name,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 7
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    title: d.name,
+    style: {
+      width: 130,
+      fontSize: 11,
+      color: "var(--c-text2)",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+      textAlign: "right"
+    }
+  }, d.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      background: "var(--c-bg)",
+      borderRadius: 5,
+      height: 16,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: Math.max(4, d.value / instMax * 100) + "%",
+      height: "100%",
+      borderRadius: 5,
+      background: CHART_PALETTE[i % CHART_PALETTE.length],
+      transition: "width .4s"
+    }
+  })), /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 30,
+      fontSize: 12,
+      fontWeight: 800
+    }
+  }, d.value))), instData.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "var(--c-text4)",
+      padding: "24px 0",
+      textAlign: "center"
+    }
+  }, "No machines yet."))), /*#__PURE__*/React.createElement("div", {
+    style: cardSt
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "var(--c-text3)",
+      textTransform: "uppercase",
+      marginBottom: 10
+    }
+  }, "PM Status Distribution"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: "52%"
+    }
+  }, /*#__PURE__*/React.createElement(PieSVG, {
+    data: flagData,
+    donut: true
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, flagData.map((e, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 11,
+      height: 11,
+      borderRadius: 3,
+      background: e.color
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: "var(--c-text2)",
+      flex: 1
+    }
+  }, e.label), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 15,
+      fontWeight: 700
+    }
+  }, e.value))), flagData.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "var(--c-text4)"
+    }
+  }, "No active units.")))), /*#__PURE__*/React.createElement("div", {
+    style: cardSt
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "var(--c-text3)",
+      textTransform: "uppercase",
+      marginBottom: 10
+    }
+  }, "PM Compliance"), /*#__PURE__*/React.createElement(ComplianceGauge, {
+    pct: compliance
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: cardSt
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "#f87171",
+      textTransform: "uppercase",
+      marginBottom: 10
+    }
+  }, "🚨 Maintenance Alerts — ", urgent.length, " unit(s) requiring attention"), /*#__PURE__*/React.createElement(ITable, {
+    id: "dash-alerts",
+    maxH: 400,
+    initSort: {
+      col: "flag",
+      dir: 1
+    },
+    rowKey: x => x.m.id || x.lab.name + x.m.serialNo,
+    filterPlaceholder: "🔍 Filter alerts…",
+    empty: /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: "#10b981",
+        fontWeight: 700
+      }
+    }, "✅ Every active unit is on schedule."),
+    cols: [{
+      id: "region",
+      label: "Region",
+      w: 150,
+      sv: x => (x.lab.location || "") + (x.lab.subRegion ? " · " + x.lab.subRegion : ""),
+      render: x => /*#__PURE__*/React.createElement("span", null, x.lab.location || "—", x.lab.subRegion ? " · " + x.lab.subRegion : "")
+    }, {
+      id: "lab",
+      label: "Laboratory",
+      w: 220,
+      sv: x => x.lab.name || "",
+      render: x => /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontWeight: 600
+        }
+      }, x.lab.name)
+    }, {
+      id: "inst",
+      label: "Instrument",
+      w: 170,
+      sv: x => x.m.instrument || ""
+    }, {
+      id: "serial",
+      label: "Serial",
+      w: 120,
+      sv: x => x.m.serialNo || ""
+    }, {
+      id: "flag",
+      label: "Status",
+      w: 135,
+      sv: x => String(DASH_FLAG_ORDER[x.flag] != null ? DASH_FLAG_ORDER[x.flag] : 9),
+      render: x => /*#__PURE__*/React.createElement("span", {
+        style: {
+          padding: "2px 9px",
+          borderRadius: 999,
+          fontSize: 10.5,
+          fontWeight: 800,
+          color: "#1a1a1a",
+          background: DASH_FLAG_COLORS[x.flag]
+        }
+      }, x.flag)
+    }, {
+      id: "lastpm",
+      label: "Last PM",
+      w: 105,
+      sv: x => String(x.m.lastPM || ""),
+      render: x => /*#__PURE__*/React.createElement("span", null, x.m.lastPM ? fmtDate(x.m.lastPM) : "—")
+    }, {
+      id: "nextpm",
+      label: "Next PM",
+      w: 105,
+      sv: x => String(x.next || ""),
+      render: x => /*#__PURE__*/React.createElement("span", null, x.next ? fmtDate(x.next) : "—")
+    }, {
+      id: "days",
+      label: "Days",
+      w: 110,
+      sv: x => String(dashDaysUntil(x.next) ?? 9e9),
+      render: x => {
+        const days = dashDaysUntil(x.next);
+        return /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontWeight: 800,
+            color: days != null && days < 0 ? "#ef4444" : "var(--c-text2)"
+          }
+        }, days == null ? "—" : days < 0 ? Math.abs(days) + "d overdue" : "in " + days + "d");
+      }
+    }],
+    rows: urgent
+  })));
 }
 function isPull(m) {
   return PULLOUT_VISIT_STATUSES.indexOf(String(m && m.status || "").trim().toLowerCase()) !== -1;
@@ -2269,7 +2931,8 @@ function LabsTab({
   }, "+ New Laboratory")), view === "table" && /*#__PURE__*/React.createElement("div", {
     style: {
       ...cardSt,
-      overflowX: "auto"
+      overflow: "auto",
+      maxHeight: "calc(100vh - 300px)"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2278,6 +2941,7 @@ function LabsTab({
       marginBottom: 8
     }
   }, tableRows.length, " instrument record(s) across ", labs.length, " institution(s) — click a row to open its laboratory · click a header to sort"), /*#__PURE__*/React.createElement("table", {
+    className: "ibt",
     style: {
       width: "100%",
       borderCollapse: "collapse"
@@ -2287,7 +2951,11 @@ function LabsTab({
     style: {
       ...thSt,
       cursor: "pointer",
-      userSelect: "none"
+      userSelect: "none",
+      position: "sticky",
+      top: 0,
+      background: "var(--c-bg2)",
+      zIndex: 5
     },
     onClick: () => setTSort(s => s.col === c.id ? {
       col: c.id,
@@ -2570,7 +3238,7 @@ function Modal({
       borderRadius: 14,
       padding: 22,
       width: "100%",
-      maxWidth: wide ? 760 : 460
+      maxWidth: wide ? 980 : 460
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2944,13 +3612,20 @@ function LabDetail({
   }, "All machines"), sortAlpha(Array.from(new Set((lab.machines || []).map(m => m.instrument).filter(Boolean)))).map(x => /*#__PURE__*/React.createElement("option", {
     key: x
   }, x)))), /*#__PURE__*/React.createElement("table", {
+    className: "ibt",
     style: {
       width: "100%",
       borderCollapse: "collapse"
     }
   }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Date", "Machine", "Type", "ISR", "Engineer", "Status after", "Logged by", ""].map((h, i) => /*#__PURE__*/React.createElement("th", {
     key: i,
-    style: thSt
+    style: {
+      ...thSt,
+      position: "sticky",
+      top: 0,
+      background: "var(--c-bg2)",
+      zIndex: 4
+    }
   }, h)))), /*#__PURE__*/React.createElement("tbody", null, (lab.machines || []).flatMap(m => (m.visits || []).map(v => ({
     ...v,
     _m: m.instrument,
@@ -3423,7 +4098,7 @@ function extraFold(v) {
   return parts.length ? "[Details] " + parts.join(" · ") : "";
 }
 // What changed between two versions of a visit (for the edit log).
-const VISIT_DIFF_FIELDS = [["date", "Date"], ["type", "Type"], ["isrNo", "ISR"], ["engineer", "Engineer"], ["engineer2", "Engineer 2"], ["engineer3", "Engineer 3"], ["machineStatus", "Status after"], ["dtDeparture", "Departure"], ["dtArrivalHome", "Arrival home"], ["dtWorkStarted", "Work started"], ["dtWorkEnded", "Work ended"], ["remarks", "Remarks"], ["signedByName", "Signed by (name)"]];
+const VISIT_DIFF_FIELDS = [["date", "Date"], ["type", "Activity/Job type"], ["supportType", "Support type"], ["priority", "Priority"], ["isrNo", "ISR no."], ["engineer", "Name"], ["engineer2", "Engineer 2"], ["engineer3", "Engineer 3"], ["machineStatus", "Instrument Status"], ["dtReported", "Reported"], ["dtDeparture", "Departure"], ["dtArrivalAccount", "Arrival to Account"], ["dtWorkStarted", "Work started"], ["dtWorkEnded", "Work ended"], ["dtArrivalHome", "Arrival to Home"], ["problemDesc", "Problem Description"], ["systemCondition", "System Condition"], ["recommendation", "Recommendation"], ["endorsedTo", "Endorsed to"], ["softwareVersion", "Software Version"], ["remarks", "Description of Work"], ["signedByName", "Signed by (name)"]];
 function visitDiff(oldV, newV) {
   const changes = [];
   VISIT_DIFF_FIELDS.forEach(([k, label]) => {
@@ -3631,7 +4306,17 @@ function VisitModal({
     attachments: [...(initial.attachments || [])],
     extra: {
       ...(initial.extra || {})
-    }
+    },
+    supportType: initial.supportType || "",
+    dtReported: initial.dtReported || "",
+    dtArrivalAccount: initial.dtArrivalAccount || "",
+    problemDesc: initial.problemDesc || "",
+    systemCondition: initial.systemCondition || "",
+    recommendation: initial.recommendation || "",
+    endorsedTo: initial.endorsedTo || "",
+    priority: initial.priority || "",
+    softwareVersion: initial.softwareVersion || "",
+    srcTimestamp: initial.srcTimestamp || ""
   } : {
     date: today(),
     type: "PM",
@@ -3648,7 +4333,17 @@ function VisitModal({
     signature: "",
     signedByName: "",
     attachments: [],
-    extra: {}
+    extra: {},
+    supportType: "",
+    dtReported: "",
+    dtArrivalAccount: "",
+    problemDesc: "",
+    systemCondition: "",
+    recommendation: "",
+    endorsedTo: "",
+    priority: "",
+    softwareVersion: "",
+    srcTimestamp: ""
   });
   const set = (k, v) => setF(x => ({
     ...x,
@@ -3732,11 +4427,25 @@ function VisitModal({
     options: engineerOptions
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
+  }, "Date & Time reported"), /*#__PURE__*/React.createElement("input", {
+    type: "datetime-local",
+    style: inputSt(),
+    value: f.dtReported,
+    onChange: e => set("dtReported", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
   }, "Departure (from home/office)"), /*#__PURE__*/React.createElement("input", {
     type: "datetime-local",
     style: inputSt(),
     value: f.dtDeparture,
     onChange: e => set("dtDeparture", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Arrival to Account"), /*#__PURE__*/React.createElement("input", {
+    type: "datetime-local",
+    style: inputSt(),
+    value: f.dtArrivalAccount,
+    onChange: e => set("dtArrivalAccount", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Arrival home"), /*#__PURE__*/React.createElement("input", {
@@ -3768,10 +4477,72 @@ function VisitModal({
     key: t
   }, t)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Remarks"), /*#__PURE__*/React.createElement("input", {
+  }, "Description of Work (remarks)"), /*#__PURE__*/React.createElement("input", {
     style: inputSt(),
     value: f.remarks,
     onChange: e => set("remarks", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Support type"), /*#__PURE__*/React.createElement("input", {
+    style: inputSt(),
+    value: f.supportType,
+    onChange: e => set("supportType", e.target.value),
+    placeholder: "e.g. Onsite / Remote / Phone"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Priority"), /*#__PURE__*/React.createElement("input", {
+    list: "ib-prio",
+    style: inputSt(),
+    value: f.priority,
+    onChange: e => set("priority", e.target.value),
+    placeholder: "High / Medium / Low"
+  }), /*#__PURE__*/React.createElement("datalist", {
+    id: "ib-prio"
+  }, /*#__PURE__*/React.createElement("option", null, "High"), /*#__PURE__*/React.createElement("option", null, "Medium"), /*#__PURE__*/React.createElement("option", null, "Low"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Software Version"), /*#__PURE__*/React.createElement("input", {
+    style: inputSt(),
+    value: f.softwareVersion,
+    onChange: e => set("softwareVersion", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "System Condition"), /*#__PURE__*/React.createElement("input", {
+    style: inputSt(),
+    value: f.systemCondition,
+    onChange: e => set("systemCondition", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Endorsed to"), /*#__PURE__*/React.createElement("input", {
+    style: inputSt(),
+    value: f.endorsedTo,
+    onChange: e => set("endorsedTo", e.target.value)
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 12,
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Problem Description"), /*#__PURE__*/React.createElement("textarea", {
+    style: {
+      ...inputSt(),
+      minHeight: 52,
+      resize: "vertical"
+    },
+    value: f.problemDesc,
+    onChange: e => set("problemDesc", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Recommendation"), /*#__PURE__*/React.createElement("textarea", {
+    style: {
+      ...inputSt(),
+      minHeight: 52,
+      resize: "vertical"
+    },
+    value: f.recommendation,
+    onChange: e => set("recommendation", e.target.value)
   }))), (customFields || []).length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 12
@@ -4125,91 +4896,204 @@ function MachineInv({
   }, "↺"), canEdit && /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     onClick: () => setEditing("new")
-  }, "+ New Record")), /*#__PURE__*/React.createElement("table", {
-    style: {
-      width: "100%",
-      borderCollapse: "collapse"
-    }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Brand", "Model", "Serial No", "Condition", "Status", "Installed To", ""].map(h => /*#__PURE__*/React.createElement("th", {
-    key: h,
-    style: thSt
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, enriched.map(it => /*#__PURE__*/React.createElement("tr", {
-    key: it.id
-  }, /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, it.brand), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, it.machineModel), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontFamily: "monospace",
-      fontSize: 12,
-      color: "var(--c-key)"
-    }
-  }, it.serialNo), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, (() => {
-    const c = String(it._condition || "").toUpperCase();
-    const used = c === "USED";
-    return c === "USED" || c === "BRAND NEW" ? /*#__PURE__*/React.createElement("span", {
-      title: used ? "Previously installed at another laboratory — automatically Used" : "Never installed at a different laboratory",
-      style: {
-        fontSize: 10,
-        fontWeight: 800,
-        padding: "2px 9px",
-        borderRadius: 999,
-        background: used ? "rgba(251,146,60,.14)" : "rgba(56,189,248,.14)",
-        color: used ? "#fdba74" : "#7dd3fc",
-        border: "1px solid " + (used ? "rgba(251,146,60,.4)" : "rgba(56,189,248,.4)")
+  }, "+ New Record")), /*#__PURE__*/React.createElement(ITable, {
+    id: "inv-machines",
+    maxH: "calc(100vh - 340px)",
+    filter: false,
+    initSort: {
+      col: "brand",
+      dir: 1
+    },
+    rowKey: it => it.id,
+    empty: "No inventory records" + (q ? " match the search." : " yet."),
+    cols: [{
+      id: "brand",
+      label: "Brand",
+      w: 110,
+      sv: it => String(it.brand || ""),
+      render: it => /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontWeight: 700,
+          color: "var(--c-key)"
+        }
+      }, it.brand || "—")
+    }, {
+      id: "model",
+      label: "Model",
+      w: 170,
+      sv: it => String(it.machineModel || "")
+    }, {
+      id: "serial",
+      label: "Serial No",
+      w: 130,
+      sv: it => String(it.serialNo || ""),
+      render: it => /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontFamily: "monospace",
+          fontSize: 12,
+          color: "var(--c-key)"
+        }
+      }, it.serialNo)
+    }, {
+      id: "itemCode",
+      label: "Item Code",
+      w: 110,
+      sv: it => String(it.itemCode || ""),
+      render: it => /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontFamily: "monospace",
+          fontSize: 11.5
+        }
+      }, it.itemCode || "—")
+    }, {
+      id: "cond",
+      label: "Condition",
+      w: 120,
+      sv: it => String(it._condition || ""),
+      render: it => {
+        const c = String(it._condition || "").toUpperCase();
+        const used = c === "USED";
+        return c === "USED" || c === "BRAND NEW" ? /*#__PURE__*/React.createElement("span", {
+          title: used ? "Previously installed at another laboratory — automatically Used" : "Never installed at a different laboratory",
+          style: {
+            fontSize: 10,
+            fontWeight: 800,
+            padding: "2px 9px",
+            borderRadius: 999,
+            background: used ? "rgba(251,146,60,.14)" : "rgba(56,189,248,.14)",
+            color: used ? "#fdba74" : "#7dd3fc",
+            border: "1px solid " + (used ? "rgba(251,146,60,.4)" : "rgba(56,189,248,.4)")
+          }
+        }, c) : /*#__PURE__*/React.createElement("span", null, it._condition || "—");
       }
-    }, c) : it._condition || "—";
-  })()), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
-  }, it._status), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontSize: 12,
-      color: "var(--c-text3)"
-    }
-  }, it._installedTo || "—"), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      whiteSpace: "nowrap"
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    title: "In / Out History",
-    style: {
-      ...btnSt("var(--c-border)", "var(--c-text2)"),
-      padding: "4px 9px",
-      fontSize: 11
-    },
-    onClick: () => setHistFor(it)
-  }, "🕐"), " ", canEdit && (brandOk(it.brand) ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...btnSt("var(--c-border)", "var(--c-text2)"),
-      padding: "4px 9px",
-      fontSize: 11
-    },
-    onClick: () => setEditing(it)
-  }, "✏️"), " ", /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...btnSt("#3a1d1d", "#fca5a5"),
-      padding: "4px 9px",
-      fontSize: 11
-    },
-    onClick: () => del(it)
-  }, "🗑")) : /*#__PURE__*/React.createElement("span", {
-    title: "Your account can't edit " + (it.brand || "this brand"),
-    style: {
-      color: "var(--c-text5)"
-    }
-  }, "🔒"))))), enriched.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: 7,
-    style: {
-      ...tdSt,
-      color: "var(--c-text4)"
-    }
-  }, "No inventory records", q ? " match the search." : " yet.")))), editing && /*#__PURE__*/React.createElement(InvModal, {
+    }, {
+      id: "status",
+      label: "Status",
+      w: 110,
+      sv: it => String(it._status || "")
+    }, {
+      id: "instTo",
+      label: "Installed To",
+      w: 180,
+      sv: it => String(it._installedTo || ""),
+      render: it => /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          color: "var(--c-text3)"
+        }
+      }, it._installedTo || "—")
+    }, {
+      id: "impDate",
+      label: "Import Date",
+      w: 105,
+      sv: it => String(it.importDate || ""),
+      render: it => /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 11.5
+        }
+      }, it.importDate ? fmtDate(it.importDate) : "—")
+    }, {
+      id: "owner",
+      label: "Ownership",
+      w: 110,
+      sv: it => String(it.ownership || ""),
+      render: it => /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 11.5
+        }
+      }, it.ownership || "—")
+    }, {
+      id: "loc",
+      label: "Location",
+      w: 110,
+      sv: it => String(it.location || ""),
+      render: it => /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 11.5
+        }
+      }, it.location || "—")
+    }, {
+      id: "dealer",
+      label: "Dealer",
+      w: 120,
+      sv: it => String(it.dealer || ""),
+      render: it => /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 11.5
+        }
+      }, it.dealer || "—")
+    }, {
+      id: "sales",
+      label: "Sales Person",
+      w: 120,
+      sv: it => String(it.salesPerson || ""),
+      render: it => /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 11.5
+        }
+      }, it.salesPerson || "—")
+    }, {
+      id: "poDate",
+      label: "PO Date",
+      w: 100,
+      sv: it => String(it.poDate || ""),
+      render: it => /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 11.5
+        }
+      }, it.poDate ? fmtDate(it.poDate) : "—")
+    }, {
+      id: "remarks",
+      label: "Remarks",
+      w: 180,
+      sv: it => String(it.remarks || ""),
+      render: it => /*#__PURE__*/React.createElement("span", {
+        title: it.remarks || "",
+        style: {
+          fontSize: 11.5
+        }
+      }, it.remarks || "—")
+    }, {
+      id: "act",
+      label: "",
+      w: 135,
+      sv: () => "",
+      render: it => /*#__PURE__*/React.createElement("span", {
+        onClick: e => e.stopPropagation(),
+        style: {
+          whiteSpace: "nowrap"
+        }
+      }, /*#__PURE__*/React.createElement("button", {
+        title: "In / Out History",
+        style: {
+          ...btnSt("var(--c-border)", "var(--c-text2)"),
+          padding: "4px 9px",
+          fontSize: 11
+        },
+        onClick: () => setHistFor(it)
+      }, "🕐"), " ", canEdit && (brandOk(it.brand) ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+        style: {
+          ...btnSt("var(--c-border)", "var(--c-text2)"),
+          padding: "4px 9px",
+          fontSize: 11
+        },
+        onClick: () => setEditing(it)
+      }, "✏️"), " ", /*#__PURE__*/React.createElement("button", {
+        style: {
+          ...btnSt("#3a1d1d", "#fca5a5"),
+          padding: "4px 9px",
+          fontSize: 11
+        },
+        onClick: () => del(it)
+      }, "🗑")) : /*#__PURE__*/React.createElement("span", {
+        title: "Your account can't edit " + (it.brand || "this brand"),
+        style: {
+          color: "var(--c-text5)"
+        }
+      }, "🔒")))
+    }],
+    rows: enriched
+  }), editing && /*#__PURE__*/React.createElement(InvModal, {
     initial: editing === "new" ? null : editing,
     brands: brands,
     brandOk: brandOk,
@@ -4239,7 +5123,11 @@ function InvModal({
     status: "Available",
     location: "warehouse",
     dealer: "",
-    remarks: ""
+    remarks: "",
+    importDate: "",
+    ownership: "",
+    salesPerson: "",
+    poDate: ""
   });
   const set = (k, v) => setF(x => ({
     ...x,
@@ -4314,11 +5202,48 @@ function InvModal({
     }
   }, "Shows as ", /*#__PURE__*/React.createElement("b", null, "Onsite"), " automatically while the serial is installed in a laboratory.")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
+  }, "Location"), /*#__PURE__*/React.createElement("input", {
+    style: inputSt(),
+    value: f.location || "",
+    onChange: e => set("location", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
   }, "Dealer"), /*#__PURE__*/React.createElement("input", {
     style: inputSt(),
     value: f.dealer,
     onChange: e => set("dealer", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Import Date"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    style: inputSt(),
+    value: f.importDate || "",
+    onChange: e => set("importDate", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "PO Date"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    style: inputSt(),
+    value: f.poDate || "",
+    onChange: e => set("poDate", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Ownership"), /*#__PURE__*/React.createElement("input", {
+    style: inputSt(),
+    value: f.ownership || "",
+    onChange: e => set("ownership", e.target.value),
+    placeholder: "e.g. Company / Consignment / Demo"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Sales Person"), /*#__PURE__*/React.createElement("input", {
+    style: inputSt(),
+    value: f.salesPerson || "",
+    onChange: e => set("salesPerson", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      gridColumn: "1 / -1"
+    }
+  }, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Remarks"), /*#__PURE__*/React.createElement("input", {
     style: inputSt(),
@@ -4946,14 +5871,26 @@ function BinTab({
       notify(failed ? done + " deleted, " + failed + " refused." : "🗑 Bin emptied — " + done + " item(s) permanently deleted.", failed ? "error" : "bin");
       setEmptying(false);
     }
-  }, emptying ? "Emptying…" : "🗑 Delete ALL forever (" + entries.length + ")")), /*#__PURE__*/React.createElement("table", {
+  }, emptying ? "Emptying…" : "🗑 Delete ALL forever (" + entries.length + ")")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxHeight: "56vh",
+      overflow: "auto"
+    }
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "ibt",
     style: {
       width: "100%",
       borderCollapse: "collapse"
     }
   }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Type", "Item", "Deleted by", "Deleted at", ""].map(h => /*#__PURE__*/React.createElement("th", {
     key: h,
-    style: thSt
+    style: {
+      ...thSt,
+      position: "sticky",
+      top: 0,
+      background: "var(--c-bg2)",
+      zIndex: 4
+    }
   }, h)))), /*#__PURE__*/React.createElement("tbody", null, sorted.map(e => {
     const m = KIND_META[e.kind] || {
       icon: "❓",
@@ -5024,7 +5961,7 @@ function BinTab({
       ...tdSt,
       color: "var(--c-text4)"
     }
-  }, "The Bin is empty.")))));
+  }, "The Bin is empty."))))));
 }
 
 // ── Tab Manager: rename / delete (→ Bin) / re-add the system's tabs ─────────
@@ -5455,33 +6392,49 @@ function BarSVG({
   data
 }) {
   const max = Math.max(1, ...data.map(d => d.value));
-  const W = 380,
-    H = 200,
-    pad = 28,
-    barGap = 10;
   const n = data.length || 1;
-  const bw = Math.max(6, (W - pad * 2 - barGap * (n - 1)) / n);
-  return /*#__PURE__*/React.createElement("svg", {
+  const rot = n > 8; // crowded → rotated labels
+  const W = Math.max(380, Math.min(1400, n * 30 + 60)); // widen with the data (card scrolls)
+  const padT = 20,
+    padL = 36,
+    padR = 10,
+    padB = rot ? 62 : 26;
+  const H = rot ? 232 : 200;
+  const barGap = 7;
+  const bw = Math.max(5, (W - padL - padR - barGap * (n - 1)) / n);
+  const step = n > 44 ? Math.ceil(n / 44) : 1; // beyond ~44 bars, label every Nth
+  const maxChars = rot ? 13 : Math.max(3, Math.floor(bw / 5.2));
+  const short = s => {
+    s = String(s || "");
+    return s.length > maxChars ? s.slice(0, maxChars - 1) + "…" : s;
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      overflowX: "auto"
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
     viewBox: `0 0 ${W} ${H}`,
     style: {
-      width: "100%",
-      maxWidth: W,
-      height: H
+      width: W > 700 ? W : "100%",
+      maxWidth: "100%",
+      minWidth: Math.min(W, 380),
+      height: H,
+      display: "block"
     }
   }, [0, 0.25, 0.5, 0.75, 1].map((g, i) => {
-    const y = pad + (H - pad * 2) * (1 - g);
+    const y = padT + (H - padT - padB) * (1 - g);
     return /*#__PURE__*/React.createElement("g", {
       key: i
     }, /*#__PURE__*/React.createElement("line", {
-      x1: pad,
+      x1: padL,
       y1: y,
-      x2: W - pad,
+      x2: W - padR,
       y2: y,
       stroke: "var(--c-border)",
       strokeWidth: "1",
       strokeDasharray: "2 3"
     }), /*#__PURE__*/React.createElement("text", {
-      x: pad - 6,
+      x: padL - 6,
       y: y + 3,
       textAnchor: "end",
       style: {
@@ -5490,21 +6443,22 @@ function BarSVG({
       }
     }, Math.round(max * g)));
   }), data.map((d, i) => {
-    const x = pad + i * (bw + barGap);
-    const h = (H - pad * 2) * (d.value / max);
-    const y = H - pad - h;
+    const x = padL + i * (bw + barGap);
+    const h = (H - padT - padB) * (d.value / max);
+    const y = H - padB - h;
     const color = d.color || CHART_PALETTE[i % CHART_PALETTE.length];
+    const cx = x + bw / 2;
     return /*#__PURE__*/React.createElement("g", {
-      key: d.label
+      key: i
     }, /*#__PURE__*/React.createElement("rect", {
       x: x,
       y: y,
       width: bw,
-      height: h,
+      height: Math.max(h, 1),
       rx: 3,
       fill: color
-    }, /*#__PURE__*/React.createElement("title", null, d.label, ": ", d.value)), /*#__PURE__*/React.createElement("text", {
-      x: x + bw / 2,
+    }, /*#__PURE__*/React.createElement("title", null, d.label, ": ", d.value)), bw >= 13 && /*#__PURE__*/React.createElement("text", {
+      x: cx,
       y: y - 4,
       textAnchor: "middle",
       style: {
@@ -5512,16 +6466,25 @@ function BarSVG({
         fontWeight: 700,
         fill: "var(--c-text3)"
       }
-    }, d.value || ""), /*#__PURE__*/React.createElement("text", {
-      x: x + bw / 2,
-      y: H - pad + 12,
+    }, d.value || ""), i % step === 0 && (rot ? /*#__PURE__*/React.createElement("text", {
+      x: cx + 3,
+      y: H - padB + 12,
+      textAnchor: "end",
+      transform: `rotate(-38 ${cx + 3} ${H - padB + 12})`,
+      style: {
+        fontSize: 9,
+        fill: "var(--c-text4)"
+      }
+    }, short(d.label), /*#__PURE__*/React.createElement("title", null, d.label)) : /*#__PURE__*/React.createElement("text", {
+      x: cx,
+      y: H - padB + 12,
       textAnchor: "middle",
       style: {
         fontSize: 8.5,
         fill: "var(--c-text4)"
       }
-    }, String(d.label).length > 8 ? String(d.label).slice(0, 7) + "…" : d.label));
-  }));
+    }, short(d.label), /*#__PURE__*/React.createElement("title", null, d.label))));
+  })));
 }
 function LineSVG({
   data
@@ -5817,7 +6780,11 @@ function AnalyticsTab({
       padding: "12px 14px",
       background: "var(--c-card)",
       borderRadius: 12,
-      border: "1px solid var(--c-border)"
+      border: "1px solid var(--c-border)",
+      position: "sticky",
+      top: 62,
+      zIndex: 40,
+      boxShadow: "0 8px 20px rgba(0,0,0,.35)"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -5995,6 +6962,7 @@ function AnalyticsTab({
 // Every preference here is PER-USER: filters and selection are local state,
 // and column order/widths/row height persist only in THIS browser's storage.
 // Nothing is written to the database — no user's view can affect another's.
+const vTS = v => String(v.srcTimestamp || v.extra && (v.extra.Timestamp || v.extra.timestamp) || v.loggedAt || "");
 const VGRID_COLS = [{
   id: "date",
   label: "Date",
@@ -6002,55 +6970,152 @@ const VGRID_COLS = [{
   sv: v => String(v.date || ""),
   get: v => fmtDate(v.date)
 }, {
+  id: "ts",
+  label: "Timestamp",
+  w: 140,
+  sv: vTS,
+  get: v => vTS(v).replace("T", " ").slice(0, 16) || "—",
+  mono: true
+}, {
+  id: "eng",
+  label: "Name",
+  w: 150,
+  sv: v => String(v.engineer || ""),
+  get: v => [v.engineer, v.engineer2, v.engineer3].filter(x => String(x || "").trim()).join(", ") || "—"
+}, {
+  id: "type",
+  label: "Activity/Job type",
+  w: 130,
+  sv: v => String(v.type || ""),
+  get: v => v.type
+}, {
+  id: "support",
+  label: "Support type",
+  w: 110,
+  sv: v => String(v.supportType || ""),
+  get: v => v.supportType || "—"
+}, {
   id: "lab",
-  label: "Laboratory",
+  label: "Account",
   w: 180,
   sv: v => String(v._lab || ""),
   get: v => v._lab
 }, {
   id: "brand",
   label: "Brand",
-  w: 100,
+  w: 95,
   sv: v => String(v._brand || ""),
   get: v => v._brand || "—"
 }, {
   id: "machine",
-  label: "Machine",
-  w: 170,
+  label: "Instrument",
+  w: 160,
   sv: v => String(v._machine || ""),
   get: v => v._machine
 }, {
+  id: "reported",
+  label: "Date and Time reported",
+  w: 145,
+  sv: v => String(v.dtReported || ""),
+  get: v => (v.dtReported || "").replace("T", " ") || "—",
+  mono: true
+}, {
   id: "serial",
-  label: "Serial No",
+  label: "Serial number",
   w: 120,
   sv: v => String(v._sn || ""),
   get: v => v._sn,
   mono: true
 }, {
-  id: "type",
-  label: "Type",
-  w: 110,
-  sv: v => String(v.type || ""),
-  get: v => v.type
+  id: "dep",
+  label: "Date and Time of Departure",
+  w: 145,
+  sv: v => String(v.dtDeparture || ""),
+  get: v => (v.dtDeparture || "").replace("T", " ") || "—",
+  mono: true
+}, {
+  id: "arracct",
+  label: "Date and Time of Arrival to Account",
+  w: 150,
+  sv: v => String(v.dtArrivalAccount || ""),
+  get: v => (v.dtArrivalAccount || "").replace("T", " ") || "—",
+  mono: true
+}, {
+  id: "wstart",
+  label: "Date and Time work started",
+  w: 145,
+  sv: v => String(v.dtWorkStarted || ""),
+  get: v => (v.dtWorkStarted || "").replace("T", " ") || "—",
+  mono: true
+}, {
+  id: "problem",
+  label: "Problem Description",
+  w: 200,
+  sv: v => String(v.problemDesc || ""),
+  get: v => v.problemDesc || "—"
+}, {
+  id: "syscond",
+  label: "System Condition",
+  w: 130,
+  sv: v => String(v.systemCondition || ""),
+  get: v => v.systemCondition || "—"
+}, {
+  id: "status",
+  label: "Instrument Status",
+  w: 120,
+  sv: v => String(v.machineStatus || ""),
+  get: v => v.machineStatus || "—"
+}, {
+  id: "recomm",
+  label: "Recommendation",
+  w: 180,
+  sv: v => String(v.recommendation || ""),
+  get: v => v.recommendation || "—"
+}, {
+  id: "endorsed",
+  label: "Endorsed to",
+  w: 120,
+  sv: v => String(v.endorsedTo || ""),
+  get: v => v.endorsedTo || "—"
+}, {
+  id: "wend",
+  label: "Date and Time work ended",
+  w: 145,
+  sv: v => String(v.dtWorkEnded || ""),
+  get: v => (v.dtWorkEnded || "").replace("T", " ") || "—",
+  mono: true
+}, {
+  id: "priority",
+  label: "Priority",
+  w: 90,
+  sv: v => String(v.priority || ""),
+  get: v => v.priority || "—"
+}, {
+  id: "remarks",
+  label: "Description of Work",
+  w: 230,
+  sv: v => String(v.remarks || "") + " " + extraFold(v),
+  get: v => (v.remarks || "") + (extraFold(v) ? (v.remarks ? "  " : "") + extraFold(v) : "") || ""
 }, {
   id: "isr",
-  label: "ISR",
-  w: 105,
+  label: "ISR no.",
+  w: 100,
   sv: v => String(v.isrNo || ""),
   get: v => v.isrNo || "—",
   mono: true
 }, {
-  id: "eng",
-  label: "Engineer(s)",
-  w: 160,
-  sv: v => String(v.engineer || ""),
-  get: v => [v.engineer, v.engineer2, v.engineer3].filter(x => String(x || "").trim()).join(", ") || "—"
+  id: "arrhome",
+  label: "Date and Time of Arrival to Home",
+  w: 150,
+  sv: v => String(v.dtArrivalHome || ""),
+  get: v => (v.dtArrivalHome || "").replace("T", " ") || "—",
+  mono: true
 }, {
-  id: "status",
-  label: "Status after",
-  w: 115,
-  sv: v => String(v.machineStatus || ""),
-  get: v => v.machineStatus || "—"
+  id: "swver",
+  label: "Software Version",
+  w: 110,
+  sv: v => String(v.softwareVersion || ""),
+  get: v => v.softwareVersion || "—"
 }, {
   id: "logged",
   label: "Logged by",
@@ -6063,12 +7128,6 @@ const VGRID_COLS = [{
   w: 58,
   sv: v => v.signature ? "1" : "0",
   get: null
-}, {
-  id: "remarks",
-  label: "Remarks",
-  w: 240,
-  sv: v => String(v.remarks || "") + " " + extraFold(v),
-  get: v => (v.remarks || "") + (extraFold(v) ? (v.remarks ? "  " : "") + extraFold(v) : "") || ""
 }];
 function vgridLoad(key, fallback) {
   try {
@@ -6427,7 +7486,23 @@ function VisitsTab({
     title: "Show or hide columns — affects only YOUR view, never other users' layouts",
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: () => setColMenu(m => !m)
-  }, "👁 Show / Hide", hiddenCols.length ? " (" + hiddenCols.length + " hidden)" : ""), colMenu && /*#__PURE__*/React.createElement("div", {
+  }, "👁 Show / Hide", hiddenCols.length ? " (" + hiddenCols.length + " hidden)" : ""), " ", /*#__PURE__*/React.createElement("button", {
+    title: "Restore the default column order, widths, visibility and row height (your view only)",
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: () => {
+      ["ibase_v_cols", "ibase_v_colw", "ibase_v_hidden", "ibase_v_rowh"].forEach(k => {
+        try {
+          localStorage.removeItem(k);
+        } catch (e) {}
+      });
+      setColOrder(defOrder);
+      setColW({});
+      setHiddenCols([]);
+      setRowH(40);
+      setRowHeights({});
+      setColMenu(false);
+    }
+  }, "↺ Reset"), colMenu && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "absolute",
       top: 58,
@@ -6530,7 +7605,8 @@ function VisitsTab({
   }, "px")))), /*#__PURE__*/React.createElement("div", {
     style: {
       ...cardSt,
-      overflowX: "auto",
+      overflow: "auto",
+      maxHeight: "calc(100vh - 270px)",
       padding: 14
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -6614,7 +7690,7 @@ function VisitsTab({
     className: "ibzv",
     style: {
       borderCollapse: "collapse",
-      tableLayout: "fixed",
+      width: "max-content",
       minWidth: "100%"
     }
   }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, visibleOrder.map(id => {
@@ -6628,7 +7704,11 @@ function VisitsTab({
         ...thSt,
         width: w,
         maxWidth: w,
-        cursor: "grab"
+        cursor: "grab",
+        position: "sticky",
+        top: 0,
+        background: "var(--c-bg2)",
+        zIndex: 6
       },
       onDragStart: () => {
         dragCol.current = id;
@@ -6804,9 +7884,9 @@ function buildBackupSheets({
   const S = {};
   S["Laboratories"] = [["Laboratory", "Location", "Machines"]].concat(labs.map(l => [l.name || "", l.location || "", (l.machines || []).length]));
   S["Equipment Register"] = [["Laboratory", "Instrument", "Serial No", "Installed", "Last PM", "PM Interval", "Next PM", "Status", "Visits"]].concat(labs.flatMap(l => (l.machines || []).map(m => [l.name || "", m.instrument || "", m.serialNo || "", m.installDate || "", m.lastPM || "", m.pmInterval || "", m.nextPM || "", m.status || "", (m.visits || []).length])));
-  S["Service Visits"] = [["Date", "Laboratory", "Machine", "Serial", "Type", "ISR", "Engineer", "Engineer 2", "Engineer 3", "Status after", "Departure", "Arrival home", "Work started", "Work ended", "Logged By", "Logged At", "Signed", "Signed by (name)", "Attachments", "Edit Log", "Remarks"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => [v.date || "", l.name || "", m.instrument || "", m.serialNo || "", v.type || "", v.isrNo || "", v.engineer || "", v.engineer2 || "", v.engineer3 || "", v.machineStatus || "", v.dtDeparture || "", v.dtArrivalHome || "", v.dtWorkStarted || "", v.dtWorkEnded || "", v.loggedBy || "", v.loggedAt || "", v.signature ? "Yes" : "", v.signedByName || "", (v.attachments || []).map(a => a.name).join(", "), (v.editLog || []).map(e => e.by + " @ " + e.at + ": " + e.changes.join("; ")).join(" | "), (v.remarks || "") + (extraFold(v) ? (v.remarks ? "\n" : "") + extraFold(v) : "")]))));
+  S["Service Visits"] = [["Date", "Timestamp", "Name", "Activity/Job type", "Support type", "Account", "Instrument", "Date and Time reported", "Serial number", "Date and Time of Departure", "Date and Time of Arrival to Account", "Date and Time work started", "Problem Description", "System Condition", "Instrument Status", "Recommendation", "Endorsed to", "Date and Time work ended", "Priority", "Description of Work", "ISR no.", "Date and Time of Arrival to Home", "Software Version", "Engineer 2", "Engineer 3", "Logged By", "Logged At", "Signed", "Signed by (name)", "Attachments", "Edit Log"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => [v.date || "", v.srcTimestamp || v.loggedAt || "", v.engineer || "", v.type || "", v.supportType || "", l.name || "", m.instrument || "", v.dtReported || "", m.serialNo || "", v.dtDeparture || "", v.dtArrivalAccount || "", v.dtWorkStarted || "", v.problemDesc || "", v.systemCondition || "", v.machineStatus || "", v.recommendation || "", v.endorsedTo || "", v.dtWorkEnded || "", v.priority || "", (v.remarks || "") + (extraFold(v) ? (v.remarks ? "\n" : "") + extraFold(v) : ""), v.isrNo || "", v.dtArrivalHome || "", v.softwareVersion || "", v.engineer2 || "", v.engineer3 || "", v.loggedBy || "", v.loggedAt || "", v.signature ? "Yes" : "", v.signedByName || "", (v.attachments || []).map(a => a.name).join(", "), (v.editLog || []).map(e => e.by + " @ " + e.at + ": " + e.changes.join("; ")).join(" | ")]))));
   S["Visit Attachments"] = [["Laboratory", "Machine", "Serial", "Visit Date", "Visit Type", "File", "Kind", "Size KB", "Uploaded (visit logged by)"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).flatMap(v => (v.attachments || []).map(a => [l.name || "", m.instrument || "", m.serialNo || "", v.date || "", v.type || "", a.name || "", a.kind || "", Math.round((a.size || 0) / 1024), v.loggedBy || ""])))));
-  S["Machine Inventory"] = [["Brand", "Model", "Serial No", "Item Code", "Condition", "Status", "Location", "Dealer", "Remarks"]].concat(inventory.map(it => [it.brand || "", it.machineModel || "", it.serialNo || "", it.itemCode || "", it.condition || "", it.status || "", it.location || "", it.dealer || "", it.remarks || ""]));
+  S["Machine Inventory"] = [["Brand", "Model", "Serial No", "Item Code", "Condition", "Status", "Import Date", "Ownership", "Location", "Dealer", "Sales Person", "PO Date", "Remarks"]].concat(inventory.map(it => [it.brand || "", it.machineModel || "", it.serialNo || "", it.itemCode || "", it.condition || "", it.status || "", it.importDate || "", it.ownership || "", it.location || "", it.dealer || "", it.salesPerson || "", it.poDate || "", it.remarks || ""]));
   S["Spare Parts"] = [["Brand", "Part No", "Description", "On Hand"]].concat(spareParts.map(p => [p.brand || "", p.partNumber || "", p.description || "", (p.receipts || []).reduce((s, r) => s + (Number(r.qty) || 0), 0) - (p.issues || []).reduce((s, r) => s + (Number(r.qty) || 0), 0)]));
   S["Spare Parts History"] = [["Brand", "Part No", "Direction", "Qty", "Date", "Reference", "By"]].concat(spareParts.flatMap(p => [...(p.receipts || []).map(r => [p.brand || "", p.partNumber || "", "IN", Number(r.qty) || 0, r.date || "", r.ref || "", r.by || ""]), ...(p.issues || []).map(r => [p.brand || "", p.partNumber || "", "OUT", Number(r.qty) || 0, r.date || "", r.ref || "", r.by || ""])]));
   S["OT Applications"] = [["Employee", "Date", "Requested Cash (h)", "Requested Offset (h)", "Status", "Approved Cash (h)", "Approved Offset (h)", "Applied By", "Applied At", "Decided By", "Decided At", "Reverted By", "Reverted At", "Remarks", "Conversation"]].concat(apps.map(a => [a.engineerName || "", a.date || "", Number(a.cashHours) || 0, Number(a.offsetHours) || 0, a.status || "", Number(a.apCash) || 0, Number(a.apOffset) || 0, a.appliedBy || "", a.appliedAt || "", a.decidedBy || "", a.decidedAt || "", a.revertedBy || "", a.revertedAt || "", a.remarks || "", Array.isArray(a.thread) ? a.thread.map(m => (m.by || "?") + " [" + (m.role || "") + "] " + (m.at ? String(m.at).replace("T", " ").slice(0, 16) : "") + ": " + (m.text || "")).join("\n") : ""]));
@@ -6913,49 +7993,66 @@ function AuditTab({
     value: q,
     onChange: e => setQ(e.target.value),
     placeholder: "🔍 Filter by action, detail, or person…"
-  }), /*#__PURE__*/React.createElement("table", {
-    style: {
-      width: "100%",
-      borderCollapse: "collapse"
-    }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["When", "Who", "Action", "Detail"].map(h => /*#__PURE__*/React.createElement("th", {
-    key: h,
-    style: thSt
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, shown.slice(0, 500).map(e => /*#__PURE__*/React.createElement("tr", {
-    key: e.id
-  }, /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      whiteSpace: "nowrap",
-      fontSize: 12,
-      color: "var(--c-text3)"
-    }
-  }, e.at ? String(e.at).replace("T", " ").slice(0, 19) : "—"), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontSize: 12.5,
-      fontWeight: 600
-    }
-  }, e.by || "—"), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontFamily: "monospace",
-      fontSize: 12,
-      color: "var(--c-key)"
-    }
-  }, e.action), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdSt,
-      fontSize: 12,
-      color: "var(--c-text3)"
-    }
-  }, e.detail || ""))), shown.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: 4,
-    style: {
-      ...tdSt,
-      color: "var(--c-text4)"
-    }
-  }, "No audit entries", q ? " match." : " yet.")))));
+  }), /*#__PURE__*/React.createElement(ITable, {
+    id: "audit",
+    maxH: 560,
+    filter: false,
+    initSort: {
+      col: "when",
+      dir: -1
+    },
+    rowKey: e => e.id,
+    empty: "No audit entries" + (q ? " match." : " yet."),
+    cols: [{
+      id: "when",
+      label: "When",
+      w: 160,
+      sv: e => String(e.at || ""),
+      render: e => /*#__PURE__*/React.createElement("span", {
+        style: {
+          whiteSpace: "nowrap",
+          fontSize: 12,
+          color: "var(--c-text3)"
+        }
+      }, e.at ? String(e.at).replace("T", " ").slice(0, 19) : "—")
+    }, {
+      id: "who",
+      label: "Who",
+      w: 210,
+      sv: e => String(e.by || ""),
+      render: e => /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12.5,
+          fontWeight: 600
+        }
+      }, e.by || "—")
+    }, {
+      id: "action",
+      label: "Action",
+      w: 170,
+      sv: e => String(e.action || ""),
+      render: e => /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontFamily: "monospace",
+          fontSize: 12,
+          color: "var(--c-key)"
+        }
+      }, e.action)
+    }, {
+      id: "detail",
+      label: "Detail",
+      w: 430,
+      sv: e => String(e.detail || ""),
+      render: e => /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          color: "var(--c-text3)"
+        }
+      }, e.detail || ""),
+      wrap: true
+    }],
+    rows: shown.slice(0, 500)
+  }));
 }
 
 // ── Overtime (full v127 workflow: engine, applications, revert, conversation) ─
@@ -8261,19 +9358,75 @@ function OtSettingsModal({
 // machine becomes its installation date.
 const IMP_SYN = {
   date: ["date", "visitdate", "dateofvisit", "servicedate", "dov", "dateofservice", "dateperformed", "dateconducted", "dateofpm", "pmdate", "dateofrepair", "datevisited", "dateofwork", "visitdt", "dt"],
+  dtDeparture: ["dateandtimeofdeparture", "datetimedeparture", "departure", "departuretime"],
+  dtWorkStarted: ["dateandtimeworkstarted", "datetimeworkstarted", "workstarted", "timestarted"],
+  dtWorkEnded: ["dateandtimeworkended", "datetimeworkended", "workended", "timeended"],
+  dtArrivalHome: ["dateandtimeofarrivaltohome", "arrivaltohome", "datetimearrivalhome", "arrivalhome", "dateandtimearrivaltohome"],
   lab: ["laboratory", "lab", "labname", "account", "accountname", "institution", "hospital", "customer", "client", "site", "enduser", "endusername", "clientname", "customername", "hospitalname", "institutionname", "facility", "facilityname", "branch", "nameofinstitution", "nameofhospital", "accountlaboratory", "laboratoryname", "labaccount", "companyname"],
   location: ["location", "address", "region", "area", "city", "province"],
   subRegion: ["subregion", "subarea", "district"],
   instrument: ["machine", "instrument", "model", "machinemodel", "equipment", "unit", "analyzer", "item", "equipmentname", "instrumentname", "machinename", "product", "productname", "unitmodel", "modelname", "typeofmachine", "machinetype", "brandmodel", "equipmentmodel", "machineinstrument"],
   serial: ["serial", "serialno", "serialnumber", "sn", "serialnum", "snno", "serialnonumber", "machineserial", "equipmentserial", "serialn", "esn"],
-  type: ["type", "visittype", "typeofvisit", "servicetype", "service", "nature", "natureofvisit", "activity", "category", "classification", "jobtype", "natureofservice", "typeofservice", "kindofvisit", "visitcategory", "natureofwork"],
+  type: ["type", "visittype", "typeofvisit", "servicetype", "service", "nature", "natureofvisit", "activity", "category", "classification", "jobtype", "natureofservice", "typeofservice", "kindofvisit", "visitcategory", "natureofwork", "activityjobtype"],
   isr: ["isr", "isrno", "isrnumber", "reportno", "srno", "jobno", "jobordernumber", "reference", "refno", "servicereportno", "reportnumber", "jo", "jonumber", "ticketno", "ticket"],
-  engineer: ["engineer", "engineer1", "fse", "technician", "attendedby", "performedby", "servicedby", "engineername", "fsename", "assignedengineer", "engr", "engrname", "personnel", "staff", "serviceengineer", "attendingengineer"],
+  engineer: ["engineer", "engineer1", "fse", "technician", "attendedby", "performedby", "servicedby", "engineername", "fsename", "assignedengineer", "engr", "engrname", "personnel", "staff", "serviceengineer", "attendingengineer", "name"],
   engineer2: ["engineer2", "fse2", "technician2", "engr2"],
   engineer3: ["engineer3", "fse3", "engr3"],
-  status: ["status", "machinestatus", "statusafter", "unitstatus", "equipmentstatus", "condition"],
-  remarks: ["remarks", "workdescription", "description", "work", "findings", "actiontaken", "action", "notes", "comment", "comments", "details", "workdone", "workperformed", "jobdescription", "problem", "complaint", "resolution", "servicereport", "actiondone", "report", "observation", "recommendation"]
+  status: ["status", "machinestatus", "statusafter", "unitstatus", "equipmentstatus", "condition", "instrumentstatus"],
+  remarks: ["remarks", "workdescription", "description", "work", "findings", "actiontaken", "action", "notes", "comment", "comments", "details", "workdone", "workperformed", "jobdescription", "complaint", "resolution", "servicereport", "actiondone", "report", "observation", "descriptionofwork"],
+  supportType: ["supporttype", "typeofsupport"],
+  dtReported: ["dateandtimereported", "datetimereported", "datereported", "timereported", "reported"],
+  dtArrivalAccount: ["dateandtimeofarrivaltoaccount", "arrivaltoaccount", "datetimearrivalaccount", "arrivalaccount", "dateandtimearrivaltoaccount"],
+  problemDesc: ["problemdescription", "problem", "problemreported"],
+  systemCondition: ["systemcondition", "machinecondition"],
+  recommendation: ["recommendation", "recommendations"],
+  endorsedTo: ["endorsedto", "endorseto", "endorsed"],
+  priority: ["priority", "urgency"],
+  softwareVersion: ["softwareversion", "swversion", "software"],
+  srcTimestamp: ["timestamp"],
+  installDate: ["installdate", "dateinstalled", "installationdate", "dateofinstallation"]
 };
+// Inventory-destination header map (Machine Inventory)
+const INV_SYN = {
+  brand: ["brand", "make", "manufacturer"],
+  machineModel: ["model", "machinemodel", "instrument", "equipment", "machinename", "equipmentname", "item", "description", "productname"],
+  serialNo: ["serial", "serialno", "serialnumber", "sn", "snno", "serialnum"],
+  itemCode: ["itemcode", "code", "itemno", "itemnumber", "materialcode", "partno"],
+  condition: ["condition"],
+  status: ["status", "unitstatus"],
+  importDate: ["importdate", "dateimported", "dateofimport"],
+  ownership: ["ownership", "owner", "ownedby"],
+  location: ["location", "warehouse", "storage", "area"],
+  dealer: ["dealer", "supplier", "vendor", "distributor"],
+  remarks: ["remarks", "notes", "comment", "comments", "description2"],
+  salesPerson: ["salesperson", "sales", "salesagent", "accountmanager"],
+  poDate: ["podate", "dateofpo", "po", "purchasedate", "dateofpurchase", "purchaseorderdate"]
+};
+function invMapHeaders(headerRow) {
+  const map = {};
+  headerRow.forEach((h, i) => {
+    const n = impNormHeader(h);
+    if (!n) return;
+    for (const key in INV_SYN) if (map[key] === undefined && INV_SYN[key].indexOf(n) !== -1) {
+      map[key] = i;
+      return;
+    }
+  });
+  return map;
+}
+// Excel datetime → "YYYY-MM-DDTHH:MM" (serial numbers carry time as a fraction)
+function impDT(v) {
+  if (v == null || v === "") return "";
+  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0, 16);
+  if (typeof v === "number" && v > 20000 && v < 60000) {
+    return new Date(Math.round((v - 25569) * 86400000)).toISOString().slice(0, 16);
+  }
+  const s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) return s.slice(0, 16);
+  const t = Date.parse(s);
+  if (!isNaN(t)) return new Date(t - new Date(t).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  return s.slice(0, 40); // keep the raw text rather than lose it
+}
 function impNormHeader(h) {
   return String(h || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -8336,8 +9489,11 @@ function impRowsFromGrid(grid, hi, map) {
       const sv = String(v == null ? "" : v).trim();
       if (sv) extra[u.h] = sv.slice(0, 300);
     });
+    const gdt = k => map[k] === undefined ? "" : impDT(r[map[k]]);
+    // no Date column? derive the visit date from the Timestamp or Departure
+    const dateF = date || (gdt("srcTimestamp") || "").slice(0, 10) || (gdt("dtDeparture") || "").slice(0, 10);
     rows.push({
-      date,
+      date: dateF,
       lab,
       location: g("location"),
       subRegion: g("subRegion"),
@@ -8350,8 +9506,23 @@ function impRowsFromGrid(grid, hi, map) {
       engineer3: g("engineer3"),
       status: g("status"),
       remarks: g("remarks"),
+      supportType: g("supportType"),
+      problemDesc: g("problemDesc"),
+      systemCondition: g("systemCondition"),
+      recommendation: g("recommendation"),
+      endorsedTo: g("endorsedTo"),
+      priority: g("priority"),
+      softwareVersion: g("softwareVersion"),
+      dtReported: gdt("dtReported"),
+      dtDeparture: gdt("dtDeparture") || "",
+      dtArrivalAccount: gdt("dtArrivalAccount"),
+      dtWorkStarted: gdt("dtWorkStarted") || "",
+      dtWorkEnded: gdt("dtWorkEnded") || "",
+      dtArrivalHome: gdt("dtArrivalHome") || "",
+      srcTimestamp: gdt("srcTimestamp"),
+      installDate: g("installDate") ? impDate(r[map.installDate]) : "",
       extra,
-      missingBits: [!date && "date", !g("lab") && "laboratory", !serial && !g("instrument") && "machine"].filter(Boolean)
+      missingBits: [!dateF && "date", !g("lab") && "laboratory", !serial && !g("instrument") && "machine"].filter(Boolean)
     });
   }
   return {
@@ -8411,7 +9582,7 @@ function impParseWorkbook(wb) {
   };
 }
 function impVisitKey(v) {
-  return [v.date, String(v.type || "").toLowerCase(), String(v.isr || v.isrNo || "").toLowerCase(), String(v.engineer || "").toLowerCase()].join("|");
+  return [v.date, String(v.type || "").toLowerCase(), String(v.isr || v.isrNo || "").toLowerCase(), String(v.engineer || "").toLowerCase(), String(v.srcTimestamp || v.dtDeparture || v.dtWorkStarted || "").toLowerCase()].join("|");
 }
 function impBuildPlan(rows, labs, importerEmail, includeExtras) {
   const nowIso = auditNow ? auditNow() : new Date().toISOString();
@@ -8480,7 +9651,10 @@ function impBuildPlan(rows, labs, importerEmail, includeExtras) {
         date: String(v.date || "").slice(0, 10),
         type: v.type,
         isr: v.isrNo,
-        engineer: v.engineer
+        engineer: v.engineer,
+        srcTimestamp: v.srcTimestamp,
+        dtDeparture: v.dtDeparture,
+        dtWorkStarted: v.dtWorkStarted
       })] = 1);
       const key = impVisitKey(r);
       if (existingKeys[key]) {
@@ -8496,10 +9670,20 @@ function impBuildPlan(rows, labs, importerEmail, includeExtras) {
         engineer2: r.engineer2,
         engineer3: r.engineer3,
         machineStatus: r.status || "",
-        dtDeparture: "",
-        dtArrivalHome: "",
-        dtWorkStarted: "",
-        dtWorkEnded: "",
+        dtDeparture: r.dtDeparture || "",
+        dtArrivalHome: r.dtArrivalHome || "",
+        dtWorkStarted: r.dtWorkStarted || "",
+        dtWorkEnded: r.dtWorkEnded || "",
+        supportType: r.supportType || "",
+        dtReported: r.dtReported || "",
+        dtArrivalAccount: r.dtArrivalAccount || "",
+        problemDesc: r.problemDesc || "",
+        systemCondition: r.systemCondition || "",
+        recommendation: r.recommendation || "",
+        endorsedTo: r.endorsedTo || "",
+        priority: r.priority || "",
+        softwareVersion: r.softwareVersion || "",
+        srcTimestamp: r.srcTimestamp || "",
         remarks: r.remarks || "",
         signature: "",
         signedByName: "",
@@ -8553,11 +9737,150 @@ function impBuildPlan(rows, labs, importerEmail, includeExtras) {
     tDupes
   };
 }
+
+// Institutions destination: labs + machines only (no visits are written)
+function impBuildInstPlan(rows, labs) {
+  const serialHome = {};
+  labs.forEach(l => (l.machines || []).forEach(m => {
+    const s = String(m.serialNo || "").trim().toLowerCase();
+    if (s && !serialHome[s]) serialHome[s] = labNameNorm(l.name);
+  }));
+  const byLab = {};
+  rows.forEach(r => {
+    const s = String(r.serial || "").trim().toLowerCase();
+    if (s && serialHome[s]) return; // machine already registered anywhere → skip (no duplicates)
+    const k = labNameNorm(r.lab);
+    (byLab[k] = byLab[k] || {
+      name: r.lab,
+      location: r.location,
+      subRegion: r.subRegion,
+      rows: []
+    }).rows.push(r);
+    if (s) serialHome[s] = k;
+  });
+  const ops = [];
+  let tNewLabs = 0,
+    tNewMachines = 0,
+    tDupes = 0;
+  const seenTotal = rows.length;
+  Object.keys(byLab).forEach(k => {
+    const grp = byLab[k];
+    const existing = labs.find(l => labNameNorm(l.name) === k);
+    const machines = existing ? JSON.parse(JSON.stringify(existing.machines || [])) : [];
+    let newM = 0;
+    grp.rows.forEach(r => {
+      const dup = machines.some(m => r.serial && String(m.serialNo || "").trim().toLowerCase() === r.serial.toLowerCase() || !r.serial && String(m.instrument || "").trim().toLowerCase() === r.instrument.toLowerCase());
+      if (dup) {
+        tDupes++;
+        return;
+      }
+      machines.push({
+        id: uid(),
+        instrument: r.instrument || "Unknown instrument",
+        serialNo: r.serial || "",
+        installDate: r.installDate || r.date || "",
+        installedBy: "",
+        lastPM: "",
+        pmInterval: "",
+        nextPM: "",
+        status: r.status || "Active",
+        visits: [],
+        createdAt: auditNow()
+      });
+      newM++;
+    });
+    if (newM || !existing) {
+      ops.push({
+        labId: existing ? existing.id : null,
+        name: existing ? existing.name : grp.name,
+        location: existing ? existing.location || grp.location || "" : grp.location || "",
+        subRegion: existing ? existing.subRegion || grp.subRegion || "" : grp.subRegion || "",
+        machines,
+        newM,
+        newV: 0,
+        dup: 0
+      });
+      if (!existing) tNewLabs++;
+      tNewMachines += newM;
+    }
+  });
+  tDupes += seenTotal - Object.values(byLab).reduce((s, g) => s + g.rows.length, 0);
+  return {
+    ops,
+    tNewLabs,
+    tNewMachines,
+    tNewVisits: 0,
+    tDupes
+  };
+}
+// Inventory destination: parse with INV_SYN across sheets
+function impParseInventory(wb) {
+  const rows = [];
+  const sheetInfo = [];
+  wb.SheetNames.forEach(name => {
+    const grid = XLSX.utils.sheet_to_json(wb.Sheets[name], {
+      header: 1,
+      raw: true,
+      defval: ""
+    });
+    let hi = -1,
+      map = null;
+    for (let i = 0; i < Math.min(grid.length, 25); i++) {
+      const m = invMapHeaders(grid[i] || []);
+      if (Object.keys(m).length >= 2 && (m.serialNo !== undefined || m.itemCode !== undefined || m.machineModel !== undefined)) {
+        hi = i;
+        map = m;
+        break;
+      }
+    }
+    if (hi === -1) {
+      sheetInfo.push({
+        name,
+        used: false
+      });
+      return;
+    }
+    let n = 0;
+    for (let i = hi + 1; i < grid.length; i++) {
+      const r = grid[i] || [];
+      if (!r.some(x => String(x == null ? "" : x).trim())) continue;
+      const g = k => map[k] === undefined ? "" : String(r[map[k]] == null ? "" : r[map[k]]).trim();
+      const gd = k => map[k] === undefined ? "" : impDate(r[map[k]]);
+      rows.push({
+        brand: g("brand"),
+        machineModel: g("machineModel"),
+        serialNo: g("serialNo"),
+        itemCode: g("itemCode"),
+        condition: g("condition") || "BRAND NEW",
+        status: g("status") || "Available",
+        importDate: gd("importDate"),
+        ownership: g("ownership"),
+        location: g("location") || "warehouse",
+        dealer: g("dealer"),
+        remarks: g("remarks"),
+        salesPerson: g("salesPerson"),
+        poDate: gd("poDate")
+      });
+      n++;
+    }
+    sheetInfo.push({
+      name,
+      used: true,
+      rows: n
+    });
+  });
+  return {
+    rows,
+    sheetInfo
+  };
+}
 function ImportExcel({
   labs,
   profile,
   notify
 }) {
+  const [dest, setDest] = useState("logs"); // logs | institutions | inventory
+  const [invPlan, setInvPlan] = useState(null);
   const [plan, setPlan] = useState(null);
   const [meta, setMeta] = useState(null);
   const [rawRows, setRawRows] = useState(null);
@@ -8588,6 +9911,44 @@ function ImportExcel({
         sheets: g,
         names: wb.SheetNames
       });
+      if (dest === "inventory") {
+        const pInv = impParseInventory(wb);
+        if (!pInv.rows.length) {
+          notify("No inventory rows recognized — the sheet needs headers like Serial No / Item Code / Model.", "error");
+          setInvPlan(null);
+          return;
+        }
+        const existing = await db.collection("inventory").get();
+        const have = {};
+        existing.forEach(d => {
+          const x = d.data();
+          const k1 = String(x.serialNo || "").trim().toLowerCase();
+          const k2 = String(x.itemCode || "").trim().toLowerCase();
+          if (k1) have["s:" + k1] = 1;
+          if (k2) have["c:" + k2] = 1;
+        });
+        const fresh = [],
+          dupes = [];
+        pInv.rows.forEach(r => {
+          const k1 = String(r.serialNo || "").trim().toLowerCase(),
+            k2 = String(r.itemCode || "").trim().toLowerCase();
+          if (k1 && have["s:" + k1] || k2 && have["c:" + k2]) dupes.push(r);else {
+            fresh.push(r);
+            if (k1) have["s:" + k1] = 1;
+            if (k2) have["c:" + k2] = 1;
+          }
+        });
+        setInvPlan({
+          file: file.name,
+          fresh,
+          dupes,
+          sheets: pInv.sheetInfo
+        });
+        setPlan(null);
+        setMeta(null);
+        setMapUI(null);
+        return;
+      }
       const parsed = impParseWorkbook(wb);
       if (!parsed.rows.length) {
         // Auto-detection failed → open the MANUAL column mapper instead of giving up.
@@ -8620,9 +9981,10 @@ function ImportExcel({
       }
       setMapUI(null);
       setFieldsAdded(false);
+      setInvPlan(null);
       setRawRows(parsed.rows);
       setWithExtras(false);
-      const p = impBuildPlan(parsed.rows, labs, profile.email, false);
+      const p = dest === "institutions" ? impBuildInstPlan(parsed.rows, labs) : impBuildPlan(parsed.rows, labs, profile.email, false);
       setMeta({
         file: file.name,
         rows: parsed.rows.length,
@@ -8668,7 +10030,7 @@ function ImportExcel({
         notify("\"" + op.name + "\" refused: " + e.message, "error");
       }
     }
-    logAudit(profile, "import.excel", (meta ? meta.file : "") + " → " + plan.tNewVisits + " visit(s), " + plan.tNewMachines + " machine(s), " + plan.tNewLabs + " lab(s)" + (withExtras ? " (incl. extra columns)" : ""));
+    logAudit(profile, "import." + dest, (meta ? meta.file : "") + " → " + plan.tNewVisits + " visit(s), " + plan.tNewMachines + " machine(s), " + plan.tNewLabs + " lab(s)" + (withExtras ? " (incl. extra columns)" : ""));
     notify(failed ? "Import finished with " + failed + " failure(s) — " + done + " laborator" + (done === 1 ? "y" : "ies") + " written." : "✅ Import complete — " + plan.tNewVisits + " visit(s), " + plan.tNewMachines + " machine(s), " + plan.tNewLabs + " new lab(s). Oldest visit dates registered as installation dates.", failed ? "error" : "ok");
     setBusy(false);
     setPlan(null);
@@ -8677,6 +10039,29 @@ function ImportExcel({
     setGrids(null);
     setMapUI(null);
     setFieldsAdded(false);
+  }
+  async function runInventory() {
+    if (!invPlan || !invPlan.fresh.length) return;
+    setBusy(true);
+    let done = 0,
+      failed = 0;
+    for (const r of invPlan.fresh) {
+      try {
+        await db.collection("inventory").add({
+          ...r,
+          imported: true,
+          createdAt: FieldValue.serverTimestamp()
+        });
+        done++;
+      } catch (e) {
+        failed++;
+      }
+    }
+    logAudit(profile, "import.inventory", invPlan.file + " → " + done + " item(s)" + (failed ? " (" + failed + " failed)" : ""));
+    notify(failed ? done + " added, " + failed + " refused." : "✅ " + done + " inventory item(s) imported. " + invPlan.dupes.length + " duplicate(s) skipped.", failed ? "error" : "ok");
+    setBusy(false);
+    setInvPlan(null);
+    setGrids(null);
   }
   function applyManualMap() {
     const grid = grids.sheets[mapUI.sheet] || [];
@@ -8694,7 +10079,7 @@ function ImportExcel({
       notify("No data rows found under that header row.", "error");
       return;
     }
-    const p = impBuildPlan(built.rows, labs, profile.email, false);
+    const p = dest === "institutions" ? impBuildInstPlan(built.rows, labs) : impBuildPlan(built.rows, labs, profile.email, false);
     setRawRows(built.rows);
     setWithExtras(false);
     setMeta({
@@ -8733,7 +10118,50 @@ function ImportExcel({
       marginBottom: 10,
       lineHeight: 1.5
     }
-  }, "Upload a .xlsx / .xls / .csv holding your service history (visits, machines, serials, work descriptions…). Columns are detected automatically by their headers. Rows become permanent laboratories, machines and visits — exactly as if typed in by hand — duplicates are skipped, and each machine's ", /*#__PURE__*/React.createElement("b", null, "installation date is set to its oldest visit"), ". 💡 Take a ⬇ Download first."), /*#__PURE__*/React.createElement("input", {
+  }, "Upload a .xlsx / .xls / .csv holding your service history (visits, machines, serials, work descriptions…). Columns are detected automatically by their headers. Rows become permanent laboratories, machines and visits — exactly as if typed in by hand — duplicates are skipped, and each machine's ", /*#__PURE__*/React.createElement("b", null, "installation date is set to its oldest visit"), ". 💡 Take a ⬇ Download first."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 14,
+      alignItems: "center",
+      flexWrap: "wrap",
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11.5,
+      fontWeight: 800,
+      color: "var(--c-text3)"
+    }
+  }, "Write the file's data into:"), [["logs", "🧰 LOGS (service visits)"], ["inventory", "📦 MACHINE INVENTORY"], ["institutions", "🏥 INSTITUTIONS (labs & machines)"]].map(([v, l]) => /*#__PURE__*/React.createElement("label", {
+    key: v,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      fontSize: 12,
+      cursor: "pointer",
+      fontWeight: 700,
+      color: dest === v ? "var(--c-key)" : "var(--c-text3)"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "radio",
+    name: "impdest",
+    checked: dest === v,
+    onChange: () => {
+      setDest(v);
+      setPlan(null);
+      setMeta(null);
+      setInvPlan(null);
+      setMapUI(null);
+      setGrids(null);
+    }
+  }), l))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: "var(--c-text5)",
+      marginBottom: 10
+    }
+  }, "🔒 The file itself is never stored — the system only extracts what's inside and writes the data into the tab you chose."), /*#__PURE__*/React.createElement("input", {
     ref: fileRef,
     type: "file",
     accept: ".xlsx,.xls,.csv",
@@ -8745,7 +10173,62 @@ function ImportExcel({
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     disabled: busy,
     onClick: () => fileRef.current && fileRef.current.click()
-  }, "📂 Choose Excel file…"), mapUI && grids && /*#__PURE__*/React.createElement("div", {
+  }, "📂 Choose Excel file…"), invPlan && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 12,
+      padding: 12,
+      background: "var(--c-bg)",
+      borderRadius: 10,
+      border: "1px solid var(--c-border)"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      fontWeight: 800,
+      marginBottom: 6
+    }
+  }, "Preview — ", invPlan.file, " → 📦 Machine Inventory"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "var(--c-text2)",
+      lineHeight: 1.7
+    }
+  }, /*#__PURE__*/React.createElement("b", null, invPlan.fresh.length), " new item(s) will be added · ", /*#__PURE__*/React.createElement("b", null, invPlan.dupes.length), " duplicate(s) skipped (same Serial No or Item Code already in stock) · sheets used: ", invPlan.sheets.filter(s => s.used).map(s => s.name + " (" + s.rows + ")").join(", ") || "none"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxHeight: 130,
+      overflowY: "auto",
+      marginTop: 8
+    }
+  }, invPlan.fresh.slice(0, 12).map((r, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text4)",
+      padding: "2px 0"
+    }
+  }, "★ ", r.brand || "—", " · ", r.machineModel || "—", " · SN ", r.serialNo || "—", " · ", r.itemCode || "no code")), invPlan.fresh.length > 12 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "var(--c-text5)"
+    }
+  }, "… and ", invPlan.fresh.length - 12, " more")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-key)", "var(--c-bg)"),
+    disabled: busy || !invPlan.fresh.length,
+    onClick: runInventory
+  }, busy ? "Importing…" : "✅ Import " + invPlan.fresh.length + " item(s) now"), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    disabled: busy,
+    onClick: () => {
+      setInvPlan(null);
+      setGrids(null);
+    }
+  }, "Cancel"))), mapUI && grids && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 12,
       padding: 12,
@@ -8914,7 +10397,7 @@ function ImportExcel({
       color: "var(--c-text2)",
       lineHeight: 1.7
     }
-  }, meta.rows, " row(s) read — ", /*#__PURE__*/React.createElement("b", null, "every row is kept"), meta.incomplete ? " (" + meta.incomplete + " with missing fields go under “(Unassigned imports)” / blank dates)" : "", " · sheets used: ", meta.sheets.filter(s => s.used).map(s => s.name + " (" + s.rows + ")").join(", ") || "none", /*#__PURE__*/React.createElement("br", null), "Will write: ", /*#__PURE__*/React.createElement("b", null, plan.tNewLabs), " new laborator", plan.tNewLabs === 1 ? "y" : "ies", " · ", /*#__PURE__*/React.createElement("b", null, plan.tNewMachines), " new machine(s) · ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits), " new visit(s) · ", /*#__PURE__*/React.createElement("b", null, plan.tDupes), " duplicate visit(s) skipped"), (meta.unmapped || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("b", null, meta.rows), " data row(s) read (empty lines and the header don't count)", meta.incomplete ? " · " + meta.incomplete + " with missing fields kept under “(Unassigned imports)” / blank dates" : "", " · sheets used: ", meta.sheets.filter(s => s.used).map(s => s.name + " (" + s.rows + ")").join(", ") || "none", /*#__PURE__*/React.createElement("br", null), "Will write: ", /*#__PURE__*/React.createElement("b", null, plan.tNewLabs), " new laborator", plan.tNewLabs === 1 ? "y" : "ies", " · ", /*#__PURE__*/React.createElement("b", null, plan.tNewMachines), " new machine(s) · ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits), " new visit(s) · ", /*#__PURE__*/React.createElement("b", null, plan.tDupes), " duplicate(s) skipped", " — ", /*#__PURE__*/React.createElement("b", null, plan.tNewVisits, " + ", plan.tDupes, " = ", plan.tNewVisits + plan.tDupes), plan.tNewVisits + plan.tDupes === meta.rows ? " ✓ every row accounted for" : " (rows routed by serial to existing machines are counted where they land)"), (meta.unmapped || []).length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
       padding: "8px 10px",
@@ -9024,21 +10507,42 @@ function DangerZone({
   profile,
   notify
 }) {
+  const [unlocked, setUnlocked] = useState(false);
+  const [pw, setPw] = useState("");
+  const [checking, setChecking] = useState(false);
+  async function unlock() {
+    if (!pw) return;
+    setChecking(true);
+    try {
+      const u = auth.currentUser;
+      if (!u || !u.email) throw new Error("No signed-in account.");
+      const cred = firebase.auth.EmailAuthProvider.credential(u.email, pw);
+      await u.reauthenticateWithCredential(cred); // verified by Google's servers
+      setUnlocked(true);
+      setPw("");
+      logAudit(profile, "danger.unlock", u.email);
+      notify("☠ Danger zone unlocked for this session.", "ok");
+    } catch (e) {
+      notify("Wrong password — the Danger zone stays locked.", "error");
+    }
+    setChecking(false);
+  }
   const [busyL, setBusyL] = useState(false);
   const [busyV, setBusyV] = useState(false);
   // Selection: delete EVERYTHING or only the laboratories you tick below.
   const [sel, setSel] = useState({});
   const [open, setOpen] = useState(false);
-  const targets = labs.filter(l => sel[l.id]);
-  const allTicked = labs.length > 0 && targets.length === labs.length;
+  const ticked = labs.filter(l => sel[l.id]);
+  const targets = ticked.length ? ticked : labs; // no selection = ALL
+  const allTicked = ticked.length === 0 || ticked.length === labs.length;
   const labVisits = l => (l.machines || []).reduce((a, m) => a + (m.visits || []).length, 0);
   const tVisits = targets.reduce((s, l) => s + labVisits(l), 0);
   const tMachines = targets.reduce((s, l) => s + (l.machines || []).length, 0);
   const nVisits = labs.reduce((s, l) => s + labVisits(l), 0);
   const nMachines = labs.reduce((s, l) => s + (l.machines || []).length, 0);
   async function deleteAllLabs() {
-    if (!targets.length) {
-      notify("Tick at least one laboratory below (or Select all).", "error");
+    if (!labs.length) {
+      notify("There are no laboratories to delete.", "error");
       return;
     }
     const names = targets.length <= 5 ? "\n• " + targets.map(l => l.name).join("\n• ") : "";
@@ -9064,8 +10568,8 @@ function DangerZone({
     setBusyL(false);
   }
   async function deleteAllLogs() {
-    if (!targets.length) {
-      notify("Tick at least one laboratory below (or Select all).", "error");
+    if (!labs.length) {
+      notify("There are no laboratories in the system.", "error");
       return;
     }
     if (!tVisits) {
@@ -9111,6 +10615,44 @@ function DangerZone({
     notify(failed ? done + " visit(s) moved; " + failed + " laborator" + (failed === 1 ? "y" : "ies") + " failed." : "🗑 All " + done + " visit log(s) moved to the Bin (grouped per laboratory).", failed ? "error" : "bin");
     setBusyV(false);
   }
+  if (!unlocked) return /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...cardSt,
+      border: "1px solid #f8717166",
+      maxWidth: 480
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "#f87171",
+      textTransform: "uppercase",
+      marginBottom: 4
+    }
+  }, "☠ Danger zone — locked"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text5)",
+      marginBottom: 12,
+      lineHeight: 1.6
+    }
+  }, "Mass deletions live here. To open it, confirm the password of the administrator account you are signed in with (", profile.email, "). The check is verified by Google's servers — not just by this page."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "password",
+    style: inputSt(),
+    value: pw,
+    onChange: e => setPw(e.target.value),
+    onKeyDown: e => e.key === "Enter" && unlock(),
+    placeholder: "Administrator password"
+  }), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#f87171", "#1a1a1a"),
+    disabled: !pw || checking,
+    onClick: unlock
+  }, checking ? "Checking…" : "🔓 Unlock")));
   return /*#__PURE__*/React.createElement("div", {
     style: {
       ...cardSt,
@@ -9130,7 +10672,7 @@ function DangerZone({
       color: "var(--c-text5)",
       marginBottom: 12
     }
-  }, "Mass deletions — everything for ALL laboratories, or only the ones you tick. Nothing is destroyed outright: it all lands in the Bin, restorable (laboratories one by one; logs one entry per laboratory). Take a ⬇ Download first. System total: ", labs.length, " lab(s) · ", nMachines, " machine(s) · ", nVisits, " visit(s)."), /*#__PURE__*/React.createElement("div", {
+  }, "Two delete functions below — ", /*#__PURE__*/React.createElement("b", null, "laboratories"), " (machines & visits included) and ", /*#__PURE__*/React.createElement("b", null, "logs"), " (visit history only; labs & machines stay). With nothing ticked they act on ALL; tick specific laboratories to limit them. Everything lands in the Bin, restorable. Take a ⬇ Download first. System total: ", labs.length, " lab(s) · ", nMachines, " machine(s) · ", nVisits, " visit(s)."), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -9228,6 +10770,7 @@ function SettingsTab({
   const brands = sortAlpha(catalog && catalog.brands || []);
   const roleOptions = sortAlpha(Array.from(new Set([...ENGINEER_ROLES, ...(catalog && catalog.roles || []), ...users.map(u => String(u.role || "").trim()).filter(Boolean)])));
   const [newBrand, setNewBrand] = useState("");
+  const [sub, setSub] = useState("general");
   async function saveBrands(list) {
     try {
       await db.doc("config/catalog").set({
@@ -9238,11 +10781,25 @@ function SettingsTab({
       notify("SERVER REFUSED:\n" + e.message, "error");
     }
   }
-  return /*#__PURE__*/React.createElement("div", null, iAmOwner && /*#__PURE__*/React.createElement(ImportExcel, {
+  const subBtn = (id, label, danger) => /*#__PURE__*/React.createElement("button", {
+    onClick: () => setSub(id),
+    style: {
+      ...btnSt(sub === id ? danger ? "#7f1d1d" : "var(--c-key)" : "var(--c-border)", sub === id ? danger ? "#fecaca" : "var(--c-bg)" : danger ? "#f87171" : "var(--c-text2)"),
+      fontWeight: 800
+    }
+  }, label);
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginBottom: 16,
+      flexWrap: "wrap"
+    }
+  }, subBtn("general", "⚙ General"), iAmOwner && subBtn("danger", "☠ Danger zone", true)), sub === "danger" && iAmOwner && /*#__PURE__*/React.createElement(DangerZone, {
     labs: labs,
     profile: profile,
     notify: notify
-  }), iAmOwner && /*#__PURE__*/React.createElement(DangerZone, {
+  }), sub === "general" && /*#__PURE__*/React.createElement(React.Fragment, null, iAmOwner && /*#__PURE__*/React.createElement(ImportExcel, {
     labs: labs,
     profile: profile,
     notify: notify
@@ -9348,7 +10905,7 @@ function SettingsTab({
       saveBrands([...brands, newBrand.trim()].sort());
       setNewBrand("");
     }
-  }, "+ Add brand"))));
+  }, "+ Add brand")))));
 }
 function PermEditor({
   perms,
@@ -10586,9 +12143,8 @@ function App() {
     onClick: () => auth.signOut()
   }, "🚪 Logout")))), /*#__PURE__*/React.createElement("div", {
     style: {
-      maxWidth: 1240,
-      margin: "0 auto",
-      padding: 22
+      width: "100%",
+      padding: "20px 26px"
     }
   }, profile === undefined && /*#__PURE__*/React.createElement("div", {
     style: {
