@@ -1552,6 +1552,10 @@ const {
   useRef
 } = React;
 const auth = firebase.auth();
+// SESSION persistence: the user is signed out automatically whenever the
+// browser tab or window is closed — no data stays behind on shared workstations.
+// LOCAL (the Firebase default) would keep them signed in indefinitely.
+auth.setPersistence(firebase.auth.Auth.Persistence.SESSION).catch(function () {});
 const db = firebase.firestore();
 const FieldValue = firebase.firestore.FieldValue;
 
