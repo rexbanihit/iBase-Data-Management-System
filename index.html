@@ -1636,6 +1636,12 @@ const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Soft delete: everything deleted anywhere in iBase goes to the Bin first,
 // where administrators can restore it or delete it forever.
+// The signed-in user's email with a bullet-proof fallback: if the profile
+// document ever lacks its email field, fall back to the Auth account's email —
+// Firestore refuses ANY write containing an undefined value.
+function meEmail(p) {
+  return p && p.email || auth.currentUser && auth.currentUser.email || "";
+}
 async function binIt(kind, label, payload, byEmail) {
   await db.collection("bin").add({
     kind,
@@ -3970,7 +3976,7 @@ function LabDetail({
         let nm = {
           ...m,
           lastPM: newLastPM,
-          pmUpdatedBy: profile.email,
+          pmUpdatedBy: meEmail(profile),
           pmUpdatedAt: auditNow()
         };
         const nx = nextPMDate(pmAnchor(nm), nm.pmInterval);
@@ -4000,7 +4006,7 @@ function LabDetail({
       const stamped = {
         ...v,
         attachments: [...(v.attachments || []), ...attMetas],
-        loggedBy: profile.email,
+        loggedBy: meEmail(profile),
         loggedAt: auditNow()
       };
       const machines = (lab.machines || []).map(m => {
@@ -4961,11 +4967,11 @@ function MachineInv({
       if (editing === "new") await db.collection("inventory").add({
         ...rec,
         createdAt: FieldValue.serverTimestamp(),
-        createdBy: profile.email
+        createdBy: meEmail(profile)
       });else await db.collection("inventory").doc(editing.id).update({
         ...rec,
         updatedAt: auditNow(),
-        updatedBy: profile.email
+        updatedBy: meEmail(profile)
       });
       notify("Saved.", "ok");
       setEditing(null);
@@ -5870,6 +5876,25 @@ function BinTab({
         ...data
       } = e.payload;
       await db.collection("spareParts").add(data);
+    } else if (e.kind === "invBulk" || e.kind === "spareBulk") {
+      const colName = e.kind === "invBulk" ? "inventory" : "spareParts";
+      const items = e.payload && e.payload.items || [];
+      for (const it of items) {
+        const {
+          id,
+          ...data
+        } = it;
+        await db.collection(colName).doc(id).set(data);
+      }
+    } else if (e.kind === "otBulk") {
+      const apps = e.payload && e.payload.apps || [];
+      for (const a of apps) {
+        const {
+          id,
+          ...data
+        } = a;
+        await db.collection("otApplications").doc(id).set(data);
+      }
     } else if (e.kind === "user") {
       const {
         id,
@@ -8370,7 +8395,7 @@ function OvertimeTab({
       status: "pending",
       apCash: 0,
       apOffset: 0,
-      appliedBy: profile.email,
+      appliedBy: meEmail(profile),
       appliedAt: auditNow(),
       decidedBy: "",
       decidedAt: "",
@@ -8386,7 +8411,7 @@ function OvertimeTab({
       status: approve ? "approved" : "rejected",
       apCash: approve ? apC : 0,
       apOffset: approve ? apO : 0,
-      decidedBy: profile.email,
+      decidedBy: meEmail(profile),
       decidedAt: auditNow(),
       remarks: remarks || ""
     }, approve ? "Approved." : "Rejected.");
@@ -8401,7 +8426,7 @@ function OvertimeTab({
       decidedBy: "",
       decidedAt: "",
       remarks: "",
-      revertedBy: profile.email,
+      revertedBy: meEmail(profile),
       revertedAt: auditNow()
     }, "Reverted to pending for re-review.");
   }
@@ -10693,6 +10718,29 @@ function DangerZone({
   }
   const [busyL, setBusyL] = useState(false);
   const [busyV, setBusyV] = useState(false);
+  const [dzFrom, setDzFrom] = useState("");
+  const [dzTo, setDzTo] = useState("");
+  const [busyI, setBusyI] = useState(false);
+  const [busyS, setBusyS] = useState(false);
+  const [busyO, setBusyO] = useState(false);
+  const [busyA, setBusyA] = useState(false);
+  const [otEmp, setOtEmp] = useState("__all__");
+  const [otApps, setOtApps] = useState(null);
+  useEffect(() => {
+    if (!unlocked) return;
+    db.collection("otApplications").get().then(s => setOtApps(s.docs.map(d => ({
+      id: d.id,
+      ...d.data()
+    })))).catch(() => setOtApps([]));
+  }, [unlocked]);
+  const anyBusy = busyL || busyV || busyI || busyS || busyO || busyA;
+  const inRange = v => {
+    const d = String(v && v.date || "").slice(0, 10);
+    if (!dzFrom && !dzTo) return true;
+    if (!d) return false;
+    return (!dzFrom || d >= dzFrom) && (!dzTo || d <= dzTo);
+  };
+  const rangeLabel = dzFrom || dzTo ? (dzFrom ? fmtDate(dzFrom) : "start") + " → " + (dzTo ? fmtDate(dzTo) : "today") : "";
   // Selection: delete EVERYTHING or only the laboratories you tick below.
   const [sel, setSel] = useState({});
   const [open, setOpen] = useState(false);
@@ -10719,7 +10767,7 @@ function DangerZone({
       try {
         await binIt("lab", l.name, {
           ...l
-        }, profile.email);
+        }, meEmail(profile));
         await db.collection("labs").doc(l.id).delete();
         done++;
       } catch (e) {
@@ -10736,12 +10784,13 @@ function DangerZone({
       notify("There are no laboratories in the system.", "error");
       return;
     }
-    if (!tVisits) {
-      notify("The selected laborator" + (targets.length === 1 ? "y has" : "ies have") + " no visit logs.", "error");
+    const tInRange = targets.reduce((s, l) => s + (l.machines || []).reduce((a, m) => a + (m.visits || []).filter(inRange).length, 0), 0);
+    if (!tInRange) {
+      notify("No visit logs " + (rangeLabel ? "within " + rangeLabel + " " : "") + "in the selected laborator" + (targets.length === 1 ? "y" : "ies") + ".", "error");
       return;
     }
     const names = targets.length <= 5 ? "\n• " + targets.map(l => l.name).join("\n• ") : "";
-    if (!confirm("⚠️ Move the " + tVisits + " visit log(s) of " + (allTicked ? "ALL " : "") + targets.length + " laborator" + (targets.length === 1 ? "y" : "ies") + " to the Bin?" + names + "\n\nLaboratories and machines stay in place — only their visit history is cleared. Each laboratory's logs become ONE restorable Bin entry.")) return;
+    if (!confirm("⚠️ Move " + tInRange + " visit log(s)" + (rangeLabel ? " dated " + rangeLabel : "") + " of " + (allTicked ? "ALL " : "") + targets.length + " laborator" + (targets.length === 1 ? "y" : "ies") + " to the Bin?" + names + "\n\nLaboratories and machines stay in place — only the matching visit history is cleared. Each laboratory's logs become ONE restorable Bin entry.")) return;
     if (!confirm("FINAL confirmation — continue?")) return;
     setBusyV(true);
     let done = 0,
@@ -10749,22 +10798,23 @@ function DangerZone({
     for (const l of targets) {
       const byMachine = {};
       (l.machines || []).forEach(m => {
-        if ((m.visits || []).length) byMachine[m.id] = {
+        const del = (m.visits || []).filter(inRange);
+        if (del.length) byMachine[m.id] = {
           machineLabel: (m.instrument || "") + " (" + (m.serialNo || "") + ")",
-          visits: m.visits
+          visits: del
         };
       });
       const count = Object.values(byMachine).reduce((s, x) => s + x.visits.length, 0);
       if (!count) continue;
       try {
-        await binIt("logs", "All visits of " + l.name + " (" + count + ")", {
+        await binIt("logs", (rangeLabel ? "Visits " + rangeLabel + " of " : "All visits of ") + l.name + " (" + count + ")", {
           labId: l.id,
           labName: l.name,
           byMachine
-        }, profile.email);
+        }, meEmail(profile));
         const machines = (l.machines || []).map(m => ({
           ...m,
-          visits: []
+          visits: (m.visits || []).filter(v => !inRange(v))
         }));
         await db.collection("labs").doc(l.id).update({
           machines
@@ -10778,6 +10828,132 @@ function DangerZone({
     logAudit(profile, "logs.deleteALL", done + " visit(s) → Bin" + (failed ? " (" + failed + " lab(s) failed)" : ""));
     notify(failed ? done + " visit(s) moved; " + failed + " laborator" + (failed === 1 ? "y" : "ies") + " failed." : "🗑 All " + done + " visit log(s) moved to the Bin (grouped per laboratory).", failed ? "error" : "bin");
     setBusyV(false);
+  }
+  async function delDataset(colName, kindTag, icon, human, setBusyX) {
+    setBusyX(true);
+    try {
+      const snap = await db.collection(colName).get();
+      const items = snap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      }));
+      items.forEach(it => {
+        delete it.createdAt;
+      });
+      if (!items.length) {
+        notify("There are no " + human + " to delete.", "error");
+        setBusyX(false);
+        return;
+      }
+      if (!confirm("⚠️ Move ALL " + items.length + " " + human + " to the Bin?\n\nThey become ONE restorable Bin entry.")) {
+        setBusyX(false);
+        return;
+      }
+      if (!confirm("FINAL confirmation — continue?")) {
+        setBusyX(false);
+        return;
+      }
+      await binIt(kindTag, icon + " " + human + " — " + items.length + " item(s)", {
+        items
+      }, meEmail(profile));
+      let failed = 0;
+      for (const it of items) {
+        try {
+          await db.collection(colName).doc(it.id).delete();
+        } catch (e) {
+          failed++;
+        }
+      }
+      logAudit(profile, "danger." + colName, items.length + " → Bin" + (failed ? " (" + failed + " failed)" : ""));
+      notify(failed ? items.length - failed + " moved; " + failed + " refused." : "🗑 All " + items.length + " " + human + " moved to the Bin.", failed ? "error" : "bin");
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+    setBusyX(false);
+  }
+  async function delOvertime() {
+    setBusyO(true);
+    try {
+      const snap = await db.collection("otApplications").get();
+      let apps = snap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      }));
+      if (otEmp !== "__all__") apps = apps.filter(a => a.engineerName === otEmp);
+      if (!apps.length) {
+        notify("No overtime filings for " + (otEmp === "__all__" ? "any employee" : otEmp) + ".", "error");
+        setBusyO(false);
+        return;
+      }
+      const who = otEmp === "__all__" ? "ALL employees" : otEmp;
+      if (!confirm("⚠️ Move " + apps.length + " overtime filing(s) of " + who + " to the Bin?\n\nThey become ONE restorable Bin entry.")) {
+        setBusyO(false);
+        return;
+      }
+      if (!confirm("FINAL confirmation — continue?")) {
+        setBusyO(false);
+        return;
+      }
+      await binIt("otBulk", "⏱ Overtime filings of " + who + " — " + apps.length, {
+        apps
+      }, meEmail(profile));
+      let failed = 0;
+      for (const a of apps) {
+        try {
+          await db.collection("otApplications").doc(a.id).delete();
+        } catch (e) {
+          failed++;
+        }
+      }
+      logAudit(profile, "danger.overtime", who + ": " + apps.length + " → Bin" + (failed ? " (" + failed + " failed)" : ""));
+      notify(failed ? apps.length - failed + " moved; " + failed + " refused." : "🗑 " + apps.length + " overtime filing(s) of " + who + " moved to the Bin.", failed ? "error" : "bin");
+      setOtApps(o => (o || []).filter(a => otEmp !== "__all__" ? a.engineerName !== otEmp : false));
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+    setBusyO(false);
+  }
+  async function delAudit() {
+    setBusyA(true);
+    try {
+      const snap = await db.collection("audit").get();
+      const inA = e => {
+        const d = String(e.at || "").slice(0, 10);
+        if (!dzFrom && !dzTo) return true;
+        if (!d) return false;
+        return (!dzFrom || d >= dzFrom) && (!dzTo || d <= dzTo);
+      };
+      const entries = snap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      })).filter(inA);
+      if (!entries.length) {
+        notify("No audit entries " + (rangeLabel ? "within " + rangeLabel : "") + ".", "error");
+        setBusyA(false);
+        return;
+      }
+      if (!confirm("⚠️ PERMANENTLY delete " + entries.length + " audit entr" + (entries.length === 1 ? "y" : "ies") + (rangeLabel ? " dated " + rangeLabel : "") + "?\n\n🚨 THE AUDIT TRAIL CANNOT GO TO THE BIN — security rules forbid re-creating past entries, so this CANNOT BE UNDONE.")) {
+        setBusyA(false);
+        return;
+      }
+      if (!confirm("FINAL confirmation — the entries are gone forever. Continue?")) {
+        setBusyA(false);
+        return;
+      }
+      let failed = 0;
+      for (const e of entries) {
+        try {
+          await db.collection("audit").doc(e.id).delete();
+        } catch (er) {
+          failed++;
+        }
+      }
+      logAudit(profile, "danger.audit", entries.length + " entr" + (entries.length === 1 ? "y" : "ies") + " permanently deleted" + (rangeLabel ? " (" + rangeLabel + ")" : "") + (failed ? " (" + failed + " refused)" : ""));
+      notify(failed ? entries.length - failed + " deleted; " + failed + " refused — publish the new security rules first." : "🗑 " + entries.length + " audit entr" + (entries.length === 1 ? "y" : "ies") + " permanently deleted.", failed ? "error" : "bin");
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+    setBusyA(false);
   }
   if (!unlocked) return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -10914,13 +11090,102 @@ function DangerZone({
     }
   }, /*#__PURE__*/React.createElement("button", {
     style: btnSt("#3a1d1d", "#fca5a5"),
-    disabled: busyL || busyV || !targets.length,
+    disabled: anyBusy || !targets.length,
     onClick: deleteAllLabs
   }, busyL ? "Moving…" : "🗑 Delete " + (allTicked ? "ALL" : "selected") + " laboratories (" + targets.length + ")"), /*#__PURE__*/React.createElement("button", {
     style: btnSt("#3a1d1d", "#fca5a5"),
-    disabled: busyL || busyV || !targets.length,
+    disabled: anyBusy || !targets.length,
     onClick: deleteAllLogs
-  }, busyV ? "Moving…" : "🗑 Delete " + (allTicked ? "ALL" : "selected") + " logs (" + tVisits + " visits)")));
+  }, busyV ? "Moving…" : "🗑 Delete " + (allTicked ? "ALL" : "selected") + " logs" + (rangeLabel ? " (" + rangeLabel + ")" : " (" + tVisits + " visits)"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      alignItems: "flex-end",
+      flexWrap: "wrap",
+      marginTop: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Date range — from (optional)"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    style: inputSt(),
+    value: dzFrom,
+    onChange: e => setDzFrom(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "to (optional)"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    style: inputSt(),
+    value: dzTo,
+    onChange: e => setDzTo(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: "var(--c-text5)",
+      maxWidth: 340,
+      paddingBottom: 6
+    }
+  }, "The range applies to ", /*#__PURE__*/React.createElement("b", null, "logs"), " (visit dates) and the ", /*#__PURE__*/React.createElement("b", null, "audit trail"), " below. Leave empty = everything.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 18,
+      paddingTop: 14,
+      borderTop: "1px dashed #f8717144"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 800,
+      color: "#f87171",
+      textTransform: "uppercase",
+      marginBottom: 10
+    }
+  }, "Other datasets"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      flexWrap: "wrap",
+      alignItems: "flex-end"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#3a1d1d", "#fca5a5"),
+    disabled: anyBusy,
+    onClick: () => delDataset("inventory", "invBulk", "📦", "machine inventory record(s)", setBusyI)
+  }, busyI ? "Moving…" : "🗑 Delete ALL machine inventory"), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#3a1d1d", "#fca5a5"),
+    disabled: anyBusy,
+    onClick: () => delDataset("spareParts", "spareBulk", "🔩", "spare part record(s)", setBusyS)
+  }, busyS ? "Moving…" : "🗑 Delete ALL spare parts"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "flex-end"
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Overtime filings of"), /*#__PURE__*/React.createElement("select", {
+    style: inputSt(),
+    value: otEmp,
+    onChange: e => setOtEmp(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "__all__"
+  }, "All employees (", (otApps || []).length, ")"), sortAlpha([...new Set((otApps || []).map(a => a.engineerName).filter(Boolean))]).map(n => /*#__PURE__*/React.createElement("option", {
+    key: n,
+    value: n
+  }, n, " (", (otApps || []).filter(a => a.engineerName === n).length, ")")))), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#3a1d1d", "#fca5a5"),
+    disabled: anyBusy || otApps === null,
+    onClick: delOvertime
+  }, busyO ? "Moving…" : "🗑 Delete")), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#7f1d1d", "#fecaca"),
+    disabled: anyBusy,
+    onClick: delAudit
+  }, busyA ? "Deleting…" : "🧾 Delete audit trail" + (rangeLabel ? " (" + rangeLabel + ")" : " (ALL)") + " — PERMANENT")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: "var(--c-text5)",
+      marginTop: 8
+    }
+  }, "Inventory, spare parts and overtime land in the Bin as one restorable entry each. The audit trail is different: security rules make audit entries immutable, so deleting them is ", /*#__PURE__*/React.createElement("b", null, "permanent"), " — and the deletion itself is recorded as a fresh audit entry.")));
 }
 function SettingsTab({
   profile,
