@@ -1635,6 +1635,12 @@ const OWNER_EMAIL = "rexbanihit@gmail.com"; // the durable owner identity
 function isOwnerAcct(x) {
   if (!x) return false;
   const em = String(x.email || "").trim().toLowerCase();
+  // Hardened: if this doc belongs to the CURRENTLY signed-in account and that
+  // account's Auth email is the owner's, it is the owner's doc — even when the
+  // doc itself lost its email field (the gap that once let the owner demote
+  // and un-hide himself).
+  const cu = auth.currentUser;
+  if (cu && String(cu.email || "").toLowerCase() === OWNER_EMAIL && (x.id === cu.uid || x.uid === cu.uid)) return true;
   return em === OWNER_EMAIL || x.id === OWNER_UID || x.uid === OWNER_UID;
 }
 
@@ -3868,11 +3874,13 @@ function LabDetail({
       });
     }
   }, "✏️"))))))), canManage && addingM && /*#__PURE__*/React.createElement(MachineModal, {
+    models: catalog && catalog.machines || [],
     onClose: () => setAddingM(false),
     onSave: async m => {
       if (await saveMachines([...(lab.machines || []), m], "Machine added.")) setAddingM(false);
     }
   }), canManage && editingM && /*#__PURE__*/React.createElement(MachineModal, {
+    models: catalog && catalog.machines || [],
     initial: editingM,
     onClose: () => setEditingM(null),
     onSave: async m => {
@@ -4074,10 +4082,12 @@ const tdSt = {
 function MachineModal({
   initial,
   onSave,
-  onClose
+  onClose,
+  models
 }) {
   const [f, setF] = useState(initial ? {
     instrument: initial.instrument || "",
+    itemCode: initial.itemCode || "",
     serialNo: initial.serialNo || "",
     installDate: initial.installDate || "",
     unknownDate: !initial.installDate,
@@ -4088,6 +4098,7 @@ function MachineModal({
     status: initial.status || "Active"
   } : {
     instrument: "",
+    itemCode: "",
     serialNo: "",
     installDate: "",
     unknownDate: false,
@@ -4101,18 +4112,48 @@ function MachineModal({
     ...x,
     [k]: v
   }));
+  const reg = Array.isArray(models) ? models : [];
+  // picking a registered model auto-fills its linked item code (v127 behavior)
+  const setInstrument = v => setF(x => {
+    const hit = reg.find(m => String(m.model || "").trim().toLowerCase() === String(v || "").trim().toLowerCase());
+    return {
+      ...x,
+      instrument: v,
+      itemCode: hit ? hit.itemCode || "" : x.itemCode
+    };
+  });
   return /*#__PURE__*/React.createElement(Modal, {
     title: initial ? "Edit Machine — " + (initial.serialNo || "") : "Add Machine",
     onClose: onClose
   }, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Instrument / Model"), /*#__PURE__*/React.createElement("input", {
+    list: "ib-models",
     style: {
       ...inputSt(),
       marginBottom: 10
     },
     value: f.instrument,
-    onChange: e => set("instrument", e.target.value)
+    onChange: e => setInstrument(e.target.value),
+    placeholder: "pick a registered model or type freely"
+  }), /*#__PURE__*/React.createElement("datalist", {
+    id: "ib-models"
+  }, (Array.isArray(models) ? models : []).map((m, i) => /*#__PURE__*/React.createElement("option", {
+    key: i,
+    value: m.model
+  }, (m.brand ? m.brand + " · " : "") + (m.itemCode || "")))), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Item Code", (() => {
+    const hit = (Array.isArray(models) ? models : []).find(m => String(m.model || "").trim().toLowerCase() === String(f.instrument || "").trim().toLowerCase());
+    return hit && (hit.itemCode || "") === f.itemCode && f.itemCode ? " — auto-linked to this model" : "";
+  })()), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      marginBottom: 10
+    },
+    value: f.itemCode,
+    onChange: e => set("itemCode", e.target.value),
+    placeholder: "fills automatically for registered models"
   }), /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Serial No"), /*#__PURE__*/React.createElement("input", {
@@ -4201,6 +4242,7 @@ function MachineModal({
     onClick: () => onSave(initial ? {
       ...initial,
       instrument: f.instrument.trim(),
+      itemCode: f.itemCode.trim(),
       serialNo: f.serialNo.trim(),
       installDate: f.unknownDate ? "" : f.installDate,
       installedBy: f.installedBy.trim(),
@@ -4211,6 +4253,7 @@ function MachineModal({
     } : {
       id: uid(),
       instrument: f.instrument.trim(),
+      itemCode: f.itemCode.trim(),
       serialNo: f.serialNo.trim(),
       installDate: f.unknownDate ? "" : f.installDate,
       installedBy: f.installedBy.trim(),
@@ -11225,8 +11268,31 @@ function SettingsTab({
     try {
       await db.doc("config/catalog").set({
         brands: list
+      }, {
+        merge: true
       });
       notify("Catalog saved.", "ok");
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+  }
+  const models = catalog && Array.isArray(catalog.machines) ? catalog.machines : [];
+  const [nmBrand, setNmBrand] = useState("");
+  const [nmModel, setNmModel] = useState("");
+  const [nmCode, setNmCode] = useState("");
+  async function saveModels(list) {
+    const sorted = list.slice().sort((a, b) => String(a.brand || "").localeCompare(String(b.brand || ""), undefined, {
+      sensitivity: "base"
+    }) || String(a.model || "").localeCompare(String(b.model || ""), undefined, {
+      sensitivity: "base"
+    }));
+    try {
+      await db.doc("config/catalog").set({
+        machines: sorted
+      }, {
+        merge: true
+      });
+      notify("Machine models saved.", "ok");
     } catch (e) {
       notify("SERVER REFUSED:\n" + e.message, "error");
     }
@@ -11293,6 +11359,128 @@ function SettingsTab({
     tabsCfg: tabsCfg,
     notify: notify
   }), /*#__PURE__*/React.createElement("div", {
+    style: cardSt
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "var(--c-text4)",
+      textTransform: "uppercase",
+      marginBottom: 10
+    }
+  }, "🔬 Machine Models & Item Codes"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text5)",
+      marginBottom: 12
+    }
+  }, "Register every machine model under its brand and link its item code — like iBase v127's item-code registry. Registered models become the selection when adding a machine to an institution, and the item code fills in automatically. Alphabetized by brand, then model."), sortAlpha([...new Set(models.map(m => m.brand || "(No brand)"))]).map(b => /*#__PURE__*/React.createElement("div", {
+    key: b,
+    style: {
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      fontWeight: 800,
+      color: "var(--c-key)",
+      marginBottom: 4
+    }
+  }, b), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      flexWrap: "wrap"
+    }
+  }, models.filter(m => (m.brand || "(No brand)") === b).slice().sort((x, y) => String(x.model || "").localeCompare(String(y.model || ""), undefined, {
+    sensitivity: "base"
+  })).map((m, i) => /*#__PURE__*/React.createElement("span", {
+    key: m.model + i,
+    style: {
+      fontSize: 12,
+      padding: "4px 10px",
+      borderRadius: 999,
+      background: "var(--c-card2)",
+      border: "1px solid var(--c-border)",
+      display: "inline-flex",
+      gap: 6,
+      alignItems: "center"
+    }
+  }, m.model, m.itemCode ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: "monospace",
+      fontSize: 10.5,
+      color: "var(--c-text4)"
+    }
+  }, "· ", m.itemCode) : null, /*#__PURE__*/React.createElement("button", {
+    onClick: () => saveModels(models.filter(x => x !== m)),
+    style: {
+      background: "none",
+      border: "none",
+      color: "#f87171",
+      cursor: "pointer",
+      padding: 0
+    }
+  }, "✕")))))), models.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: "var(--c-text4)",
+      marginBottom: 10
+    }
+  }, "No models registered yet."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap",
+      alignItems: "flex-end"
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Brand"), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      minWidth: 140
+    },
+    value: nmBrand,
+    onChange: e => setNmBrand(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "— pick —"), brands.map(b => /*#__PURE__*/React.createElement("option", {
+    key: b,
+    value: b
+  }, b)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Machine model"), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      minWidth: 190
+    },
+    value: nmModel,
+    onChange: e => setNmModel(e.target.value),
+    placeholder: "e.g. Capillarys 3 Octa"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Item code"), /*#__PURE__*/React.createElement("input", {
+    style: {
+      ...inputSt(),
+      minWidth: 120
+    },
+    value: nmCode,
+    onChange: e => setNmCode(e.target.value),
+    placeholder: "e.g. 1245"
+  })), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-key)", "var(--c-bg)"),
+    disabled: !nmBrand || !nmModel.trim() || models.some(m => String(m.model || "").trim().toLowerCase() === nmModel.trim().toLowerCase() && m.brand === nmBrand),
+    onClick: () => {
+      saveModels([...models, {
+        brand: nmBrand,
+        model: nmModel.trim(),
+        itemCode: nmCode.trim()
+      }]);
+      setNmModel("");
+      setNmCode("");
+    }
+  }, "+ Add model"))), /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -11775,6 +11963,10 @@ function AdminManager({
   const [pickDemote, setPickDemote] = useState("");
   async function demoteSel() {
     const u = admins.find(x => x.id === pickDemote);
+    if (u && me && u.id === me.id) {
+      notify("You cannot demote yourself — ask another administrator (and the owner can never be demoted).", "error");
+      return;
+    }
     if (!u) return;
     const self = u.id === me.id;
     if (!confirm(self ? "⚠️ You are demoting YOURSELF — administrator access disappears immediately. Continue?" : "Demote " + u.email + " to a REGULAR USER? Their per-tab permissions apply again, instantly.")) return;
@@ -11887,7 +12079,7 @@ function AdminManager({
     onChange: e => setPickDemote(e.target.value)
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "Demote an administrator…"), admins.map(u => /*#__PURE__*/React.createElement("option", {
+  }, "Demote an administrator…"), admins.filter(u => !me || u.id !== me.id).map(u => /*#__PURE__*/React.createElement("option", {
     key: u.id,
     value: u.id
   }, u.email, u.displayName ? " — " + u.displayName : ""))), /*#__PURE__*/React.createElement("button", {
@@ -12213,6 +12405,22 @@ function App() {
     } catch (e) {}
   }, [theme]);
   useEffect(() => auth.onAuthStateChanged(setUser), []);
+  // 👑 OWNER SELF-HEAL: the server recognizes the owner by the sign-in token
+  // (never by the profile doc), and its rules let the owner always fix his own
+  // document. So if the owner's doc ever loses its email or admin flag — the
+  // damage that once let him demote himself — it is repaired automatically here.
+  useEffect(() => {
+    if (!user || !profile) return;
+    if (String(user.email || "").toLowerCase() !== OWNER_EMAIL) return;
+    const broken = String(profile.email || "").toLowerCase() !== OWNER_EMAIL || profile.isAdmin !== true;
+    if (!broken) return;
+    db.doc("users/" + user.uid).set({
+      email: user.email,
+      isAdmin: true
+    }, {
+      merge: true
+    }).then(() => notify("👑 Owner profile self-repaired (email + administrator restored).", "ok")).catch(() => {});
+  }, [user, profile && profile.email, profile && profile.isAdmin]);
   // Security: automatic sign-out after 30 minutes of inactivity.
   useEffect(() => {
     if (!user) return;
