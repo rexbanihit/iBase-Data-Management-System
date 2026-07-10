@@ -1569,6 +1569,17 @@ const {
   useRef
 } = React;
 const auth = firebase.auth();
+// Resolve a machine's BRAND from the registered model catalog (Settings → Models).
+// "Capillarys 3 Octa" → "Sebia". Falls back to the lab's brand, then — only as a
+// last resort — the first word of the instrument name. window.__ibaseCatalog is
+// kept current by the App component so any tab can call this.
+function brandFromModel(instrument, labBrand) {
+  const cat = typeof window !== "undefined" && window.__ibaseCatalog || {};
+  const models = Array.isArray(cat.machines) ? cat.machines : [];
+  const key = String(instrument || "").trim().toLowerCase();
+  const hit = models.find(m => String(m.model || "").trim().toLowerCase() === key);
+  return hit && hit.brand || String(labBrand || "").trim() || String(instrument || "").trim().split(" ")[0] || "";
+}
 // SESSION persistence: the user is signed out automatically whenever the
 // browser tab or window is closed — no data stays behind on shared workstations.
 // LOCAL (the Firebase default) would keep them signed in indefinitely.
@@ -2934,17 +2945,19 @@ function LabsTab({
     col: "lab",
     dir: 1
   });
+  const brandOpts = useMemo(() => sortAlpha(Array.from(new Set(labs.flatMap(l => (l.machines || []).map(m => brandFromModel(m.instrument, l.brand))).filter(Boolean)))), [labs, catalog]);
   const instrumentOpts = useMemo(() => sortAlpha(Array.from(new Set(labs.flatMap(l => (l.machines || []).map(m => String(m.instrument || "").trim())).filter(Boolean)))), [labs]);
-  const brandOpts = useMemo(() => sortAlpha(Array.from(new Set(labs.flatMap(l => (l.machines || []).map(m => String(m.instrument || "").trim().split(" ")[0])).filter(Boolean)))), [labs]);
+
   // flat register: every instrument across ALL institutions
   const allMachines = useMemo(() => labs.flatMap(l => (l.machines || []).map(m => ({
     ...m,
     _labId: l.id,
     _lab: l.name,
+    _labBrand: l.brand || "",
     _flag: pmFlag(m),
     _next: pmComputedNext(m)
   }))), [labs]);
-  const matchesFilters = m => (!instF || String(m.instrument || "").trim() === instF) && (!brandF || String(m.instrument || "").trim().split(" ")[0] === brandF) && (!flagF || pmFlag(m) === flagF);
+  const matchesFilters = m => (!instF || String(m.instrument || "").trim() === instF) && (!brandF || brandFromModel(m.instrument, (labs.find(l => (l.machines || []).some(x => x.id === m.id)) || {}).brand) === brandF) && (!flagF || pmFlag(m) === flagF);
   const shown = labs.filter(l => {
     if ((instF || brandF || flagF) && !(l.machines || []).some(matchesFilters)) return false;
     const s = q.toLowerCase();
@@ -2958,7 +2971,7 @@ function LabsTab({
   }, {
     id: "brand",
     label: "Brand",
-    sv: m => String(m.instrument || "").trim().split(" ")[0]
+    sv: m => brandFromModel(m.instrument, m._labBrand)
   }, {
     id: "inst",
     label: "Instrument",
@@ -3062,7 +3075,7 @@ function LabsTab({
     title: "Every instrument across all institutions"
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "All instruments (all institutions)"), (brandF ? instrumentOpts.filter(x => x.split(" ")[0] === brandF) : instrumentOpts).map(x => /*#__PURE__*/React.createElement("option", {
+  }, "All instruments (all institutions)"), (brandF ? instrumentOpts.filter(x => brandFromModel(x, "") === brandF) : instrumentOpts).map(x => /*#__PURE__*/React.createElement("option", {
     key: x
   }, x))), /*#__PURE__*/React.createElement("select", {
     style: {
@@ -3167,7 +3180,7 @@ function LabsTab({
       fontWeight: 700,
       color: "var(--c-key)"
     }
-  }, String(m.instrument || "").trim().split(" ")[0] || "—"), /*#__PURE__*/React.createElement("td", {
+  }, brandFromModel(m.instrument, m._labBrand) || "—"), /*#__PURE__*/React.createElement("td", {
     style: tdSt
   }, m.instrument), /*#__PURE__*/React.createElement("td", {
     style: {
@@ -6865,9 +6878,10 @@ function AnalyticsTab({
   const [trendChart, setTrendChart] = useState("line");
   const allMachines = useMemo(() => labs.flatMap(l => (l.machines || []).map(m => ({
     ...m,
-    _lab: l.name
+    _lab: l.name,
+    _labBrand: l.brand || ""
   }))), [labs]);
-  const brandOpts = useMemo(() => Array.from(new Set(allMachines.map(m => String(m.instrument || "").split(" ")[0]).filter(Boolean))).sort(), [allMachines]);
+  const brandOpts = useMemo(() => Array.from(new Set(allMachines.map(m => brandFromModel(m.instrument, m._labBrand)).filter(Boolean))).sort(), [allMachines, catalog]);
   const instrumentOpts = useMemo(() => Array.from(new Set(allMachines.map(m => String(m.instrument || "").trim()).filter(Boolean))).sort(), [allMachines]);
 
   // visit rows respecting filters + analytics exclusions
@@ -7544,6 +7558,18 @@ function VisitsTab({
   const [bulkBusy, setBulkBusy] = useState(false);
   const [limit, setLimit] = useState(200); // rows shown; expandable to ALL
   const dragCol = useRef(null);
+
+  // model → registered brand (Settings → Models). "Capillarys 3 Octa" → "Sebia".
+  const modelBrand = useMemo(() => {
+    const map = {};
+    (catalog && Array.isArray(catalog.machines) ? catalog.machines : []).forEach(mm => {
+      const key = String(mm.model || "").trim().toLowerCase();
+      if (key && mm.brand) map[key] = mm.brand;
+    });
+    return map;
+  }, [catalog]);
+  // resolve a machine's brand: registered model brand → lab brand → first word (last resort)
+  const brandOf = (l, m) => modelBrand[String(m.instrument || "").trim().toLowerCase()] || String(l.brand || "").trim() || String(m.instrument || "").trim().split(" ")[0] || "";
   const all = useMemo(() => labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => ({
     ...v,
     _labId: l.id,
@@ -7551,8 +7577,8 @@ function VisitsTab({
     _mId: m.id,
     _machine: m.instrument,
     _sn: m.serialNo,
-    _brand: String(l.brand || "").trim() || String(m.instrument || "").trim().split(" ")[0] || ""
-  })))), [labs]);
+    _brand: brandOf(l, m)
+  })))), [labs, modelBrand]);
   const labOpts = useMemo(() => sortAlpha(Array.from(new Set(all.map(v => v._lab).filter(Boolean)))), [all]);
   const brandOpts = useMemo(() => sortAlpha(Array.from(new Set(all.map(v => v._brand).filter(Boolean)))), [all]);
   const machineOpts = useMemo(() => sortAlpha(Array.from(new Set(all.filter(v => !brandF || v._brand === brandF).map(v => v._machine).filter(Boolean)))), [all, brandF]);
@@ -13451,6 +13477,9 @@ function App() {
   const users = useCol("users", !!signedProfile && signedProfile.isAdmin, notify);
   const binItems = useCol("bin", !!signedProfile && signedProfile.isAdmin, notify);
   const catalog = useDoc("config/catalog", !!signedProfile);
+  useEffect(() => {
+    if (typeof window !== "undefined") window.__ibaseCatalog = catalog || {};
+  }, [catalog]);
   const tabsCfg = useDoc("config/tabs", !!signedProfile);
   // Sync the REGISTERED employee names (from user profiles) into the shared
   // catalog so EVERY user's visit form offers the full alphabetical roster —
