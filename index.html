@@ -3800,7 +3800,7 @@ function LabDetail({
         return;
       }
       updated.editLog = [...(orig.editLog || []), {
-        by: profile.email,
+        by: meEmail(profile),
         at: auditNow(),
         changes
       }];
@@ -4715,7 +4715,32 @@ function VisitModal({
     style: inputSt(),
     value: f.dtArrivalHome,
     onChange: e => set("dtArrivalHome", e.target.value)
-  }))), /*#__PURE__*/React.createElement("div", {
+  }))), initial && (initial.editLog || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 14,
+      borderTop: "1px dashed var(--c-border)",
+      paddingTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...labelSt,
+      marginBottom: 6
+    }
+  }, "🕓 Edit history (", (initial.editLog || []).length, ")"), (initial.editLog || []).slice().reverse().map((e2, i2) => /*#__PURE__*/React.createElement("div", {
+    key: i2,
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text4)",
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("b", null, String(e2.at || "").replace("T", " ").slice(0, 16)), " — ", e2.by || "unknown", /*#__PURE__*/React.createElement("ul", {
+    style: {
+      margin: "3px 0 0 16px",
+      padding: 0
+    }
+  }, (e2.changes || []).map((c, j2) => /*#__PURE__*/React.createElement("li", {
+    key: j2
+  }, c)))))), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 14,
       display: "grid",
@@ -7354,6 +7379,85 @@ function VisitsTab({
   notify
 }) {
   const canEditLabs = pCanTab(profile, "labs", "edit") || profile.isAdmin;
+  // ✏️ Visit corrections (enabled by administrators in Settings)
+  const editEnabled = !!(catalog && catalog.visitEditEnabled);
+  const [editV, setEditV] = useState(null);
+  const engineerOptionsV = useMemo(() => Array.from(new Set((catalog && Array.isArray(catalog.departments) ? catalog.departments : []).filter(d => /engineer|specialist/i.test(String(d.name || ""))).flatMap(d => Array.isArray(d.employees) ? d.employees : []).map(x => String(x || "").trim()).filter(Boolean))).sort(), [catalog]);
+  const statusOptionsV = useMemo(() => Array.from(new Set((labs || []).flatMap(l => (l.machines || []).flatMap(m => [m.status, ...(m.visits || []).map(v => v.machineStatus)])).map(x => String(x || "").trim()).filter(Boolean))).sort(), [labs]);
+  async function saveCorrection(v, newStatus, pending) {
+    const row = editV;
+    if (!row) return;
+    const lab = labs.find(l => l.id === row._labId);
+    if (!lab) {
+      notify("Laboratory not found.", "error");
+      return;
+    }
+    const machine = (lab.machines || []).find(m => m.id === row._mId);
+    if (!machine) {
+      notify("Machine not found.", "error");
+      return;
+    }
+    const orig = (machine.visits || []).find(x => x.id === row.id);
+    if (!orig) {
+      notify("Visit not found.", "error");
+      return;
+    }
+    if (String(orig.loggedBy || "") !== meEmail(profile)) {
+      notify("Only the person who logged this visit can correct it.", "error");
+      return;
+    }
+    let attMetas = [];
+    try {
+      attMetas = await uploadAtts(pending || [], machine.id, orig.id);
+    } catch (e) {
+      notify("Attachment upload refused: " + e.message, "error");
+      return;
+    }
+    const updated = {
+      ...orig,
+      ...v,
+      attachments: [...(v.attachments || []), ...attMetas],
+      loggedBy: orig.loggedBy,
+      loggedAt: orig.loggedAt
+    };
+    const changes = visitDiff(orig, updated);
+    if (!changes.length) {
+      setEditV(null);
+      return;
+    }
+    updated.editLog = [...(orig.editLog || []), {
+      by: meEmail(profile),
+      at: auditNow(),
+      changes
+    }];
+    const machines = (lab.machines || []).map(m => {
+      if (m.id !== machine.id) return m;
+      let nm = {
+        ...m,
+        status: newStatus && newStatus !== "Not Applicable" && newStatus !== "Travel" ? newStatus : m.status,
+        software: v.type === "Software update" && v.softwareVersion ? v.softwareVersion : m.software || "",
+        firmware: v.type === "Firmware update" && v.firmwareVersion ? v.firmwareVersion : m.firmware || "",
+        visits: (m.visits || []).map(x => x.id === orig.id ? updated : x)
+      };
+      const pmDates = nm.visits.filter(x => String(x.type || "").toUpperCase() === "PM" && x.date).map(x => x.date).sort();
+      if (pmDates.length && (!nm.lastPM || pmDates[pmDates.length - 1] !== nm.lastPM)) {
+        nm.lastPM = pmDates[pmDates.length - 1];
+        const nx = nextPMDate(pmAnchor(nm), nm.pmInterval);
+        if (nx) nm.nextPM = nx;
+      }
+      return nm;
+    });
+    try {
+      await db.collection("labs").doc(lab.id).update({
+        machines
+      });
+      logAudit(profile, "visit.edit", (machine.instrument || "") + " @ " + lab.name + " · " + (v.date || "") + " — " + changes.length + " change(s)");
+      notify("✎ Visit corrected — the change is recorded in its history.", "ok");
+      setEditV(null);
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+  }
   // ---- filters (session-local, per user) ----
   const [q, setQ] = useState("");
   const [labF, setLabF] = useState("");
@@ -7532,7 +7636,21 @@ function VisitsTab({
     minWidth: 120,
     cursor: "pointer"
   };
-  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("style", null, `
+  return /*#__PURE__*/React.createElement(React.Fragment, null, editV && /*#__PURE__*/React.createElement(VisitModal, {
+    statusOptions: statusOptionsV,
+    machine: {
+      id: editV._mId,
+      instrument: editV._machine,
+      serialNo: editV._sn
+    },
+    engineerOptions: engineerOptionsV,
+    customFields: catalog && catalog.visitFields || [],
+    canEditFields: !!profile.isAdmin,
+    notify: notify,
+    initial: ((labs.find(l => l.id === editV._labId) || {}).machines || []).flatMap(m => m.id === editV._mId ? m.visits || [] : []).find(x => x.id === editV.id) || editV,
+    onClose: () => setEditV(null),
+    onSave: saveCorrection
+  }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("style", null, `
         .ibzv tbody tr { cursor: pointer; }
         .ibzv tbody tr:hover td { background: var(--c-card2) !important; }
         .ibzv tbody tr.ibzv-sel td { background: rgba(56,189,248,.15) !important; }
@@ -8034,10 +8152,19 @@ function VisitsTab({
     }), canEditLabs && /*#__PURE__*/React.createElement("td", {
       style: {
         ...tdSt,
-        width: 52
+        width: 86
       },
       onClick: e => e.stopPropagation()
-    }, /*#__PURE__*/React.createElement("button", {
+    }, editEnabled && String(v.loggedBy || "") === meEmail(profile) && /*#__PURE__*/React.createElement("button", {
+      title: "Correct this visit — every change is kept in its history",
+      style: {
+        ...btnSt("var(--c-border)", "var(--c-text2)"),
+        padding: "3px 8px",
+        fontSize: 11,
+        marginRight: 5
+      },
+      onClick: () => setEditV(v)
+    }, "✏️"), /*#__PURE__*/React.createElement("button", {
       title: "Move to Bin",
       style: {
         ...btnSt("#3a1d1d", "#fca5a5"),
@@ -8070,7 +8197,7 @@ function VisitsTab({
       fontSize: 11,
       color: "var(--c-text5)"
     }
-  }, "Every visit of every machine in every laboratory is here — ", limit, " of ", shown.length, " currently rendered."))));
+  }, "Every visit of every machine in every laboratory is here — ", limit, " of ", shown.length, " currently rendered.")))));
 }
 
 // ── Backup / Download (admin-only): full multi-sheet XLSX export ─────────────
@@ -11950,7 +12077,46 @@ function SettingsTab({
     profile: profile,
     tabsCfg: tabsCfg,
     notify: notify
-  })), eff === "models" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("div", {
+    style: cardSt
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "var(--c-text4)",
+      textTransform: "uppercase",
+      marginBottom: 10
+    }
+  }, "✏️ Visit / LOGS Corrections"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text5)",
+      marginBottom: 12
+    }
+  }, "When enabled, the person who ", /*#__PURE__*/React.createElement("b", null, "logged"), " a visit can correct it from the LOGS tab (✏️ on their own rows). Every correction stores ", /*#__PURE__*/React.createElement("b", null, "when"), " it was edited, ", /*#__PURE__*/React.createElement("b", null, "by whom"), ", and ", /*#__PURE__*/React.createElement("b", null, "exactly what changed"), " — a permanent history shown inside the visit, and each correction is also written to the immutable Audit for tracing."), /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center",
+      fontSize: 12.5,
+      cursor: "pointer"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: !!(catalog && catalog.visitEditEnabled),
+    onChange: async e => {
+      try {
+        await db.doc("config/catalog").set({
+          visitEditEnabled: e.target.checked
+        }, {
+          merge: true
+        });
+        logAudit(profile, "settings.visitEdit", e.target.checked ? "enabled" : "disabled");
+      } catch (err) {
+        notify("SERVER REFUSED:\n" + err.message, "error");
+      }
+    }
+  }), "Allow visit corrections (with mandatory history)"))), eff === "models" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
     style: {
