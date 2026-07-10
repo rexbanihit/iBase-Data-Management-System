@@ -7687,7 +7687,17 @@ function VisitsTab({
     minWidth: 120,
     cursor: "pointer"
   };
-  return /*#__PURE__*/React.createElement(React.Fragment, null, editV && /*#__PURE__*/React.createElement(VisitModal, {
+  return /*#__PURE__*/React.createElement(React.Fragment, null, !editEnabled && canEditLabs && /*#__PURE__*/React.createElement("div", {
+    style: {
+      margin: "0 0 10px",
+      padding: "7px 12px",
+      borderRadius: 8,
+      background: "rgba(251,191,36,.12)",
+      border: "1px solid rgba(251,191,36,.35)",
+      fontSize: 11.5,
+      color: "var(--c-text3)"
+    }
+  }, "🔒 Visit editing is ", /*#__PURE__*/React.createElement("b", null, "off"), ". An administrator can turn it on in ", /*#__PURE__*/React.createElement("b", null, "Settings → Tabs & Visibility → Visit / LOGS Corrections"), "; then click any row to correct it (every change is kept in its history)."), editV && /*#__PURE__*/React.createElement(VisitModal, {
     statusOptions: statusOptionsV,
     machine: {
       id: editV._mId,
@@ -8113,9 +8123,11 @@ function VisitsTab({
       key: key,
       className: selected[key] ? "ibzv-sel" : "",
       style: {
-        height: h
+        height: h,
+        cursor: editEnabled && canEditLabs ? "pointer" : "default"
       },
-      onClick: () => setSelected(s => ({
+      title: editEnabled && canEditLabs ? "Click to open & correct this visit" : undefined,
+      onClick: () => editEnabled && canEditLabs ? setEditV(v) : setSelected(s => ({
         ...s,
         [key]: !s[key]
       }))
@@ -8206,7 +8218,7 @@ function VisitsTab({
         width: 86
       },
       onClick: e => e.stopPropagation()
-    }, editEnabled && /*#__PURE__*/React.createElement("button", {
+    }, editEnabled ? /*#__PURE__*/React.createElement("button", {
       title: "Correct this visit — every change is kept in its history",
       style: {
         ...btnSt("var(--c-border)", "var(--c-text2)"),
@@ -8214,15 +8226,28 @@ function VisitsTab({
         fontSize: 11,
         marginRight: 5
       },
-      onClick: () => setEditV(v)
-    }, "✏️"), /*#__PURE__*/React.createElement("button", {
+      onClick: e => {
+        e.stopPropagation();
+        setEditV(v);
+      }
+    }, "✏️") : /*#__PURE__*/React.createElement("span", {
+      title: "Turn on Settings → Tabs & Visibility → Visit / LOGS Corrections to edit visits",
+      style: {
+        fontSize: 11,
+        color: "var(--c-text5)",
+        marginRight: 5
+      }
+    }, "🔒"), /*#__PURE__*/React.createElement("button", {
       title: "Move to Bin",
       style: {
         ...btnSt("#3a1d1d", "#fca5a5"),
         padding: "3px 8px",
         fontSize: 11
       },
-      onClick: () => delVisit(v)
+      onClick: e => {
+        e.stopPropagation();
+        delVisit(v);
+      }
     }, "🗑")));
   }), shown.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
     colSpan: visibleOrder.length + 1,
