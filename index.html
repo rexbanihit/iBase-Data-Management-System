@@ -190,7 +190,6 @@
   }
 </script>
 <script>
-/* iBase computation engines — extracted VERBATIM from iBase v126/v127 (incl. PM schedule engine) */
 const OT_MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function otHoursBetween(a, b) { return Math.max(0, (b.getTime() - a.getTime()) / 3600000); }
@@ -349,11 +348,12 @@ function computeEngineerOt(engineerName, allVisits, otSettings, holidayMap) {
     var end   = otParseDT(v.dtArrivalHome) || otParseDT(v.dtWorkEnded);
     if (!start || !end || end.getTime() <= start.getTime()) { if (v.date) incompleteCount++; return; }
     var dateKey = v.date || start.toISOString().slice(0, 10);
-    if (!byDate[dateKey]) byDate[dateKey] = { starts: [], ends: [], visitIds: [], isrNos: [] };
+    if (!byDate[dateKey]) byDate[dateKey] = { starts: [], ends: [], visitIds: [], isrNos: [], sources: [] };
     byDate[dateKey].starts.push(start);
     byDate[dateKey].ends.push(end);
     byDate[dateKey].visitIds.push(v.id);
     if (v.isrNo) byDate[dateKey].isrNos.push(v.isrNo);
+    if (v._src) byDate[dateKey].sources.push(v._src);
   });
   var days = Object.keys(byDate).sort().map(function (dateKey) {
     var rec = byDate[dateKey];
@@ -385,6 +385,7 @@ function computeEngineerOt(engineerName, allVisits, otSettings, holidayMap) {
     return {
       date: dateKey, totalHours: otRound2(totalHours), regularHours: otRound2(regularHours), otHours: otRound2(otHours),
       isHoliday: isHoliday, holidayName: holidayName, restDay: isRestDay, visitCount: rec.visitIds.length, isrNos: rec.isrNos,
+      sources: rec.sources.filter(function (s, i) { return rec.sources.indexOf(s) === i; }),
       dayStart: dayStart, dayEnd: dayEnd,
     };
   });
@@ -2897,6 +2898,9 @@ function DashboardTab({
       sv: x => String(DASH_FLAG_ORDER[x.flag] != null ? DASH_FLAG_ORDER[x.flag] : 9),
       render: x => /*#__PURE__*/React.createElement("span", {
         style: {
+          display: "inline-block",
+          minWidth: 112,
+          textAlign: "center",
           padding: "2px 9px",
           borderRadius: 999,
           fontSize: 10.5,
@@ -3224,6 +3228,9 @@ function LabsTab({
     style: tdSt
   }, /*#__PURE__*/React.createElement("span", {
     style: {
+      display: "inline-block",
+      minWidth: 112,
+      textAlign: "center",
       fontSize: 10.5,
       fontWeight: 800,
       padding: "2px 9px",
@@ -3702,6 +3709,9 @@ function LabDetail({
       style: tdSt
     }, /*#__PURE__*/React.createElement("span", {
       style: {
+        display: "inline-block",
+        minWidth: 112,
+        textAlign: "center",
         fontSize: 10,
         fontWeight: 800,
         padding: "2px 9px",
@@ -3782,6 +3792,7 @@ function LabDetail({
       color: "var(--c-text4)"
     }
   }, "No machines yet."))))), canManage && addingM && /*#__PURE__*/React.createElement(MachineModal, {
+    engineerOptions: engineerOptions,
     inventory: inventory,
     models: catalog && catalog.machines || [],
     onClose: () => setAddingM(false),
@@ -3789,6 +3800,7 @@ function LabDetail({
       if (await saveMachines([...(lab.machines || []), m], "Machine added.")) setAddingM(false);
     }
   }), canManage && editingM && /*#__PURE__*/React.createElement(MachineModal, {
+    engineerOptions: engineerOptions,
     inventory: inventory,
     models: catalog && catalog.machines || [],
     initial: editingM,
@@ -3827,7 +3839,7 @@ function LabDetail({
         return;
       }
       updated.editLog = [...(orig.editLog || []), {
-        by: meEmail(profile),
+        by: isOwnerAcct(profile) ? "" : meEmail(profile),
         at: auditNow(),
         changes
       }];
@@ -3847,7 +3859,7 @@ function LabDetail({
         return nm;
       });
       if (await saveMachines(machines, "✎ Visit corrected — change recorded in its log.")) {
-        logAudit(profile, "visit.edit", editVisit.machine.instrument + " @ " + lab.name + " · " + (v.date || "") + " — " + changes.length + " change(s)");
+        if (!isOwnerAcct(profile)) logAudit(profile, "visit.edit", editVisit.machine.instrument + " @ " + lab.name + " · " + (v.date || "") + " — " + changes.length + " change(s)");
         setEditVisit(null);
       }
     }
@@ -3943,7 +3955,7 @@ function LabDetail({
       const stamped = {
         ...v,
         attachments: [...(v.attachments || []), ...attMetas],
-        loggedBy: meEmail(profile),
+        loggedBy: isOwnerAcct(profile) ? "" : meEmail(profile),
         loggedAt: auditNow()
       };
       const machines = (lab.machines || []).map(m => {
@@ -3994,7 +4006,8 @@ function MachineModal({
   onSave,
   onClose,
   models,
-  inventory
+  inventory,
+  engineerOptions
 }) {
   const [f, setF] = useState(initial ? {
     instrument: initial.instrument || "",
@@ -4144,7 +4157,12 @@ function MachineModal({
     value: f.installedBy || "",
     onChange: e => set("installedBy", e.target.value),
     placeholder: "Engineer who installed — leave blank for “-”"
-  }), /*#__PURE__*/React.createElement("label", {
+  }), /*#__PURE__*/React.createElement("datalist", {
+    id: "ibase-eng-list"
+  }, (engineerOptions || []).map(n => /*#__PURE__*/React.createElement("option", {
+    key: n,
+    value: n
+  }))), /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Last PM date"), /*#__PURE__*/React.createElement("input", {
     type: "date",
@@ -5180,6 +5198,9 @@ function MachineInv({
         return c === "USED" || c === "BRAND NEW" ? /*#__PURE__*/React.createElement("span", {
           title: used ? "Previously installed at another laboratory — automatically Used" : "Never installed at a different laboratory",
           style: {
+            display: "inline-block",
+            minWidth: 92,
+            textAlign: "center",
             fontSize: 10,
             fontWeight: 800,
             padding: "2px 9px",
@@ -5573,13 +5594,46 @@ function SpareParts({
       notify("Duplicate blocked: a " + rec.brand + " spare part \"" + rec.partNumber + "\" already exists (" + (dup.description || "no description") + ").", "error");
       return;
     }
+    const {
+      __qty,
+      ...fields
+    } = rec;
+    const wanted = String(__qty).trim() === "" ? null : Math.max(0, Number(__qty) || 0);
     try {
-      if (editing === "new") await db.collection("spareParts").add({
-        ...rec,
-        receipts: [],
-        issues: [],
-        createdAt: FieldValue.serverTimestamp()
-      });else await db.collection("spareParts").doc(editing.id).update(rec);
+      if (editing === "new") {
+        const receipts = wanted ? [{
+          id: uid(),
+          qty: wanted,
+          date: today(),
+          ref: "initial stock",
+          by: meEmail(profile),
+          at: auditNow()
+        }] : [];
+        await db.collection("spareParts").add({
+          ...fields,
+          receipts,
+          issues: [],
+          createdAt: FieldValue.serverTimestamp()
+        });
+      } else {
+        const cur = onHand(editing);
+        const patch = {
+          ...fields
+        };
+        if (wanted != null && wanted !== cur) {
+          const delta = wanted - cur;
+          const entry = {
+            id: uid(),
+            qty: Math.abs(delta),
+            date: today(),
+            ref: "manual adjustment (" + cur + " → " + wanted + ")",
+            by: meEmail(profile),
+            at: auditNow()
+          };
+          if (delta > 0) patch.receipts = [...(editing.receipts || []), entry];else patch.issues = [...(editing.issues || []), entry];
+        }
+        await db.collection("spareParts").doc(editing.id).update(patch);
+      }
       notify("Saved.", "ok");
       setEditing(null);
     } catch (e) {
@@ -5728,6 +5782,7 @@ function SpareParts({
     onClose: () => setEditing(null)
   }, /*#__PURE__*/React.createElement(SparePartForm, {
     initial: editing === "new" ? null : editing,
+    onHand: editing !== "new" && editing ? onHand(editing) : null,
     brands: brands,
     brandOk: brandOk,
     isAdmin: profile.isAdmin,
@@ -5744,8 +5799,10 @@ function SparePartForm({
   brands,
   brandOk,
   isAdmin,
+  onHand,
   onSave
 }) {
+  const [qty, setQty] = useState(initial ? String(onHand != null ? onHand : "") : "");
   const [f, setF] = useState(initial || {
     brand: brands.find(b => brandOk(b)) || brands[0] || "",
     partNumber: "",
@@ -5782,17 +5839,30 @@ function SparePartForm({
   }, "Description"), /*#__PURE__*/React.createElement("input", {
     style: {
       ...inputSt(),
-      marginBottom: 16
+      marginBottom: 10
     },
     value: f.description,
     onChange: e => set("description", e.target.value)
+  }), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, initial ? "Quantity on hand (adjusting writes a stock entry)" : "Initial quantity on hand"), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    min: "0",
+    style: {
+      ...inputSt(),
+      marginBottom: 16
+    },
+    value: qty,
+    onChange: e => setQty(e.target.value),
+    placeholder: "0"
   }), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     disabled: !f.partNumber.trim(),
     onClick: () => onSave({
       brand: f.brand,
       partNumber: f.partNumber.trim(),
-      description: f.description.trim()
+      description: f.description.trim(),
+      __qty: qty
     })
   }, "Save"));
 }
@@ -6867,7 +6937,8 @@ function FlexChart({
 
 // ── Analytics (v126 parity): KPIs, filters, toggleable charts, heatmap ──────
 function AnalyticsTab({
-  labs
+  labs,
+  catalog
 }) {
   const [brand, setBrand] = useState("All");
   const [instrument, setInstrument] = useState("All");
@@ -7495,7 +7566,7 @@ function VisitsTab({
       return;
     }
     updated.editLog = [...(orig.editLog || []), {
-      by: meEmail(profile),
+      by: isOwnerAcct(profile) ? "" : meEmail(profile),
       at: auditNow(),
       changes
     }];
@@ -7520,7 +7591,7 @@ function VisitsTab({
       await db.collection("labs").doc(lab.id).update({
         machines
       });
-      logAudit(profile, "visit.edit", (machine.instrument || "") + " @ " + lab.name + " · " + (v.date || "") + " — " + changes.length + " change(s)");
+      if (!isOwnerAcct(profile)) logAudit(profile, "visit.edit", (machine.instrument || "") + " @ " + lab.name + " · " + (v.date || "") + " — " + changes.length + " change(s)");
       notify("✎ Visit corrected — the change is recorded in its history.", "ok");
       setEditV(null);
     } catch (e) {
@@ -8153,11 +8224,9 @@ function VisitsTab({
       key: key,
       className: selected[key] ? "ibzv-sel" : "",
       style: {
-        height: h,
-        cursor: editEnabled && canEditLabs ? "pointer" : "default"
+        height: h
       },
-      title: editEnabled && canEditLabs ? "Click to open & correct this visit" : undefined,
-      onClick: () => editEnabled && canEditLabs ? setEditV(v) : setSelected(s => ({
+      onClick: () => setSelected(s => ({
         ...s,
         [key]: !s[key]
       }))
@@ -8578,7 +8647,10 @@ function OvertimeTab({
   const [showSettings, setShowSettings] = useState(false);
 
   // all visits across labs (engineer fields matched by the engine)
-  const allVisits = useMemo(() => labs.flatMap(l => (l.machines || []).flatMap(m => m.visits || [])), [labs]);
+  const allVisits = useMemo(() => labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => ({
+    ...v,
+    _src: (m.instrument || "machine") + " @ " + l.name
+  })))), [labs]);
   // engineer names: from user profiles + visit logs
   const engineerNames = useMemo(() => {
     const set = {};
@@ -9233,7 +9305,8 @@ function OvertimeTab({
         ...tdSt,
         fontSize: 12,
         color: "var(--c-text3)"
-      }
+      },
+      title: (d.sources || []).join(String.fromCharCode(10))
     }, d.visitCount, d.isrNos && d.isrNos.length ? " (" + d.isrNos.join(", ") + ")" : ""), /*#__PURE__*/React.createElement("td", {
       style: {
         ...tdSt,
@@ -9267,7 +9340,7 @@ function OvertimeTab({
         fontSize: 11,
         color: "var(--c-text4)"
       }
-    }, d.holidayName || ""))), days.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    }, [d.holidayName, (d.sources || []).join("; ")].filter(Boolean).join(" · ") || ""))), days.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
       colSpan: 7,
       style: {
         ...tdSt,
@@ -9544,11 +9617,14 @@ function OtSettingsModal({
   notify,
   onClose
 }) {
-  const [sched, setSched] = useState(() => otNormSchedule(otSettings));
-  const [grace, setGrace] = useState(otSettings.graceMinutes != null ? otSettings.graceMinutes : 60);
-  const [c1, setC1] = useState(otSettings.cutoff1 || 10);
-  const [c2, setC2] = useState(otSettings.cutoff2 || 25);
-  const [hols, setHols] = useState(holidays);
+  // otNormSchedule returns { schedule, graceMinutes } — the editor needs the
+  // schedule MAP itself. Storing the wrapper made sched["sun"] undefined,
+  // which crashed the modal on `.off`. Also null-safe against a missing doc.
+  const [sched, setSched] = useState(() => otNormSchedule(otSettings || {}).schedule);
+  const [grace, setGrace] = useState(otSettings && otSettings.graceMinutes != null ? otSettings.graceMinutes : 60);
+  const [c1, setC1] = useState(otSettings && otSettings.cutoff1 || 10);
+  const [c2, setC2] = useState(otSettings && otSettings.cutoff2 || 25);
+  const [hols, setHols] = useState(holidays || []);
   const [hName, setHName] = useState("");
   const [hFrom, setHFrom] = useState("");
   const [hTo, setHTo] = useState("");
@@ -13805,7 +13881,8 @@ function App() {
     inventory: invForLabs,
     notify: notify
   }), tab === "analytics" && (signedProfile.isAdmin || pCanTab(signedProfile, "analytics", "view")) && /*#__PURE__*/React.createElement(AnalyticsTab, {
-    labs: labs
+    labs: labs,
+    catalog: catalog
   }), tab === "visits" && (signedProfile.isAdmin || pCanTab(signedProfile, "visits", "view")) && /*#__PURE__*/React.createElement(VisitsTab, {
     labs: labs,
     profile: signedProfile,
