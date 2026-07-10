@@ -5942,6 +5942,53 @@ function BinTab({
         ...data
       } = e.payload;
       await db.collection("spareParts").add(data);
+    } else if (e.kind === "cfgDept" || e.kind === "cfgEmployee" || e.kind === "cfgModel" || e.kind === "cfgBrand") {
+      const snap = await db.doc("config/catalog").get();
+      const cat = snap.data() || {};
+      if (e.kind === "cfgBrand") {
+        const b = e.payload.brand;
+        const brands = Array.isArray(cat.brands) ? cat.brands : [];
+        if (!brands.some(x => String(x).toLowerCase() === String(b).toLowerCase())) await db.doc("config/catalog").set({
+          brands: [...brands, b]
+        }, {
+          merge: true
+        });
+      } else if (e.kind === "cfgModel") {
+        const m = e.payload.machine;
+        const ms = Array.isArray(cat.machines) ? cat.machines : [];
+        if (!ms.some(x => String(x.model || "").toLowerCase() === String(m.model || "").toLowerCase() && x.brand === m.brand)) await db.doc("config/catalog").set({
+          machines: [...ms, m]
+        }, {
+          merge: true
+        });
+      } else {
+        let deps = Array.isArray(cat.departments) ? JSON.parse(JSON.stringify(cat.departments)) : [];
+        if (e.kind === "cfgDept") {
+          const d = e.payload.dept;
+          if (!deps.some(x => String(x.name).toLowerCase() === String(d.name).toLowerCase())) deps.push(d);
+        } else {
+          const {
+            name,
+            dept
+          } = e.payload;
+          if (!deps.flatMap(x => x.employees || []).some(n => String(n).toLowerCase() === String(name).toLowerCase())) {
+            let home = deps.find(x => x.name === dept) || deps.find(x => x.name === "(Unassigned)");
+            if (!home) {
+              home = {
+                name: dept || "(Unassigned)",
+                employees: []
+              };
+              deps.push(home);
+            }
+            home.employees = [...(home.employees || []), name];
+          }
+        }
+        await db.doc("config/catalog").set({
+          departments: deps
+        }, {
+          merge: true
+        });
+      }
     } else if (e.kind === "invBulk" || e.kind === "spareBulk") {
       const colName = e.kind === "invBulk" ? "inventory" : "spareParts";
       const items = e.payload && e.payload.items || [];
@@ -11336,8 +11383,14 @@ function SettingsTab({
     }
   }
   const SETTINGS_SUBS = [{
-    id: "people",
-    label: "👥 Employees & Users"
+    id: "employees",
+    label: "👥 Employees"
+  }, {
+    id: "users",
+    label: "🪪 Users"
+  }, {
+    id: "admins",
+    label: "👑 Administrators"
   }, {
     id: "models",
     label: "🔬 Models & Item Codes"
@@ -11363,7 +11416,7 @@ function SettingsTab({
   }];
   const subHidden = id => !!(tabsCfg && tabsCfg.settingsHidden && tabsCfg.settingsHidden[id]);
   const visibleSubs = SETTINGS_SUBS.filter(s => (!s.ownerOnly || iAmOwner) && (!subHidden(s.id) || iAmOwner));
-  const eff = visibleSubs.some(s => s.id === sub) ? sub : visibleSubs[0] ? visibleSubs[0].id : "people";
+  const eff = visibleSubs.some(s => s.id === sub) ? sub : visibleSubs[0] ? visibleSubs[0].id : "employees";
   const subBtn = s => /*#__PURE__*/React.createElement("button", {
     key: s.id,
     onClick: () => setSub(s.id),
@@ -11403,7 +11456,7 @@ function SettingsTab({
     labs: labs,
     profile: profile,
     notify: notify
-  }), eff === "people" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }), eff === "employees" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -11448,17 +11501,19 @@ function SettingsTab({
       color: "var(--c-text4)",
       padding: 0
     },
-    onClick: () => {
+    onClick: async () => {
       const nn = prompt("Rename department:", d.name);
       if (!nn || !nn.trim() || nn.trim() === d.name) return;
       if (deps.some(x => x !== d && x.name.toLowerCase() === nn.trim().toLowerCase())) {
         notify("A department with that name already exists.", "error");
         return;
       }
-      saveDeps(deps.map(x => x === d ? {
+      if (!(await adminGuard(profile, notify, "Rename department “" + d.name + "” → “" + nn.trim() + "”"))) return;
+      await saveDeps(deps.map(x => x === d ? {
         ...x,
         name: nn.trim()
       } : x));
+      cfgTrace(profile, "settings.rename", "department “" + d.name + "” → “" + nn.trim() + "”");
     }
   }, "✏️"), /*#__PURE__*/React.createElement("button", {
     title: "Delete department (its names move to (Unassigned))",
@@ -11469,8 +11524,15 @@ function SettingsTab({
       color: "#f87171",
       padding: 0
     },
-    onClick: () => {
+    onClick: async () => {
       if (!confirm("Delete department “" + d.name + "”?" + ((d.employees || []).length ? " Its " + d.employees.length + " name(s) move to (Unassigned)." : ""))) return;
+      if (!(await adminGuard(profile, notify, "Delete department “" + d.name + "”"))) return;
+      if (!isOwnerAcct(profile)) {
+        await binIt("cfgDept", "📁 Department " + d.name + " (" + (d.employees || []).length + " names)", {
+          dept: d
+        }, meEmail(profile));
+        cfgTrace(profile, "settings.delete", "department “" + d.name + "” → Bin");
+      }
       let rest = deps.filter(x => x !== d);
       if ((d.employees || []).length) {
         const un = rest.find(x => x.name === "(Unassigned)");
@@ -11511,17 +11573,19 @@ function SettingsTab({
       color: "var(--c-text4)",
       padding: 0
     },
-    onClick: () => {
+    onClick: async () => {
       const nn = prompt("Rename employee:", name);
       if (!nn || !nn.trim() || nn.trim() === name) return;
       if (allEmployees.some(e => e.toLowerCase() === nn.trim().toLowerCase())) {
         notify("That name is already registered.", "error");
         return;
       }
-      saveDeps(deps.map(x => x === d ? {
+      if (!(await adminGuard(profile, notify, "Rename employee “" + name + "” → “" + nn.trim() + "”"))) return;
+      await saveDeps(deps.map(x => x === d ? {
         ...x,
         employees: (x.employees || []).map(e => e === name ? nn.trim() : e)
       } : x));
+      cfgTrace(profile, "settings.rename", "employee “" + name + "” → “" + nn.trim() + "” (" + d.name + ")");
     }
   }, "✏️"), /*#__PURE__*/React.createElement("select", {
     title: "Transfer to another department",
@@ -11548,9 +11612,17 @@ function SettingsTab({
       color: "#f87171",
       padding: 0
     },
-    onClick: () => {
+    onClick: async () => {
       if (!confirm("Remove “" + name + "” from the employee list? Past visits keep the name.")) return;
-      saveDeps(deps.map(x => x === d ? {
+      if (!(await adminGuard(profile, notify, "Delete employee “" + name + "”"))) return;
+      if (!isOwnerAcct(profile)) {
+        await binIt("cfgEmployee", "👤 Employee " + name + " (" + d.name + ")", {
+          name,
+          dept: d.name
+        }, meEmail(profile));
+        cfgTrace(profile, "settings.delete", "employee “" + name + "” (" + d.name + ") → Bin");
+      }
+      await saveDeps(deps.map(x => x === d ? {
         ...x,
         employees: (x.employees || []).filter(e => e !== name)
       } : x));
@@ -11635,7 +11707,7 @@ function SettingsTab({
       } : d));
       setNeName("");
     }
-  }, "+ Add name"))), /*#__PURE__*/React.createElement(CreateUser, {
+  }, "+ Add name")))), eff === "users" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(CreateUser, {
     brands: brands,
     roleOptions: roleOptions,
     notify: notify,
@@ -11664,7 +11736,7 @@ function SettingsTab({
   }, "No users yet. Create one above."), /*#__PURE__*/React.createElement(RecoverProfileTool, {
     me: profile,
     notify: notify
-  })), /*#__PURE__*/React.createElement(AdminManager, {
+  }))), eff === "admins" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(AdminManager, {
     users: users,
     me: profile,
     iAmOwner: iAmOwner,
@@ -11764,7 +11836,16 @@ function SettingsTab({
       color: "var(--c-text4)"
     }
   }, "· ", m.itemCode) : null, /*#__PURE__*/React.createElement("button", {
-    onClick: () => saveModels(models.filter(x => x !== m)),
+    onClick: async () => {
+      if (!(await adminGuard(profile, notify, "Delete model “" + m.model + "” (" + (m.brand || "") + ")"))) return;
+      if (!isOwnerAcct(profile)) {
+        await binIt("cfgModel", "🔬 Model " + m.model + (m.itemCode ? " · " + m.itemCode : ""), {
+          machine: m
+        }, meEmail(profile));
+        cfgTrace(profile, "settings.delete", "model “" + m.model + "” → Bin");
+      }
+      saveModels(models.filter(x => x !== m));
+    },
     style: {
       background: "none",
       border: "none",
@@ -11861,7 +11942,16 @@ function SettingsTab({
       alignItems: "center"
     }
   }, b, /*#__PURE__*/React.createElement("button", {
-    onClick: () => saveBrands(brands.filter(x => x !== b)),
+    onClick: async () => {
+      if (!(await adminGuard(profile, notify, "Delete brand “" + b + "”"))) return;
+      if (!isOwnerAcct(profile)) {
+        await binIt("cfgBrand", "🏷 Brand " + b, {
+          brand: b
+        }, meEmail(profile));
+        cfgTrace(profile, "settings.delete", "brand “" + b + "” → Bin");
+      }
+      saveBrands(brands.filter(x => x !== b));
+    },
     style: {
       background: "none",
       border: "none",
@@ -12301,6 +12391,27 @@ function LinkedName({
 }
 
 // 👑 OWNER-ONLY: manage administrators (invisible to everyone else).
+// 🔒 Administrator confirmation: deleting or renaming anything in SETTINGS
+// requires the acting ADMIN's own password (verified by Google's servers).
+// The sole owner is exempt — no password, no trace.
+async function adminGuard(profile, notify, actionLabel) {
+  if (isOwnerAcct(profile)) return true;
+  const pw = prompt("🔒 " + actionLabel + "\n\nEnter YOUR password to confirm:");
+  if (!pw) return false;
+  try {
+    const u = auth.currentUser;
+    const cred = firebase.auth.EmailAuthProvider.credential(u.email, pw);
+    await u.reauthenticateWithCredential(cred);
+    return true;
+  } catch (e) {
+    notify("Wrong password — nothing was changed.", "error");
+    return false;
+  }
+}
+// Trace admin actions to the Audit (timestamp + email via logAudit); owner untraced.
+function cfgTrace(profile, action, detail) {
+  if (!isOwnerAcct(profile)) logAudit(profile, action, detail);
+}
 function AdminManager({
   users,
   me,
@@ -12314,11 +12425,12 @@ function AdminManager({
   const [pickDemote, setPickDemote] = useState("");
   async function demoteSel() {
     const u = admins.find(x => x.id === pickDemote);
-    if (u && me && u.id === me.id) {
-      notify("You cannot demote yourself — ask another administrator (and the owner can never be demoted).", "error");
+    if (!u) return;
+    if (!iAmOwner && (!me || u.id !== me.id)) {
+      notify("Administrators can only step down THEMSELVES — only the owner can demote another administrator.", "error");
       return;
     }
-    if (!u) return;
+    if (!iAmOwner && !(await adminGuard(me, notify, "Step down as administrator"))) return;
     const self = u.id === me.id;
     if (!confirm(self ? "⚠️ You are demoting YOURSELF — administrator access disappears immediately. Continue?" : "Demote " + u.email + " to a REGULAR USER? Their per-tab permissions apply again, instantly.")) return;
     const patch = {
@@ -12375,7 +12487,7 @@ function AdminManager({
       color: "var(--c-text5)",
       marginBottom: 12
     }
-  }, iAmOwner ? "Administrators are hidden from the Users section. You and every administrator can promote or demote; the owner (you) can never be touched by anyone and never appears anywhere." : "Fellow administrators. You can promote users to administrator and demote administrators — changes apply to their screens instantly. The system owner is beyond everyone's reach and is not listed."), admins.map(u => /*#__PURE__*/React.createElement(UserRow, {
+  }, iAmOwner ? "Administrators are hidden from the Users section. You and every administrator can promote or demote; the owner (you) can never be touched by anyone and never appears anywhere." : "Fellow administrators. You can promote users to administrator, and you can step down yourself — but only the owner can demote another administrator. The system owner is beyond everyone's reach and is not listed."), admins.map(u => /*#__PURE__*/React.createElement(UserRow, {
     key: u.id,
     u: u,
     brands: brands,
@@ -12430,10 +12542,10 @@ function AdminManager({
     onChange: e => setPickDemote(e.target.value)
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "Demote an administrator…"), admins.filter(u => !me || u.id !== me.id).map(u => /*#__PURE__*/React.createElement("option", {
+  }, "Demote an administrator…"), (iAmOwner ? admins : admins.filter(u => me && u.id === me.id)).map(u => /*#__PURE__*/React.createElement("option", {
     key: u.id,
     value: u.id
-  }, u.email, u.displayName ? " — " + u.displayName : ""))), /*#__PURE__*/React.createElement("button", {
+  }, iAmOwner ? u.email : "Myself (" + u.email + ")", u.displayName && iAmOwner ? " — " + u.displayName : ""))), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "#fbbf24"),
     disabled: !pickDemote,
     onClick: demoteSel
@@ -12610,11 +12722,13 @@ function UserRow({
   }
   async function delUser() {
     if (!confirm("Move " + u.email + "'s profile to the Bin? They will still be able to sign in, but the server will grant them NOTHING until an administrator restores the profile. (Their login account itself can be disabled in Firebase Console > Authentication.)")) return;
+    if (!(await adminGuard(me, notify, "Delete user " + u.email))) return;
+    cfgTrace(me, "settings.delete", "user " + u.email + " → Bin");
     try {
       await binIt("user", u.email, {
         id: u.id,
         ...u
-      }, me.email);
+      }, meEmail(me));
     } catch (e) {
       notify("Bin write refused: " + e.message, "error");
       return;
