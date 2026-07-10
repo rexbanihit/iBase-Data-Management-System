@@ -1573,6 +1573,34 @@ const auth = firebase.auth();
 // "Capillarys 3 Octa" → "Sebia". Falls back to the lab's brand, then — only as a
 // last resort — the first word of the instrument name. window.__ibaseCatalog is
 // kept current by the App component so any tab can call this.
+// Upload pending visit attachments; returns lightweight metas to store on the
+// visit. Module-level so BOTH the laboratory view and the LOGS correction flow
+// can call it (the missing-scope cause of "uploadAtts is not defined").
+async function uploadVisitAtts(pending, labId, machineId, visitId, byEmail) {
+  const metas = [];
+  for (const a of pending || []) {
+    const ref = await db.collection("attachments").add({
+      name: a.name,
+      mime: a.mime,
+      kind: a.kind,
+      size: a.size,
+      dataUrl: a.dataUrl,
+      labId,
+      machineId,
+      visitId,
+      by: byEmail || auth.currentUser && auth.currentUser.email || "",
+      at: auditNow()
+    });
+    metas.push({
+      id: ref.id,
+      name: a.name,
+      mime: a.mime,
+      kind: a.kind,
+      size: a.size
+    });
+  }
+  return metas;
+}
 function brandFromModel(instrument, labBrand) {
   const cat = typeof window !== "undefined" && window.__ibaseCatalog || {};
   const models = Array.isArray(cat.machines) ? cat.machines : [];
@@ -3530,31 +3558,7 @@ function LabDetail({
   const [editVisit, setEditVisit] = useState(null); // { machine, visit } being corrected
   const [attView, setAttView] = useState(null); // attachments being viewed
   // Upload the freshly-picked files to the shared attachments store; returns metadata.
-  async function uploadAtts(pending, machineId, visitId) {
-    const metas = [];
-    for (const a of pending) {
-      const ref = await db.collection("attachments").add({
-        name: a.name,
-        mime: a.mime,
-        kind: a.kind,
-        size: a.size,
-        dataUrl: a.dataUrl,
-        labId: lab.id,
-        machineId,
-        visitId,
-        by: profile.email,
-        at: auditNow()
-      });
-      metas.push({
-        id: ref.id,
-        name: a.name,
-        mime: a.mime,
-        kind: a.kind,
-        size: a.size
-      });
-    }
-    return metas;
-  }
+  const uploadAtts = (pending, machineId, visitId) => uploadVisitAtts(pending, lab.id, machineId, visitId, meEmail(profile));
   async function openAtts(v) {
     try {
       const list = [];
@@ -7473,7 +7477,7 @@ function VisitsTab({
     }
     let attMetas = [];
     try {
-      attMetas = await uploadAtts(pending || [], machine.id, orig.id);
+      attMetas = await uploadVisitAtts(pending || [], lab.id, machine.id, orig.id, meEmail(profile));
     } catch (e) {
       notify("Attachment upload refused: " + e.message, "error");
       return;
