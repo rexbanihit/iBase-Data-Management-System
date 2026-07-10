@@ -2901,7 +2901,7 @@ function isPull(m) {
 }
 
 // ── Institutions (labs + machines + visits) ─────────────────────────────────
-const VISIT_TYPES = ["PM", "Corrective", "Installation", "Pull-out", "Validation", "Calibration", "Demo", "Training", "Travel", "Office Repair", "Documentation", "Pro-active Visit", "Site Survey", "Phone support", "Offset", "Vacation leave", "Sick leave", "Weekly visit", "Emergency leave", "Not Applicable"];
+const VISIT_TYPES = ["PM", "Corrective", "Installation", "Pull-out", "Validation", "Calibration", "Demo", "Training", "Travel", "Office Repair", "Documentation", "Pro-active Visit", "Site Survey", "Phone support", "Offset", "Vacation leave", "Sick leave", "Weekly visit", "Emergency leave", "Not Applicable", "Software update", "Firmware update"];
 const MACHINE_STATUSES = ["Active", "Under Repair", "For Follow-up", "Pulled-out", "Scrapped", "Travel", "Not Applicable"];
 function LabsTab({
   labs,
@@ -3924,6 +3924,8 @@ function LabDetail({
         let nm = {
           ...m,
           status: newStatus && newStatus !== "Not Applicable" && newStatus !== "Travel" ? newStatus : m.status,
+          software: v.type === "Software update" && v.softwareVersion ? v.softwareVersion : m.software || "",
+          firmware: v.type === "Firmware update" && v.firmwareVersion ? v.firmwareVersion : m.firmware || "",
           visits: [...(m.visits || []), stamped]
         };
         // PM VISIT RENEWS THE SCHEDULE (v126 behavior): advance lastPM, recompute next PM.
@@ -4064,7 +4066,7 @@ function MachineModal({
     placeholder: "known inventory serials auto-fill the model + item code"
   }), /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Software"), /*#__PURE__*/React.createElement("input", {
+  }, "Software version"), /*#__PURE__*/React.createElement("input", {
     style: {
       ...inputSt(),
       marginBottom: 10
@@ -4073,7 +4075,7 @@ function MachineModal({
     onChange: e => set("software", e.target.value)
   }), /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Firmware"), /*#__PURE__*/React.createElement("input", {
+  }, "Firmware version"), /*#__PURE__*/React.createElement("input", {
     style: {
       ...inputSt(),
       marginBottom: 10
@@ -4433,6 +4435,8 @@ function VisitModal({
     date: initial.date || today(),
     type: initial.type || "PM",
     isrNo: initial.isrNo || "",
+    instrumentStatus: initial.instrumentStatus || "",
+    firmwareVersion: initial.firmwareVersion || "",
     engineer: initial.engineer || "",
     engineer2: initial.engineer2 || "",
     engineer3: initial.engineer3 || "",
@@ -4462,6 +4466,8 @@ function VisitModal({
     date: today(),
     type: "PM",
     isrNo: "",
+    instrumentStatus: "",
+    firmwareVersion: "",
     engineer: "",
     engineer2: "",
     engineer3: "",
@@ -4529,13 +4535,7 @@ function VisitModal({
     onChange: e => set("type", e.target.value)
   }, sortAlpha(VISIT_TYPES).map(t => /*#__PURE__*/React.createElement("option", {
     key: t
-  }, t)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "ISR No"), /*#__PURE__*/React.createElement("input", {
-    style: inputSt(),
-    value: f.isrNo,
-    onChange: e => set("isrNo", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", {
+  }, t)))), /*#__PURE__*/React.createElement("div", null), /*#__PURE__*/React.createElement("div", {
     style: {
       gridColumn: "1 / -1"
     }
@@ -4592,62 +4592,45 @@ function VisitModal({
       color: "#fbbf24",
       marginTop: 4
     }
-  }, "No names registered — add employees under a department named “…Engineering” or “…Specialist” (Settings → Employees).")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }, "No names registered — add employees under a department named “…Engineering” or “…Specialist” (Settings → Employees).")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      gridColumn: "1 / -1"
+    }
+  }, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Date & Time reported"), /*#__PURE__*/React.createElement("input", {
-    type: "datetime-local",
-    style: inputSt(),
-    value: f.dtReported,
-    onChange: e => set("dtReported", e.target.value)
+  }, "Problem Description"), /*#__PURE__*/React.createElement("textarea", {
+    style: {
+      ...inputSt(),
+      minHeight: 52,
+      resize: "vertical"
+    },
+    value: f.problemDesc,
+    onChange: e => set("problemDesc", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Departure (from home/office)"), /*#__PURE__*/React.createElement("input", {
-    type: "datetime-local",
-    style: inputSt(),
-    value: f.dtDeparture,
-    onChange: e => set("dtDeparture", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }, "System Condition"), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      cursor: "pointer"
+    },
+    value: f.systemCondition,
+    onChange: e => set("systemCondition", e.target.value)
+  }, ["", "Not applicable", "Up/Working", "Partially down", "Fully down", "Scheduled Service"].map(o => /*#__PURE__*/React.createElement("option", {
+    key: o,
+    value: o
+  }, o || "— select —")))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Arrival to Account"), /*#__PURE__*/React.createElement("input", {
-    type: "datetime-local",
-    style: inputSt(),
-    value: f.dtArrivalAccount,
-    onChange: e => set("dtArrivalAccount", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Arrival home"), /*#__PURE__*/React.createElement("input", {
-    type: "datetime-local",
-    style: inputSt(),
-    value: f.dtArrivalHome,
-    onChange: e => set("dtArrivalHome", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Work started"), /*#__PURE__*/React.createElement("input", {
-    type: "datetime-local",
-    style: inputSt(),
-    value: f.dtWorkStarted,
-    onChange: e => set("dtWorkStarted", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Work ended"), /*#__PURE__*/React.createElement("input", {
-    type: "datetime-local",
-    style: inputSt(),
-    value: f.dtWorkEnded,
-    onChange: e => set("dtWorkEnded", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Machine status after visit"), /*#__PURE__*/React.createElement("input", {
-    list: "ib-mstat",
-    style: inputSt(),
-    value: f.machineStatus,
-    onChange: e => set("machineStatus", e.target.value),
-    placeholder: "type freely — past entries suggested"
-  }), /*#__PURE__*/React.createElement("datalist", {
-    id: "ib-mstat"
-  }, (statusOptions || []).map(s2 => /*#__PURE__*/React.createElement("option", {
-    key: s2,
-    value: s2
-  })))), /*#__PURE__*/React.createElement("div", {
+  }, "Priority"), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      cursor: "pointer"
+    },
+    value: f.priority,
+    onChange: e => set("priority", e.target.value)
+  }, ["", "Not applicable", "High", "Medium", "Low"].map(o => /*#__PURE__*/React.createElement("option", {
+    key: o,
+    value: o
+  }, o || "— select —")))), /*#__PURE__*/React.createElement("div", {
     style: {
       gridColumn: "1 / -1"
     }
@@ -4663,61 +4646,46 @@ function VisitModal({
     onChange: e => set("remarks", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Support type"), /*#__PURE__*/React.createElement("select", {
+  }, "Instrument Status"), /*#__PURE__*/React.createElement("select", {
     style: {
       ...inputSt(),
       cursor: "pointer"
     },
-    value: f.supportType,
-    onChange: e => set("supportType", e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: ""
-  }, "— select —"), /*#__PURE__*/React.createElement("option", null, "Onsite support"), /*#__PURE__*/React.createElement("option", null, "Phone support"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    value: f.instrumentStatus,
+    onChange: e => set("instrumentStatus", e.target.value)
+  }, ["", "Not applicable", "System restored", "PM completed", "Under observation", "For further repair"].map(o => /*#__PURE__*/React.createElement("option", {
+    key: o,
+    value: o
+  }, o || "— select —")))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Priority"), /*#__PURE__*/React.createElement("input", {
-    list: "ib-prio",
+  }, "Instrument after the visit"), /*#__PURE__*/React.createElement("input", {
+    list: "ib-mstat",
     style: inputSt(),
-    value: f.priority,
-    onChange: e => set("priority", e.target.value),
-    placeholder: "High / Medium / Low"
+    value: f.machineStatus,
+    onChange: e => set("machineStatus", e.target.value),
+    placeholder: "type freely — past entries suggested"
   }), /*#__PURE__*/React.createElement("datalist", {
-    id: "ib-prio"
-  }, /*#__PURE__*/React.createElement("option", null, "High"), /*#__PURE__*/React.createElement("option", null, "Medium"), /*#__PURE__*/React.createElement("option", null, "Low"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    id: "ib-mstat"
+  }, (statusOptions || []).map(s2 => /*#__PURE__*/React.createElement("option", {
+    key: s2,
+    value: s2
+  })))), f.type === "Software update" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Software Version"), /*#__PURE__*/React.createElement("input", {
+  }, "Software version — updates the machine record"), /*#__PURE__*/React.createElement("input", {
     style: inputSt(),
     value: f.softwareVersion,
     onChange: e => set("softwareVersion", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  })), f.type === "Firmware update" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "System Condition"), /*#__PURE__*/React.createElement("input", {
+  }, "Firmware version — updates the machine record"), /*#__PURE__*/React.createElement("input", {
     style: inputSt(),
-    value: f.systemCondition,
-    onChange: e => set("systemCondition", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Endorsed to"), /*#__PURE__*/React.createElement("input", {
-    style: inputSt(),
-    value: f.endorsedTo,
-    onChange: e => set("endorsedTo", e.target.value)
-  }))), /*#__PURE__*/React.createElement("div", {
+    value: f.firmwareVersion,
+    onChange: e => set("firmwareVersion", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
-      marginTop: 12,
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: 12
+      gridColumn: "1 / -1"
     }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Problem Description"), /*#__PURE__*/React.createElement("textarea", {
-    style: {
-      ...inputSt(),
-      minHeight: 52,
-      resize: "vertical"
-    },
-    value: f.problemDesc,
-    onChange: e => set("problemDesc", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Recommendation"), /*#__PURE__*/React.createElement("textarea", {
     style: {
@@ -4727,6 +4695,26 @@ function VisitModal({
     },
     value: f.recommendation,
     onChange: e => set("recommendation", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Endorsed to"), /*#__PURE__*/React.createElement("input", {
+    style: inputSt(),
+    value: f.endorsedTo,
+    onChange: e => set("endorsedTo", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Date & time work ended"), /*#__PURE__*/React.createElement("input", {
+    type: "datetime-local",
+    style: inputSt(),
+    value: f.dtWorkEnded,
+    onChange: e => set("dtWorkEnded", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Date of arrival to home"), /*#__PURE__*/React.createElement("input", {
+    type: "datetime-local",
+    style: inputSt(),
+    value: f.dtArrivalHome,
+    onChange: e => set("dtArrivalHome", e.target.value)
   }))), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 14,
@@ -4852,7 +4840,7 @@ function VisitModal({
       marginTop: 16
     },
     onClick: () => {
-      const dISO = String(f.dtWorkStarted || f.dtDeparture || f.dtReported || "").slice(0, 10);
+      const dISO = String(f.dtWorkEnded || f.dtArrivalHome || f.dtWorkStarted || f.dtDeparture || f.dtReported || "").slice(0, 10);
       onSave({
         id: initial ? initial.id : uid(),
         ...f,
@@ -11369,6 +11357,63 @@ function SettingsTab({
     setSelDeps({});
     setSelEmps({});
   }
+  async function renameBrand(oldB) {
+    const nn = prompt("Rename brand:", oldB);
+    if (!nn || !nn.trim() || nn.trim() === oldB) return;
+    const newB = nn.trim();
+    if (brands.some(b => b.toLowerCase() === newB.toLowerCase())) {
+      notify("A brand with that name already exists.", "error");
+      return;
+    }
+    if (!(await adminGuard(profile, notify, "Rename brand “" + oldB + "” → “" + newB + "” everywhere"))) return;
+    try {
+      // catalog: brand list + machine-model registry
+      await db.doc("config/catalog").set({
+        brands: brands.map(b => b === oldB ? newB : b).sort(),
+        machines: models.map(m => m.brand === oldB ? {
+          ...m,
+          brand: newB
+        } : m)
+      }, {
+        merge: true
+      });
+      // laboratories → LOGS, Dashboard, Analytics all follow automatically
+      let nLabs = 0;
+      for (const l of (labs || []).filter(l => l.brand === oldB)) {
+        await db.collection("labs").doc(l.id).update({
+          brand: newB
+        });
+        nLabs++;
+      }
+      // machine inventory
+      const snap = await db.collection("inventory").get();
+      let nInv = 0;
+      for (const d of snap.docs) {
+        if ((d.data().brand || "") === oldB) {
+          await d.ref.update({
+            brand: newB
+          });
+          nInv++;
+        }
+      }
+      // users' per-brand access lists
+      let nUsers = 0;
+      for (const u of users || []) {
+        if (Array.isArray(u.brands) && u.brands.includes(oldB)) {
+          try {
+            await db.collection("users").doc(u.id).update({
+              brands: u.brands.map(b => b === oldB ? newB : b)
+            });
+            nUsers++;
+          } catch (e) {}
+        }
+      }
+      cfgTrace(profile, "settings.rename", "brand “" + oldB + "” → “" + newB + "” (" + nLabs + " labs, " + nInv + " inventory, " + nUsers + " users)");
+      notify("🏷 Brand renamed everywhere: " + nLabs + " laborator" + (nLabs === 1 ? "y" : "ies") + ", " + nInv + " inventory record(s), " + nUsers + " user(s).", "ok");
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+  }
   async function delSelectedBrands() {
     const bs = Object.keys(selBrands).filter(k => selBrands[k]);
     if (!bs.length) return;
@@ -11941,7 +11986,20 @@ function SettingsTab({
       flex: 1,
       fontSize: 12.5
     }
-  }, b))), brands.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }, b), /*#__PURE__*/React.createElement("button", {
+    title: "Rename this brand everywhere (labs, inventory, models, users)",
+    style: {
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      color: "var(--c-text4)",
+      padding: 0
+    },
+    onClick: ev => {
+      ev.stopPropagation();
+      renameBrand(b);
+    }
+  }, "✏️"))), brands.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: "var(--c-text4)"
@@ -12032,12 +12090,7 @@ function SettingsTab({
       fontSize: 11,
       color: "var(--c-text4)"
     }
-  }, m.itemCode) : /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 10.5,
-      color: "var(--c-text5)"
-    }
-  }, "no code")))))), models.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }, m.itemCode) : null))))), models.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: "var(--c-text4)",
@@ -12074,27 +12127,15 @@ function SettingsTab({
     value: nmModel,
     onChange: e => setNmModel(e.target.value),
     placeholder: "e.g. Capillarys 3 Octa"
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Item code"), /*#__PURE__*/React.createElement("input", {
-    style: {
-      ...inputSt(),
-      minWidth: 120
-    },
-    value: nmCode,
-    onChange: e => setNmCode(e.target.value),
-    placeholder: "e.g. 1245"
   })), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-key)", "var(--c-bg)"),
     disabled: !nmBrand || !nmModel.trim() || models.some(m => String(m.model || "").trim().toLowerCase() === nmModel.trim().toLowerCase() && m.brand === nmBrand),
     onClick: () => {
       saveModels([...models, {
         brand: nmBrand,
-        model: nmModel.trim(),
-        itemCode: nmCode.trim()
+        model: nmModel.trim()
       }]);
       setNmModel("");
-      setNmCode("");
     }
   }, "+ Add model"), /*#__PURE__*/React.createElement("button", {
     style: btnSt("#3a1d1d", "#fca5a5"),
