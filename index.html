@@ -6231,10 +6231,6 @@ const MANAGED_TABS = [{
   def: "🗑 Bin",
   adminOnly: true
 }, {
-  id: "audit",
-  def: "🧾 Audit",
-  adminOnly: true
-}, {
   id: "settings",
   def: "⚙ Settings",
   adminOnly: true,
@@ -11339,13 +11335,56 @@ function SettingsTab({
       notify("SERVER REFUSED:\n" + e.message, "error");
     }
   }
-  const subBtn = (id, label, danger) => /*#__PURE__*/React.createElement("button", {
-    onClick: () => setSub(id),
+  const SETTINGS_SUBS = [{
+    id: "people",
+    label: "👥 Employees & Users"
+  }, {
+    id: "models",
+    label: "🔬 Models & Item Codes"
+  }, {
+    id: "general",
+    label: "⚙ General"
+  }, {
+    id: "visibility",
+    label: "🙈 Tabs & Visibility",
+    noHide: true
+  }, {
+    id: "audit",
+    label: "🧾 Audit"
+  }, {
+    id: "import",
+    label: "📥 Import Excel",
+    ownerOnly: true
+  }, {
+    id: "danger",
+    label: "☠ Danger zone",
+    ownerOnly: true,
+    danger: true
+  }];
+  const subHidden = id => !!(tabsCfg && tabsCfg.settingsHidden && tabsCfg.settingsHidden[id]);
+  const visibleSubs = SETTINGS_SUBS.filter(s => (!s.ownerOnly || iAmOwner) && (!subHidden(s.id) || iAmOwner));
+  const eff = visibleSubs.some(s => s.id === sub) ? sub : visibleSubs[0] ? visibleSubs[0].id : "people";
+  const subBtn = s => /*#__PURE__*/React.createElement("button", {
+    key: s.id,
+    onClick: () => setSub(s.id),
     style: {
-      ...btnSt(sub === id ? danger ? "#7f1d1d" : "var(--c-key)" : "var(--c-border)", sub === id ? danger ? "#fecaca" : "var(--c-bg)" : danger ? "#f87171" : "var(--c-text2)"),
+      ...btnSt(eff === s.id ? s.danger ? "#7f1d1d" : "var(--c-key)" : "var(--c-border)", eff === s.id ? s.danger ? "#fecaca" : "var(--c-bg)" : s.danger ? "#f87171" : "var(--c-text2)"),
       fontWeight: 800
     }
-  }, label);
+  }, s.label, subHidden(s.id) ? " 🙈" : "");
+  async function toggleSubHidden(id, hide) {
+    try {
+      await db.doc("config/tabs").set({
+        settingsHidden: {
+          [id]: hide
+        }
+      }, {
+        merge: true
+      });
+    } catch (e) {
+      notify("SERVER REFUSED:\n" + e.message, "error");
+    }
+  }
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -11353,54 +11392,18 @@ function SettingsTab({
       marginBottom: 16,
       flexWrap: "wrap"
     }
-  }, subBtn("general", "⚙ General"), iAmOwner && subBtn("danger", "☠ Danger zone", true)), sub === "danger" && iAmOwner && /*#__PURE__*/React.createElement(DangerZone, {
+  }, visibleSubs.map(subBtn)), eff === "danger" && iAmOwner && /*#__PURE__*/React.createElement(DangerZone, {
     labs: labs,
     profile: profile,
     notify: notify
-  }), sub === "general" && /*#__PURE__*/React.createElement(React.Fragment, null, iAmOwner && /*#__PURE__*/React.createElement(ImportExcel, {
+  }), eff === "audit" && /*#__PURE__*/React.createElement(AuditTab, {
+    profile: profile,
+    notify: notify
+  }), eff === "import" && iAmOwner && /*#__PURE__*/React.createElement(ImportExcel, {
     labs: labs,
     profile: profile,
     notify: notify
-  }), /*#__PURE__*/React.createElement(CreateUser, {
-    brands: brands,
-    roleOptions: roleOptions,
-    notify: notify,
-    iAmOwner: iAmOwner
-  }), /*#__PURE__*/React.createElement("div", {
-    style: cardSt
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      fontWeight: 800,
-      color: "var(--c-text4)",
-      textTransform: "uppercase",
-      marginBottom: 10
-    }
-  }, "👥 Users (", users.filter(u => !isOwnerAcct(u) && !u.isAdmin).length, ")"), sortAlpha(users.filter(u => !isOwnerAcct(u) && !u.isAdmin), u => u.email).map(u => /*#__PURE__*/React.createElement(UserRow, {
-    key: u.id,
-    u: u,
-    brands: brands,
-    notify: notify,
-    me: profile
-  })), users.filter(u => !isOwnerAcct(u) && !u.isAdmin).length === 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12.5,
-      color: "var(--c-text4)"
-    }
-  }, "No users yet. Create one above."), /*#__PURE__*/React.createElement(RecoverProfileTool, {
-    me: profile,
-    notify: notify
-  })), /*#__PURE__*/React.createElement(AdminManager, {
-    users: users,
-    me: profile,
-    iAmOwner: iAmOwner,
-    brands: brands,
-    notify: notify
-  }), /*#__PURE__*/React.createElement(TabManager, {
-    profile: profile,
-    tabsCfg: tabsCfg,
-    notify: notify
-  }), /*#__PURE__*/React.createElement("div", {
+  }), eff === "people" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -11632,7 +11635,81 @@ function SettingsTab({
       } : d));
       setNeName("");
     }
-  }, "+ Add name"))), /*#__PURE__*/React.createElement("div", {
+  }, "+ Add name"))), /*#__PURE__*/React.createElement(CreateUser, {
+    brands: brands,
+    roleOptions: roleOptions,
+    notify: notify,
+    iAmOwner: iAmOwner
+  }), /*#__PURE__*/React.createElement("div", {
+    style: cardSt
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "var(--c-text4)",
+      textTransform: "uppercase",
+      marginBottom: 10
+    }
+  }, "👥 Users (", users.filter(u => !isOwnerAcct(u) && !u.isAdmin).length, ")"), sortAlpha(users.filter(u => !isOwnerAcct(u) && !u.isAdmin), u => u.email).map(u => /*#__PURE__*/React.createElement(UserRow, {
+    key: u.id,
+    u: u,
+    brands: brands,
+    notify: notify,
+    me: profile
+  })), users.filter(u => !isOwnerAcct(u) && !u.isAdmin).length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: "var(--c-text4)"
+    }
+  }, "No users yet. Create one above."), /*#__PURE__*/React.createElement(RecoverProfileTool, {
+    me: profile,
+    notify: notify
+  })), /*#__PURE__*/React.createElement(AdminManager, {
+    users: users,
+    me: profile,
+    iAmOwner: iAmOwner,
+    brands: brands,
+    notify: notify
+  })), eff === "visibility" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TabManager, {
+    profile: profile,
+    tabsCfg: tabsCfg,
+    notify: notify
+  }), /*#__PURE__*/React.createElement("div", {
+    style: cardSt
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "var(--c-text4)",
+      textTransform: "uppercase",
+      marginBottom: 10
+    }
+  }, "🙈 Settings Sub-Tabs"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text5)",
+      marginBottom: 12
+    }
+  }, "Tick a sub-tab to hide it from everyone. The owner always sees hidden sub-tabs, marked 🙈. Owner-only sub-tabs and this page can't be hidden."), SETTINGS_SUBS.filter(s => !s.ownerOnly && !s.noHide).map(s => /*#__PURE__*/React.createElement("label", {
+    key: s.id,
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center",
+      fontSize: 12.5,
+      marginBottom: 6,
+      cursor: "pointer"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: subHidden(s.id),
+    onChange: e => toggleSubHidden(s.id, e.target.checked)
+  }), s.label, " ", subHidden(s.id) && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10.5,
+      color: "var(--c-text5)"
+    }
+  }, "— hidden (owner still sees it)"))))), eff === "models" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -11754,7 +11831,7 @@ function SettingsTab({
       setNmModel("");
       setNmCode("");
     }
-  }, "+ Add model"))), /*#__PURE__*/React.createElement("div", {
+  }, "+ Add model")))), eff === "general" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -12841,9 +12918,6 @@ function App() {
   }, signedProfile.isAdmin && (!tabHidden(tabsCfg, "bin") || isOwnerAcct(user)) && {
     id: "bin",
     label: tabLabel(tabsCfg, "bin", "🗑 Bin")
-  }, signedProfile.isAdmin && (!tabHidden(tabsCfg, "audit") || isOwnerAcct(user)) && {
-    id: "audit",
-    label: tabLabel(tabsCfg, "audit", "🧾 Audit")
   }, signedProfile.isAdmin && {
     id: "settings",
     label: tabLabel(tabsCfg, "settings", "⚙ Settings")
@@ -13126,9 +13200,6 @@ function App() {
   }), tab === "bin" && signedProfile.isAdmin && /*#__PURE__*/React.createElement(BinTab, {
     profile: signedProfile,
     labs: labs,
-    notify: notify
-  }), tab === "audit" && signedProfile.isAdmin && /*#__PURE__*/React.createElement(AuditTab, {
-    profile: signedProfile,
     notify: notify
   }), tab === "settings" && signedProfile.isAdmin && /*#__PURE__*/React.createElement(SettingsTab, {
     profile: signedProfile,
