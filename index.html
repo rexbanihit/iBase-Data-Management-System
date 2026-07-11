@@ -1608,6 +1608,37 @@ async function uploadVisitAtts(pending, labId, machineId, visitId, byEmail) {
   }
   return metas;
 }
+// Open a stored visit attachment from its lightweight meta: fetch the full
+// record (which holds the dataUrl), then show images/PDFs in a new tab and
+// download anything else under its original name.
+async function openVisitAttachment(meta, notify) {
+  try {
+    const snap = await db.collection("attachments").doc(String(meta.id || "")).get();
+    if (!snap.exists) {
+      notify && notify("Attachment record not found (it may have been deleted).", "error");
+      return;
+    }
+    const d = snap.data() || {};
+    if (!d.dataUrl) {
+      notify && notify("Attachment has no stored content.", "error");
+      return;
+    }
+    const mime = String(d.mime || meta.mime || "");
+    if (/^image\//.test(mime) || mime === "application/pdf") {
+      const w2 = window.open("");
+      if (w2) w2.document.write(mime === "application/pdf" ? '<body style="margin:0"><embed src="' + d.dataUrl + '" type="application/pdf" style="width:100vw;height:100vh"></body>' : '<body style="margin:0;display:grid;place-items:center;background:#111"><img src="' + d.dataUrl + '" style="max-width:96vw;max-height:96vh"></body>');
+    } else {
+      const a2 = document.createElement("a");
+      a2.href = d.dataUrl;
+      a2.download = d.name || meta.name || "attachment";
+      document.body.appendChild(a2);
+      a2.click();
+      a2.remove();
+    }
+  } catch (e) {
+    notify && notify("Could not open the attachment: " + e.message, "error");
+  }
+}
 function brandFromModel(instrument, labBrand) {
   const cat = typeof window !== "undefined" && window.__ibaseCatalog || {};
   const models = Array.isArray(cat.machines) ? cat.machines : [];
@@ -5105,15 +5136,15 @@ function VisitModal({
   }, "— select —"), MACHINE_AFTER_STATUSES.map(s2 => /*#__PURE__*/React.createElement("option", {
     key: s2,
     value: s2
-  }, s2)))), f.type === "Software update" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }, s2)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Software version — updates the machine record"), /*#__PURE__*/React.createElement("input", {
+  }, "Software version", f.type === "Software update" ? " — will update the machine record" : ""), /*#__PURE__*/React.createElement("input", {
     style: inputSt(),
     value: f.softwareVersion,
     onChange: e => set("softwareVersion", e.target.value)
-  })), f.type === "Firmware update" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Firmware version — updates the machine record"), /*#__PURE__*/React.createElement("input", {
+  }, "Firmware version", f.type === "Firmware update" ? " — will update the machine record" : ""), /*#__PURE__*/React.createElement("input", {
     style: inputSt(),
     value: f.firmwareVersion,
     onChange: e => set("firmwareVersion", e.target.value)
@@ -5223,6 +5254,7 @@ function VisitModal({
     type: "file",
     accept: "image/*",
     capture: "environment",
+    multiple: true,
     style: {
       display: "none"
     },
@@ -7883,9 +7915,9 @@ const VGRID_COLS = [{
   get: null
 }, {
   id: "sig",
-  label: "✍",
-  w: 58,
-  sv: v => v.signature ? "1" : "0",
+  label: "Attachment",
+  w: 170,
+  sv: v => String((v.attachments || []).length),
   get: null
 }];
 function vgridLoad(key, fallback) {
@@ -8694,23 +8726,33 @@ function VisitsTab({
         key: id,
         style: base,
         onClick: e => e.stopPropagation()
-      }, grip, v.signature ? /*#__PURE__*/React.createElement("img", {
-        src: v.signature,
-        alt: "✍",
-        title: "Signed — click to enlarge",
+      }, grip, (v.attachments || []).length ? (v.attachments || []).map((a2, i2) => canDL(profile, "attachments", dl) ? /*#__PURE__*/React.createElement("a", {
+        key: a2.id || i2,
+        href: "#",
+        title: "Open " + (a2.name || "attachment") + (a2.size ? " (" + Math.round(a2.size / 1024) + " KB)" : ""),
         style: {
-          height: Math.min(h - 12, 42),
-          width: "auto",
-          background: "#fff",
-          borderRadius: 4,
-          border: "1px solid var(--c-border)",
-          cursor: "zoom-in"
+          display: "block",
+          fontSize: 11,
+          color: "var(--c-key)",
+          textDecoration: "none",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          maxWidth: 158
         },
-        onClick: () => {
-          const w2 = window.open("");
-          if (w2) w2.document.write('<body style="margin:0;display:grid;place-items:center;background:#111"><img src="' + v.signature + '" style="max-width:96vw"></body>');
+        onClick: async ev => {
+          ev.preventDefault();
+          await openVisitAttachment(a2, notify);
         }
-      }) : /*#__PURE__*/React.createElement("span", {
+      }, "📎 ", a2.name || "attachment") : /*#__PURE__*/React.createElement("span", {
+        key: a2.id || i2,
+        title: "Ask an administrator for download permission",
+        style: {
+          display: "block",
+          fontSize: 11,
+          color: "var(--c-text5)"
+        }
+      }, "🔒 ", a2.name || "attachment")) : /*#__PURE__*/React.createElement("span", {
         style: {
           color: "var(--c-text5)"
         }
