@@ -7755,12 +7755,6 @@ function AnalyticsTab({
 // Nothing is written to the database — no user's view can affect another's.
 const vTS = v => String(v.srcTimestamp || v.extra && (v.extra.Timestamp || v.extra.timestamp) || v.loggedAt || "");
 const VGRID_COLS = [{
-  id: "date",
-  label: "Date",
-  w: 100,
-  sv: v => String(v.date || ""),
-  get: v => fmtDate(v.date)
-}, {
   id: "ts",
   label: "Timestamp",
   w: 140,
@@ -7804,13 +7798,6 @@ const VGRID_COLS = [{
   sv: v => String(v._machine || ""),
   get: v => v._machine
 }, {
-  id: "reported",
-  label: "Date and Time reported",
-  w: 145,
-  sv: v => String(v.dtReported || ""),
-  get: v => (v.dtReported || "").replace("T", " ") || "—",
-  mono: true
-}, {
   id: "serial",
   label: "Serial number",
   w: 120,
@@ -7818,25 +7805,53 @@ const VGRID_COLS = [{
   get: v => v._sn,
   mono: true
 }, {
+  id: "isr",
+  label: "ISR no.",
+  w: 100,
+  sv: v => String(v.isrNo || ""),
+  get: v => v.isrNo || "—",
+  mono: true
+}, {
+  id: "reported",
+  label: "Date & Time reported",
+  w: 145,
+  sv: v => String(v.dtReported || ""),
+  get: v => (v.dtReported || "").replace("T", " ") || "—",
+  mono: true
+}, {
   id: "dep",
-  label: "Date and Time of Departure",
+  label: "Date & Time of Departure",
   w: 145,
   sv: v => String(v.dtDeparture || ""),
   get: v => (v.dtDeparture || "").replace("T", " ") || "—",
   mono: true
 }, {
   id: "arracct",
-  label: "Date and Time of Arrival to Account",
+  label: "Date & Time of Arrival to Account",
   w: 150,
   sv: v => String(v.dtArrivalAccount || ""),
   get: v => (v.dtArrivalAccount || "").replace("T", " ") || "—",
   mono: true
 }, {
   id: "wstart",
-  label: "Date and Time work started",
+  label: "Date & Time work started",
   w: 145,
   sv: v => String(v.dtWorkStarted || ""),
   get: v => (v.dtWorkStarted || "").replace("T", " ") || "—",
+  mono: true
+}, {
+  id: "wend",
+  label: "Date & Time work ended",
+  w: 145,
+  sv: v => String(v.dtWorkEnded || ""),
+  get: v => (v.dtWorkEnded || "").replace("T", " ") || "—",
+  mono: true
+}, {
+  id: "arrhome",
+  label: "Date & Time of Arrival to Home",
+  w: 150,
+  sv: v => String(v.dtArrivalHome || ""),
+  get: v => (v.dtArrivalHome || "").replace("T", " ") || "—",
   mono: true
 }, {
   id: "problem",
@@ -7869,13 +7884,6 @@ const VGRID_COLS = [{
   sv: v => String(v.endorsedTo || ""),
   get: v => v.endorsedTo || "—"
 }, {
-  id: "wend",
-  label: "Date and Time work ended",
-  w: 145,
-  sv: v => String(v.dtWorkEnded || ""),
-  get: v => (v.dtWorkEnded || "").replace("T", " ") || "—",
-  mono: true
-}, {
   id: "priority",
   label: "Priority",
   w: 90,
@@ -7886,27 +7894,19 @@ const VGRID_COLS = [{
   label: "Description of Work",
   w: 230,
   sv: v => String(v.remarks || "") + " " + extraFold(v),
-  get: v => (v.remarks || "") + (extraFold(v) ? (v.remarks ? "  " : "") + extraFold(v) : "") || ""
-}, {
-  id: "isr",
-  label: "ISR no.",
-  w: 100,
-  sv: v => String(v.isrNo || ""),
-  get: v => v.isrNo || "—",
-  mono: true
-}, {
-  id: "arrhome",
-  label: "Date and Time of Arrival to Home",
-  w: 150,
-  sv: v => String(v.dtArrivalHome || ""),
-  get: v => (v.dtArrivalHome || "").replace("T", " ") || "—",
-  mono: true
+  get: v => (v.remarks || "") + (extraFold(v) ? (v.remarks ? " · " : "") + extraFold(v) : "") || "—"
 }, {
   id: "swver",
   label: "Software Version",
   w: 110,
   sv: v => String(v.softwareVersion || ""),
   get: v => v.softwareVersion || "—"
+}, {
+  id: "fwver",
+  label: "Firmware Version",
+  w: 110,
+  sv: v => String(v.firmwareVersion || ""),
+  get: v => v.firmwareVersion || "—"
 }, {
   id: "logged",
   label: "Logged by",
@@ -8029,17 +8029,17 @@ function VisitsTab({
   // ---- layout (persisted in THIS browser only) ----
   const defOrder = VGRID_COLS.map(c => c.id);
   const [colOrder, setColOrder] = useState(() => {
-    const s = vgridLoad("ibase_v_cols", defOrder);
+    const s = vgridLoad("ibase_v_cols_v2", defOrder);
     const valid = s.filter(id => defOrder.includes(id));
     return [...valid, ...defOrder.filter(id => !valid.includes(id))];
   });
   const [colW, setColW] = useState(() => vgridLoad("ibase_v_colw", {}));
-  const [hiddenCols, setHiddenCols] = useState(() => (vgridLoad("ibase_v_hidden", []) || []).filter(id => defOrder.includes(id)));
+  const [hiddenCols, setHiddenCols] = useState(() => (vgridLoad("ibase_v_hidden_v2", []) || []).filter(id => defOrder.includes(id)));
   const [colMenu, setColMenu] = useState(false);
   const [rowH, setRowH] = useState(() => vgridLoad("ibase_v_rowh", 40));
-  useEffect(() => vgridSave("ibase_v_cols", colOrder), [colOrder]);
+  useEffect(() => vgridSave("ibase_v_cols_v2", colOrder), [colOrder]);
   useEffect(() => vgridSave("ibase_v_colw", colW), [colW]);
-  useEffect(() => vgridSave("ibase_v_hidden", hiddenCols), [hiddenCols]);
+  useEffect(() => vgridSave("ibase_v_hidden_v2", hiddenCols), [hiddenCols]);
   const visibleOrder = colOrder.filter(id => !hiddenCols.includes(id));
   useEffect(() => vgridSave("ibase_v_rowh", rowH), [rowH]);
   // ---- sort + selection (session-local) ----
