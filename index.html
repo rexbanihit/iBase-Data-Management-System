@@ -2991,6 +2991,12 @@ function isPull(m) {
 // ── Institutions (labs + machines + visits) ─────────────────────────────────
 const VISIT_TYPES = ["PM", "Corrective", "Installation", "Pull-out", "Validation", "Calibration", "Demo", "Training", "Travel", "Office Repair", "Documentation", "Pro-active Visit", "Site Survey", "Phone support", "Offset", "Vacation leave", "Sick leave", "Weekly visit", "Emergency leave", "Not Applicable", "Software update", "Firmware update"];
 const MACHINE_STATUSES = ["Active", "Under Repair", "For Follow-up", "Pulled-out", "Scrapped", "Travel", "Not Applicable"];
+// "Instrument after the visit" — the fixed iBase_v127 vocabulary. These exact
+// strings drive machine history and the PM scheduler: the pull-out chain
+// recognizes Pulled-out / Scrapped / Decommissioned / "Instrument is ready for
+// pull-out" (case-insensitively), and "Not Applicable" / "Travel" never
+// overwrite the machine's standing status.
+const MACHINE_AFTER_STATUSES = ["Not Applicable", "PM Completed", "Fully Functional", "Functional but Under Observation", "Under Observation", "For Further Repair", "Functional but for Further Repair", "Awaiting Engineer", "Pending Parts", "Decommissioned", "Pulled-out", "Travel", "Scrapped", "Functional - Need Spare Parts", "Repaired", "Instrument is ready for pull-out"];
 function LabsTab({
   labs,
   profile,
@@ -3958,6 +3964,7 @@ function LabDetail({
       if (await saveMachines((lab.machines || []).map(x => x.id === m.id ? m : x), "Machine updated.")) setEditingM(null);
     }
   }), editVisit && /*#__PURE__*/React.createElement(VisitModal, {
+    labName: lab.name,
     statusOptions: statusOptions,
     machine: editVisit.machine,
     engineerOptions: engineerOptions,
@@ -4086,6 +4093,7 @@ function LabDetail({
       }
     }
   }), visitFor && /*#__PURE__*/React.createElement(VisitModal, {
+    labName: lab.name,
     statusOptions: statusOptions,
     machine: visitFor,
     engineerOptions: engineerOptions,
@@ -4111,7 +4119,7 @@ function LabDetail({
         if (m.id !== visitFor.id) return m;
         let nm = {
           ...m,
-          status: newStatus && newStatus !== "Not Applicable" && newStatus !== "Travel" ? newStatus : m.status,
+          status: newStatus && !/^(not applicable|travel)$/i.test(newStatus) ? newStatus : m.status,
           software: v.type === "Software update" && v.softwareVersion ? v.softwareVersion : m.software || "",
           firmware: v.type === "Firmware update" && v.firmwareVersion ? v.firmwareVersion : m.firmware || "",
           visits: [...(m.visits || []), stamped]
@@ -4615,6 +4623,7 @@ function NameSelect({
 }
 function VisitModal({
   machine,
+  labName,
   engineerOptions,
   statusOptions,
   customFields,
@@ -4706,10 +4715,22 @@ function VisitModal({
     }
   }
   return /*#__PURE__*/React.createElement(Modal, {
-    title: (initial ? "Edit Visit — " : "Log Visit — ") + machine.instrument + " (" + machine.serialNo + ")",
+    title: (initial ? "Edit Visit — " : "Log Visit — ") + (labName ? labName + " · " : "") + machine.instrument + " (SN " + machine.serialNo + ")",
     onClose: onClose,
     wide: true
-  }, initial && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      margin: "-2px 0 14px",
+      padding: "9px 13px",
+      borderRadius: 9,
+      background: "var(--c-card2)",
+      border: "1px solid var(--c-key)",
+      fontSize: 12.5,
+      display: "flex",
+      gap: 14,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("span", null, "🏥 Laboratory: ", /*#__PURE__*/React.createElement("b", null, labName || "—")), /*#__PURE__*/React.createElement("span", null, "🔬 Machine: ", /*#__PURE__*/React.createElement("b", null, machine.instrument || "—")), /*#__PURE__*/React.createElement("span", null, "🔢 Serial: ", /*#__PURE__*/React.createElement("b", null, machine.serialNo || "—"))), initial && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11.5,
       color: "#f59e0b",
@@ -4897,18 +4918,19 @@ function VisitModal({
     value: o
   }, o || "— select —")))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Instrument after the visit"), /*#__PURE__*/React.createElement("input", {
-    list: "ib-mstat",
-    style: inputSt(),
+  }, "Instrument after the visit"), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      cursor: "pointer"
+    },
     value: f.machineStatus,
-    onChange: e => set("machineStatus", e.target.value),
-    placeholder: "type freely — past entries suggested"
-  }), /*#__PURE__*/React.createElement("datalist", {
-    id: "ib-mstat"
-  }, (statusOptions || []).map(s2 => /*#__PURE__*/React.createElement("option", {
+    onChange: e => set("machineStatus", e.target.value)
+  }, !MACHINE_AFTER_STATUSES.includes(f.machineStatus) && f.machineStatus ? /*#__PURE__*/React.createElement("option", {
+    value: f.machineStatus
+  }, f.machineStatus, " (legacy)") : null, MACHINE_AFTER_STATUSES.map(s2 => /*#__PURE__*/React.createElement("option", {
     key: s2,
     value: s2
-  })))), f.type === "Software update" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }, s2)))), f.type === "Software update" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Software version — updates the machine record"), /*#__PURE__*/React.createElement("input", {
     style: inputSt(),
@@ -7723,7 +7745,7 @@ function VisitsTab({
       if (m.id !== machine.id) return m;
       let nm = {
         ...m,
-        status: newStatus && newStatus !== "Not Applicable" && newStatus !== "Travel" ? newStatus : m.status,
+        status: newStatus && !/^(not applicable|travel)$/i.test(newStatus) ? newStatus : m.status,
         software: v.type === "Software update" && v.softwareVersion ? v.softwareVersion : m.software || "",
         firmware: v.type === "Firmware update" && v.firmwareVersion ? v.firmwareVersion : m.firmware || "",
         visits: (m.visits || []).map(x => x.id === orig.id ? updated : x)
@@ -7948,6 +7970,7 @@ function VisitsTab({
       color: "var(--c-text3)"
     }
   }, "🔒 Visit editing is ", /*#__PURE__*/React.createElement("b", null, "off"), ". An administrator can turn it on in ", /*#__PURE__*/React.createElement("b", null, "Settings → Tabs & Visibility → Visit / LOGS Corrections"), "; then click any row to correct it (every change is kept in its history)."), editV && /*#__PURE__*/React.createElement(VisitModal, {
+    labName: editV._lab,
     statusOptions: statusOptionsV,
     machine: {
       id: editV._mId,
