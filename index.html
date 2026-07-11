@@ -1757,6 +1757,18 @@ async function binIt(kind, label, payload, byEmail) {
 // lastPM date and its most recent logged PM visit (via pmAnchor), then next PM
 // recomputed from the interval. This mirrors iBase v126 exactly, so the flag can
 // never be stale even if the stored nextPM wasn't refreshed.
+// The machine's standing status follows its MOST RECENT visit's
+// "instrument after the visit" — ignoring Not Applicable / Travel, which are
+// non-committal. Editing any visit recomputes this so the PM flag and machine
+// history stay in agreement with the corrected timeline.
+function statusFromVisits(m, fallback) {
+  const vs = (Array.isArray(m && m.visits) ? m.visits : []).slice().sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+  for (let i = vs.length - 1; i >= 0; i--) {
+    const s = String(vs[i].machineStatus || "").trim();
+    if (s && !/^(not applicable|travel)$/i.test(s)) return s;
+  }
+  return fallback != null ? fallback : m && m.status || "Active";
+}
 function pmComputedNext(m) {
   if (!m) return "";
   // latest PM evidence = later of lastPM and the newest PM-type visit date
@@ -4005,6 +4017,8 @@ function LabDetail({
           ...m,
           visits: (m.visits || []).map(x => x.id === orig.id ? updated : x)
         };
+        // status follows the most-recent visit after the correction → PM flag updates
+        nm.status = statusFromVisits(nm, m.status);
         // keep the PM schedule truthful after a corrected PM date/type
         const pmDates = nm.visits.filter(x => String(x.type || "").toUpperCase() === "PM" && x.date).map(x => x.date).sort();
         if (pmDates.length && (!nm.lastPM || pmDates[pmDates.length - 1] !== nm.lastPM)) {
@@ -4119,11 +4133,11 @@ function LabDetail({
         if (m.id !== visitFor.id) return m;
         let nm = {
           ...m,
-          status: newStatus && !/^(not applicable|travel)$/i.test(newStatus) ? newStatus : m.status,
           software: v.type === "Software update" && v.softwareVersion ? v.softwareVersion : m.software || "",
           firmware: v.type === "Firmware update" && v.firmwareVersion ? v.firmwareVersion : m.firmware || "",
           visits: [...(m.visits || []), stamped]
         };
+        nm.status = statusFromVisits(nm, m.status);
         // PM VISIT RENEWS THE SCHEDULE (v126 behavior): advance lastPM, recompute next PM.
         if (String(v.type).toUpperCase() === "PM" && v.date && (!nm.lastPM || v.date > nm.lastPM)) {
           nm.lastPM = v.date;
@@ -7745,11 +7759,12 @@ function VisitsTab({
       if (m.id !== machine.id) return m;
       let nm = {
         ...m,
-        status: newStatus && !/^(not applicable|travel)$/i.test(newStatus) ? newStatus : m.status,
         software: v.type === "Software update" && v.softwareVersion ? v.softwareVersion : m.software || "",
         firmware: v.type === "Firmware update" && v.firmwareVersion ? v.firmwareVersion : m.firmware || "",
         visits: (m.visits || []).map(x => x.id === orig.id ? updated : x)
       };
+      // status follows the most-recent visit AFTER the correction, so the PM flag updates
+      nm.status = statusFromVisits(nm, m.status);
       const pmDates = nm.visits.filter(x => String(x.type || "").toUpperCase() === "PM" && x.date).map(x => x.date).sort();
       if (pmDates.length && (!nm.lastPM || pmDates[pmDates.length - 1] !== nm.lastPM)) {
         nm.lastPM = pmDates[pmDates.length - 1];
