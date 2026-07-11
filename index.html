@@ -346,7 +346,11 @@ function computeEngineerOt(engineerName, allVisits, otSettings, holidayMap) {
   (allVisits || []).forEach(function (v) {
     var involved = v.engineer === engineerName || v.engineer2 === engineerName || v.engineer3 === engineerName;
     if (!involved) return;
-    var start = otParseDT(v.dtDeparture) || otParseDT(v.dtWorkStarted);
+    // START of OT (the 6:30 PM-onwards rule anchors here), by priority:
+    //   1) Time & Date reported  2) Date & time of departure
+    //   3) Date & time of arrival to account  4) Date & time work started
+    var start = otParseDT(v.dtReported) || otParseDT(v.dtDeparture) || otParseDT(v.dtArrivalAccount) || otParseDT(v.dtWorkStarted);
+    // END of OT: arrival home wins when present, else work ended.
     var end   = otParseDT(v.dtArrivalHome) || otParseDT(v.dtWorkEnded);
     if (!start || !end || end.getTime() <= start.getTime()) { if (v.date) incompleteCount++; return; }
     var dateKey = v.date || start.toISOString().slice(0, 10);
@@ -1675,6 +1679,15 @@ const OWNER_EMAIL = "rexbanihit@gmail.com"; // the durable owner identity
 // The sole-owner's email must not appear ANYWHERE — not in new stamps, not in
 // old stored data. Every identity WRITE passes through scrubOwner, and every
 // identity RENDER/EXPORT does too (so legacy records display as "—").
+// ⬇ Download permissions. The sole-owner can ALWAYS download; everyone else
+// (administrators included) needs an explicit per-surface grant, configured by
+// administrators in Settings → Users → Download permissions.
+const DL_SURFACES = [["backup", "Full database export (⬇ Download)"], ["logs", "LOGS tab — export the visit grid (xlsx)"], ["attachments", "Visit attachments — download files/photos"]];
+function canDL(profile, key, dlCfg) {
+  if (isOwnerAcct(profile)) return true;
+  const uid2 = profile && profile.id || "";
+  return !!(dlCfg && dlCfg[uid2] && dlCfg[uid2][key]);
+}
 function scrubOwner(e) {
   const s = String(e || "").trim();
   return s && s.toLowerCase() === OWNER_EMAIL ? "" : s;
@@ -3039,12 +3052,13 @@ const MACHINE_STATUSES = ["Active", "Under Repair", "For Follow-up", "Pulled-out
 // recognizes Pulled-out / Scrapped / Decommissioned / "Instrument is ready for
 // pull-out" (case-insensitively), and "Not Applicable" / "Travel" never
 // overwrite the machine's standing status.
-const MACHINE_AFTER_STATUSES = ["Not Applicable", "PM Completed", "Fully Functional", "Functional but Under Observation", "Under Observation", "For Further Repair", "Functional but for Further Repair", "Awaiting Engineer", "Pending Parts", "Decommissioned", "Pulled-out", "Travel", "Scrapped", "Functional - Need Spare Parts", "Repaired", "Instrument is ready for pull-out"];
+const MACHINE_AFTER_STATUSES = ["Not Applicable", "System Restored", "PM Completed", "Fully Functional", "Functional but Under Observation", "Under Observation", "For Further Repair", "Functional but for Further Repair", "Awaiting Engineer", "Pending Parts", "Decommissioned", "Pulled-out", "Travel", "Scrapped", "Functional - Need Spare Parts", "Repaired", "Instrument is ready for pull-out"];
 function LabsTab({
   labs,
   profile,
   catalog,
   inventory,
+  dl,
   notify
 }) {
   const canEdit = pCanTab(profile, "labs", "edit");
@@ -3059,6 +3073,8 @@ function LabsTab({
       return "cards";
     }
   });
+  const [showEmpty, setShowEmpty] = useState(false);
+  const activeMachines = l => (l.machines || []).filter(m => !(isPull(m) || retiredStatus(m.status)));
   useEffect(() => {
     try {
       localStorage.setItem("ibase_labs_view", view);
@@ -3103,7 +3119,9 @@ function LabsTab({
     _next: pmComputedNext(m)
   }))), [labs]);
   const matchesFilters = m => (!instF || String(m.instrument || "").trim() === instF) && (!brandF || brandFromModel(m.instrument, (labs.find(l => (l.machines || []).some(x => x.id === m.id)) || {}).brand) === brandF) && (!flagF || pmFlag(m) === flagF) && (!(pmFrom || pmTo) || m._next && (!pmFrom || m._next >= pmFrom) && (!pmTo || m._next <= pmTo));
+  const emptyLabs = labs.filter(l => activeMachines(l).length === 0);
   const shown = labs.filter(l => {
+    if (!showEmpty && activeMachines(l).length === 0) return false;
     if ((instF || brandF || flagF) && !(l.machines || []).some(matchesFilters)) return false;
     const s = q.toLowerCase();
     if (!s) return true;
@@ -3355,7 +3373,24 @@ function LabsTab({
       marginLeft: "auto"
     },
     onClick: () => setAdding(true)
-  }, "+ New Laboratory")), view === "table" && /*#__PURE__*/React.createElement("div", {
+  }, "+ New Laboratory")), emptyLabs.length > 0 && /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+      fontSize: 11.5,
+      color: "var(--c-text3)",
+      cursor: "pointer",
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: showEmpty,
+    onChange: e => setShowEmpty(e.target.checked),
+    style: {
+      cursor: "pointer"
+    }
+  }), "Show ", emptyLabs.length, " hidden laborator", emptyLabs.length === 1 ? "y" : "ies", " with no active machines"), view === "table" && /*#__PURE__*/React.createElement("div", {
     style: {
       ...cardSt,
       overflow: "auto",
@@ -3377,6 +3412,7 @@ function LabsTab({
     key: c.id,
     style: {
       ...thSt,
+      textAlign: c.id === "flag" ? "center" : "left",
       cursor: "pointer",
       userSelect: "none",
       position: "sticky",
@@ -3423,7 +3459,10 @@ function LabsTab({
   }, m.installDate ? fmtDate(m.installDate) : "—"), /*#__PURE__*/React.createElement("td", {
     style: tdSt
   }, m._next ? fmtDate(m._next) : "—"), /*#__PURE__*/React.createElement("td", {
-    style: tdSt
+    style: {
+      ...tdSt,
+      textAlign: "center"
+    }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       display: "inline-block",
@@ -3454,7 +3493,7 @@ function LabsTab({
       gap: 12
     }
   }, shown.map(lab => {
-    const ms = (lab.machines || []).filter(m => !isPull(m));
+    const ms = activeMachines(lab);
     const worst = ms.some(m => pmFlag(m) === "Overdue") ? "Overdue" : ms.some(m => pmFlag(m) === "Due This Month") ? "Due This Month" : ms.some(m => pmFlag(m) === "Due Next Month") ? "Due Next Month" : "OK";
     const accent = FLAG_COLORS[worst];
     return /*#__PURE__*/React.createElement("div", {
@@ -3593,6 +3632,7 @@ function LabsTab({
     profile: profile,
     catalog: catalog,
     inventory: inventory,
+    dl: dl,
     notify: notify,
     onBack: () => setOpenLab(null)
   }));
@@ -3743,6 +3783,7 @@ function LabDetail({
   profile,
   catalog,
   inventory,
+  dl,
   notify,
   onBack
 }) {
@@ -4018,6 +4059,7 @@ function LabDetail({
       if (await saveMachines((lab.machines || []).map(x => x.id === nm.id ? nm : x), "Machine updated.")) setEditingM(null);
     }
   }), editVisit && /*#__PURE__*/React.createElement(VisitModal, {
+    canDlAtt: canDL(profile, "attachments", dl),
     labName: lab.name,
     statusOptions: statusOptions,
     machine: editVisit.machine,
@@ -4101,7 +4143,7 @@ function LabDetail({
       color: "var(--c-text5)",
       fontSize: 11
     }
-  }, Math.round((a.size || 0) / 1024), "KB"), a.dataUrl && /*#__PURE__*/React.createElement("a", {
+  }, Math.round((a.size || 0) / 1024), "KB"), a.dataUrl && (canDlAtt ? /*#__PURE__*/React.createElement("a", {
     href: a.dataUrl,
     download: a.name,
     style: {
@@ -4109,7 +4151,14 @@ function LabDetail({
       fontSize: 11.5,
       color: "var(--c-key)"
     }
-  }, "⬇ Download")), a.kind === "image" && a.dataUrl && /*#__PURE__*/React.createElement("img", {
+  }, "⬇ Download") : /*#__PURE__*/React.createElement("span", {
+    title: "Ask an administrator for download permission (Settings → Users → Download permissions)",
+    style: {
+      marginLeft: "auto",
+      fontSize: 11.5,
+      color: "var(--c-text5)"
+    }
+  }, "🔒"))), a.kind === "image" && a.dataUrl && /*#__PURE__*/React.createElement("img", {
     src: a.dataUrl,
     alt: a.name,
     style: {
@@ -4149,6 +4198,7 @@ function LabDetail({
       }
     }
   }), visitFor && /*#__PURE__*/React.createElement(VisitModal, {
+    canDlAtt: canDL(profile, "attachments", dl),
     labName: lab.name,
     statusOptions: statusOptions,
     machine: visitFor,
@@ -4736,6 +4786,7 @@ function VisitModal({
   statusOptions,
   customFields,
   canEditFields,
+  canDlAtt,
   notify,
   initial,
   onClose,
@@ -4852,7 +4903,11 @@ function VisitModal({
     }
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Type of Visit"), /*#__PURE__*/React.createElement("select", {
+  }, "Type of Visit ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#f87171"
+    }
+  }, "*")), /*#__PURE__*/React.createElement("select", {
     style: inputSt(),
     value: f.type,
     onChange: e => set("type", e.target.value)
@@ -4860,7 +4915,11 @@ function VisitModal({
     key: t
   }, t)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Support Type"), /*#__PURE__*/React.createElement("select", {
+  }, "Support Type ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#f87171"
+    }
+  }, "*")), /*#__PURE__*/React.createElement("select", {
     style: {
       ...inputSt(),
       cursor: "pointer"
@@ -4928,7 +4987,11 @@ function VisitModal({
     }
   }, "No names registered — add employees under a department named “…Engineering” or “…Specialist” (Settings → Employees).")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "ISR number"), /*#__PURE__*/React.createElement("input", {
+  }, "ISR number ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#f87171"
+    }
+  }, "*")), /*#__PURE__*/React.createElement("input", {
     style: inputSt(),
     value: f.isrNo,
     onChange: e => set("isrNo", e.target.value)
@@ -4955,7 +5018,11 @@ function VisitModal({
     onChange: e => set("dtArrivalAccount", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Date & time work started"), /*#__PURE__*/React.createElement("input", {
+  }, "Date & time work started ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#f87171"
+    }
+  }, "*")), /*#__PURE__*/React.createElement("input", {
     type: "datetime-local",
     style: inputSt(),
     value: f.dtWorkStarted,
@@ -4976,7 +5043,11 @@ function VisitModal({
     onChange: e => set("problemDesc", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "System Condition"), /*#__PURE__*/React.createElement("select", {
+  }, "System Condition ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#f87171"
+    }
+  }, "*")), /*#__PURE__*/React.createElement("select", {
     style: {
       ...inputSt(),
       cursor: "pointer"
@@ -5004,7 +5075,11 @@ function VisitModal({
     }
   }, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Description of Work"), /*#__PURE__*/React.createElement("textarea", {
+  }, "Description of Work ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#f87171"
+    }
+  }, "*")), /*#__PURE__*/React.createElement("textarea", {
     style: {
       ...inputSt(),
       minHeight: 64,
@@ -5014,26 +5089,20 @@ function VisitModal({
     onChange: e => set("remarks", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Instrument Status"), /*#__PURE__*/React.createElement("select", {
+  }, "Instrument after the visit ", /*#__PURE__*/React.createElement("span", {
     style: {
-      ...inputSt(),
-      cursor: "pointer"
-    },
-    value: f.instrumentStatus,
-    onChange: e => set("instrumentStatus", e.target.value)
-  }, ["", "Not applicable", "System restored", "PM completed", "Under observation", "For further repair"].map(o => /*#__PURE__*/React.createElement("option", {
-    key: o,
-    value: o
-  }, o || "— select —")))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Instrument after the visit"), /*#__PURE__*/React.createElement("select", {
+      color: "#f87171"
+    }
+  }, "*")), /*#__PURE__*/React.createElement("select", {
     style: {
       ...inputSt(),
       cursor: "pointer"
     },
     value: f.machineStatus,
     onChange: e => set("machineStatus", e.target.value)
-  }, MACHINE_AFTER_STATUSES.map(s2 => /*#__PURE__*/React.createElement("option", {
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "— select —"), MACHINE_AFTER_STATUSES.map(s2 => /*#__PURE__*/React.createElement("option", {
     key: s2,
     value: s2
   }, s2)))), f.type === "Software update" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
@@ -5070,7 +5139,11 @@ function VisitModal({
     onChange: e => set("endorsedTo", e.target.value)
   })), /*#__PURE__*/React.createElement("div", null), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
-  }, "Date & time work ended"), /*#__PURE__*/React.createElement("input", {
+  }, "Date & time work ended ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#f87171"
+    }
+  }, "*")), /*#__PURE__*/React.createElement("input", {
     type: "datetime-local",
     style: inputSt(),
     value: f.dtWorkEnded,
@@ -5232,6 +5305,12 @@ function VisitModal({
       marginTop: 16
     },
     onClick: () => {
+      const need = [[f.type && f.type !== "Not Applicable", "Type of Visit"], [f.supportType, "Support Type"], [String(f.isrNo || "").trim(), "ISR number"], [f.dtWorkStarted, "Date & time work started"], [f.dtWorkEnded, "Date & time work ended"], [f.systemCondition, "System Condition"], [String(f.remarks || "").trim(), "Description of Work"], [f.machineStatus, "Instrument after the visit"]];
+      const missing = need.filter(x => !x[0]).map(x => x[1]);
+      if (missing.length) {
+        notify("Please complete the required field(s):\n• " + missing.join("\n• "), "error");
+        return;
+      }
       const dISO = String(f.dtWorkStarted || f.dtWorkEnded || f.dtArrivalAccount || f.dtDeparture || f.dtReported || f.dtArrivalHome || "").slice(0, 10);
       onSave({
         id: initial ? initial.id : uid(),
@@ -5246,8 +5325,14 @@ function VisitModal({
   }, "Save visit"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10.5,
-      color: "var(--c-text5)",
+      color: "#f87171",
       marginTop: 8
+    }
+  }, "* required field"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: "var(--c-text5)",
+      marginTop: 4
     }
   }, "Travel and leave/administrative visit types are excluded from engineer analytics and count toward Overtime only via their time fields."));
 }
@@ -7820,6 +7905,7 @@ function VisitsTab({
   labs,
   profile,
   catalog,
+  dl,
   notify
 }) {
   const canEditLabs = pCanTab(profile, "labs", "edit") || profile.isAdmin;
@@ -8100,6 +8186,7 @@ function VisitsTab({
       color: "var(--c-text3)"
     }
   }, "🔒 Visit editing is ", /*#__PURE__*/React.createElement("b", null, "off"), ". An administrator can turn it on in ", /*#__PURE__*/React.createElement("b", null, "Settings → Tabs & Visibility → Visit / LOGS Corrections"), "; then click any row to correct it (every change is kept in its history)."), editV && /*#__PURE__*/React.createElement(VisitModal, {
+    canDlAtt: canDL(profile, "attachments", dl),
     labName: editV._lab,
     statusOptions: statusOptionsV,
     machine: {
@@ -8269,7 +8356,30 @@ function VisitsTab({
     }
   }, /*#__PURE__*/React.createElement("label", {
     style: _lblS
-  }, "Columns"), /*#__PURE__*/React.createElement("button", {
+  }, "Columns"), canDL(profile, "logs", dl) && /*#__PURE__*/React.createElement("button", {
+    title: "Export the CURRENT view — the rows and columns you see, after filters",
+    style: {
+      ...btnSt("var(--c-border)", "var(--c-text2)"),
+      marginRight: 6
+    },
+    onClick: () => {
+      try {
+        const cols = VGRID_COLS.filter(c => !hiddenCols.includes(c.id) && c.id !== "sel" && c.id !== "act" && c.id !== "sig");
+        const header = cols.map(c => c.label);
+        const rows2 = shown.map(v => cols.map(c => {
+          const x = c.sv ? c.sv(v) : "";
+          return x == null ? "" : String(x);
+        }));
+        const ws = XLSX.utils.aoa_to_sheet([header, ...rows2]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "LOGS");
+        XLSX.writeFile(wb, "iBase_LOGS_" + today() + ".xlsx");
+        logAudit(profile, "download.logs", shown.length + " row(s), " + cols.length + " column(s)");
+      } catch (e) {
+        notify("Export failed: " + e.message, "error");
+      }
+    }
+  }, "⬇ Export"), /*#__PURE__*/React.createElement("button", {
     title: "Show or hide columns — affects only YOUR view, never other users' layouts",
     style: {
       ...btnSt("var(--c-border)", "var(--c-text2)"),
@@ -8767,6 +8877,7 @@ function BackupButton({
       const wb = XLSX.utils.book_new();
       Object.keys(sheets).forEach(name => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheets[name]), name.slice(0, 31)));
       XLSX.writeFile(wb, "iBase_backup_" + today() + ".xlsx");
+      logAudit(profile, "download.backup", "full multi-sheet export");
       logAudit(profile, "backup.export", "Full XLSX backup downloaded");
       notify("Backup downloaded. Keep it somewhere safe — it is your off-site restore point.", "ok");
     } catch (e) {
@@ -9604,7 +9715,7 @@ function OvertimeTab({
     const dayVisits = dateKey => allVisits.filter(v => {
       const involved = v.engineer === engName || v.engineer2 === engName || v.engineer3 === engName;
       if (!involved) return false;
-      const s = otParseDT(v.dtDeparture) || otParseDT(v.dtWorkStarted);
+      const s = otParseDT(v.dtReported) || otParseDT(v.dtDeparture) || otParseDT(v.dtArrivalAccount) || otParseDT(v.dtWorkStarted);
       const e = otParseDT(v.dtArrivalHome) || otParseDT(v.dtWorkEnded);
       if (!s || !e || e.getTime() <= s.getTime()) return false;
       return (v.date || s.toISOString().slice(0, 10)) === dateKey;
@@ -9756,7 +9867,7 @@ function OvertimeTab({
         marginBottom: 6
       }
     }, "How these hours were computed"), dayVisits(d.date).map((v, i) => {
-      const s = otParseDT(v.dtDeparture) || otParseDT(v.dtWorkStarted);
+      const s = otParseDT(v.dtReported) || otParseDT(v.dtDeparture) || otParseDT(v.dtArrivalAccount) || otParseDT(v.dtWorkStarted);
       const e = otParseDT(v.dtArrivalHome) || otParseDT(v.dtWorkEnded);
       return /*#__PURE__*/React.createElement("div", {
         key: v.id || i,
@@ -9769,7 +9880,7 @@ function OvertimeTab({
         style: {
           color: "var(--c-text5)"
         }
-      }, " (", v.dtDeparture ? "departure" : "work started", " → ", v.dtArrivalHome ? "arrival home" : "work ended", ")"));
+      }, " (", v.dtReported ? "reported" : v.dtDeparture ? "departure" : v.dtArrivalAccount ? "arrival to account" : "work started", " → ", v.dtArrivalHome ? "arrival home" : "work ended", ")"));
     }), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 11,
@@ -11970,7 +12081,8 @@ function SettingsTab({
   catalog,
   tabsCfg,
   labs,
-  notify
+  notify,
+  dlCfg
 }) {
   const iAmOwner = isOwnerAcct(profile) || isOwnerAcct(auth.currentUser);
   const brands = sortAlpha(catalog && catalog.brands || []);
@@ -12676,7 +12788,86 @@ function SettingsTab({
     roleOptions: roleOptions,
     notify: notify,
     me: profile
-  })), users.filter(u => !isOwnerAcct(u) && !u.isAdmin).length === 0 && /*#__PURE__*/React.createElement("div", {
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: cardSt
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "var(--c-text4)",
+      textTransform: "uppercase",
+      marginBottom: 8
+    }
+  }, "⬇ Download permissions"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text5)",
+      marginBottom: 12
+    }
+  }, "Who may ", /*#__PURE__*/React.createElement("b", null, "extract/download"), " from iBase. Default: ", /*#__PURE__*/React.createElement("b", null, "nobody"), " — only the owner can always download. Tick a box to grant that user the surface; untick to revoke. Applies to administrators too."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "minmax(180px,1.4fr) repeat(" + DL_SURFACES.length + ", 1fr)",
+      gap: 6,
+      alignItems: "center",
+      fontSize: 11.5
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      color: "var(--c-text4)"
+    }
+  }, "User"), DL_SURFACES.map(([k, label]) => /*#__PURE__*/React.createElement("div", {
+    key: k,
+    style: {
+      fontWeight: 800,
+      color: "var(--c-text4)"
+    },
+    title: label
+  }, label.split(" — ")[0])), sortAlpha(users.filter(u => !isOwnerAcct(u)), u => u.email).map(u => /*#__PURE__*/React.createElement(React.Fragment, {
+    key: u.id
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    },
+    title: u.email
+  }, u.email, u.isAdmin ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#38bdf8",
+      fontSize: 10
+    }
+  }, " · admin") : null), DL_SURFACES.map(([k]) => /*#__PURE__*/React.createElement("div", {
+    key: k
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    style: {
+      cursor: "pointer"
+    },
+    checked: !!(dlCfg && dlCfg[u.id] && dlCfg[u.id][k]),
+    onChange: async e => {
+      try {
+        const cur = dlCfg && dlCfg[u.id] || {};
+        await db.doc("config/downloads").set({
+          [u.id]: {
+            ...cur,
+            [k]: e.target.checked
+          }
+        }, {
+          merge: true
+        });
+        logAudit(profile, "settings.download", u.email + " · " + k + " → " + (e.target.checked ? "granted" : "revoked"));
+      } catch (err) {
+        notify("SERVER REFUSED:\n" + err.message, "error");
+      }
+    }
+  })))))), users.filter(u => !isOwnerAcct(u)).length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text5)"
+    }
+  }, "No other users yet."), users.filter(u => !isOwnerAcct(u) && !u.isAdmin).length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: "var(--c-text4)"
@@ -13993,6 +14184,7 @@ function App() {
   const users = useCol("users", !!signedProfile && signedProfile.isAdmin, notify);
   const binItems = useCol("bin", !!signedProfile && signedProfile.isAdmin, notify);
   const catalog = useDoc("config/catalog", !!signedProfile);
+  const dlCfg = useDoc("config/downloads", !!signedProfile); // ⬇ per-user download grants
   useEffect(() => {
     if (typeof window !== "undefined") window.__ibaseCatalog = catalog || {};
   }, [catalog]);
@@ -14241,7 +14433,7 @@ function App() {
       letterSpacing: 1,
       color: "var(--c-text5)"
     }
-  }, l)))), signedProfile && signedProfile.isAdmin && /*#__PURE__*/React.createElement(BackupButton, {
+  }, l)))), signedProfile && canDL(signedProfile, "backup", dlCfg) && /*#__PURE__*/React.createElement(BackupButton, {
     labs: labs,
     users: users,
     otSettings: otSettingsDoc || DEFAULT_OT_SETTINGS,
@@ -14315,6 +14507,7 @@ function App() {
     profile: signedProfile,
     catalog: catalog,
     inventory: invForLabs,
+    dl: dlCfg,
     notify: notify
   }), tab === "analytics" && (signedProfile.isAdmin || pCanTab(signedProfile, "analytics", "view")) && /*#__PURE__*/React.createElement(AnalyticsTab, {
     labs: labs,
@@ -14323,6 +14516,7 @@ function App() {
     labs: labs,
     profile: signedProfile,
     catalog: catalog,
+    dl: dlCfg,
     notify: notify
   }), tab === "inventory" && pCanTab(signedProfile, "inventory", "view") && /*#__PURE__*/React.createElement(InventoryTab, {
     profile: signedProfile,
@@ -14345,7 +14539,8 @@ function App() {
     catalog: catalog,
     tabsCfg: tabsCfg,
     labs: labs,
-    notify: notify
+    notify: notify,
+    dlCfg: dlCfg
   }))), /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
