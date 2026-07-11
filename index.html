@@ -3967,13 +3967,24 @@ function LabDetail({
       if (await saveMachines([...(lab.machines || []), m], "Machine added.")) setAddingM(false);
     }
   }), canManage && editingM && /*#__PURE__*/React.createElement(MachineModal, {
+    showHistory: !!profile.isAdmin,
     engineerOptions: engineerOptions,
     inventory: inventory,
     models: catalog && catalog.machines || [],
     initial: editingM,
     onClose: () => setEditingM(null),
     onSave: async m => {
-      if (await saveMachines((lab.machines || []).map(x => x.id === m.id ? m : x), "Machine updated.")) setEditingM(null);
+      const changes = recDiff(MACHINE_DIFF_FIELDS, editingM, m);
+      let nm = {
+        ...m,
+        editLog: editingM.editLog || []
+      };
+      if (changes.length && !isOwnerAcct(profile)) nm.editLog = [...nm.editLog, {
+        by: meEmail(profile),
+        at: auditNow(),
+        changes
+      }];
+      if (await saveMachines((lab.machines || []).map(x => x.id === nm.id ? nm : x), "Machine updated.")) setEditingM(null);
     }
   }), editVisit && /*#__PURE__*/React.createElement(VisitModal, {
     labName: lab.name,
@@ -4178,7 +4189,8 @@ function MachineModal({
   onClose,
   models,
   inventory,
-  engineerOptions
+  engineerOptions,
+  showHistory
 }) {
   const [f, setF] = useState(initial ? {
     instrument: initial.instrument || "",
@@ -4403,7 +4415,9 @@ function MachineModal({
       visits: [],
       createdAt: auditNow()
     })
-  }, "Save machine"));
+  }, "Save machine"), showHistory && initial && /*#__PURE__*/React.createElement(EditHistory, {
+    log: initial.editLog
+  }));
 }
 // Read a picked file; images are downscaled/compressed so they fit the free
 // plan's 1MB document limit. Returns {name, mime, kind, size, dataUrl} or throws.
@@ -4453,6 +4467,55 @@ function extraFold(v) {
   if (!ex || typeof ex !== "object") return "";
   const parts = Object.keys(ex).filter(k => String(ex[k] || "").trim()).map(k => k + ": " + ex[k]);
   return parts.length ? "[Details] " + parts.join(" · ") : "";
+}
+// Field-level diff for machines / inventory / spare parts (admin edit history).
+function recDiff(FIELDS, a, b) {
+  const changes = [];
+  FIELDS.forEach(([k, label]) => {
+    const x = String(a && a[k] || ""),
+      y = String(b && b[k] || "");
+    if (x !== y) changes.push(label + ": \u201C" + (x || "—") + "\u201D \u2192 \u201C" + (y || "—") + "\u201D");
+  });
+  return changes;
+}
+const MACHINE_DIFF_FIELDS = [["instrument", "Instrument"], ["itemCode", "Item code"], ["serialNo", "Serial No"], ["installDate", "Install date"], ["installedBy", "Installed by"], ["lastPM", "Last PM"], ["pmInterval", "PM interval"], ["status", "Status"], ["software", "Software"], ["firmware", "Firmware"]];
+const INV_DIFF_FIELDS = [["brand", "Brand"], ["machineModel", "Model"], ["serialNo", "Serial No"], ["itemCode", "Item code"], ["condition", "Condition"], ["status", "Status"], ["location", "Location"], ["dealer", "Dealer"], ["remarks", "Remarks"], ["importDate", "Import date"], ["ownership", "Ownership"], ["salesPerson", "Sales person"], ["poDate", "PO date"]];
+const SPARE_DIFF_FIELDS = [["brand", "Brand"], ["partNumber", "Part number"], ["description", "Description"]];
+// Admin-only edit history block (machines, inventory, spare parts).
+function EditHistory({
+  log
+}) {
+  const L = Array.isArray(log) ? log : [];
+  if (!L.length) return null;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 14,
+      borderTop: "1px dashed var(--c-border)",
+      paddingTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      fontWeight: 800,
+      color: "var(--c-text4)",
+      textTransform: "uppercase",
+      marginBottom: 6
+    }
+  }, "🕓 Edit history (", L.length, ") — administrators only"), L.slice().reverse().map((e2, i2) => /*#__PURE__*/React.createElement("div", {
+    key: i2,
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text4)",
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("b", null, String(e2.at || "").replace("T", " ").slice(0, 16)), " — ", e2.by || "—", /*#__PURE__*/React.createElement("ul", {
+    style: {
+      margin: "3px 0 0 16px",
+      padding: 0
+    }
+  }, (e2.changes || []).map((c, j2) => /*#__PURE__*/React.createElement("li", {
+    key: j2
+  }, c))))));
 }
 // What changed between two versions of a visit (for the edit log).
 const VISIT_DIFF_FIELDS = [["date", "Date"], ["type", "Activity/Job type"], ["supportType", "Support type"], ["priority", "Priority"], ["isrNo", "ISR no."], ["engineer", "Name"], ["engineer2", "Engineer 2"], ["engineer3", "Engineer 3"], ["machineStatus", "Instrument Status"], ["dtReported", "Reported"], ["dtDeparture", "Departure"], ["dtArrivalAccount", "Arrival to Account"], ["dtWorkStarted", "Work started"], ["dtWorkEnded", "Work ended"], ["dtArrivalHome", "Arrival to Home"], ["problemDesc", "Problem Description"], ["systemCondition", "System Condition"], ["recommendation", "Recommendation"], ["endorsedTo", "Endorsed to"], ["softwareVersion", "Software Version"], ["remarks", "Description of Work"], ["signedByName", "Signed by (name)"]];
@@ -5241,11 +5304,20 @@ function MachineInv({
         ...rec,
         createdAt: FieldValue.serverTimestamp(),
         createdBy: meEmail(profile)
-      });else await db.collection("inventory").doc(editing.id).update({
-        ...rec,
-        updatedAt: auditNow(),
-        updatedBy: meEmail(profile)
-      });
+      });else {
+        const base = {
+          ...rec,
+          updatedAt: auditNow(),
+          updatedBy: isOwnerAcct(profile) ? "" : meEmail(profile)
+        };
+        const changes = recDiff(INV_DIFF_FIELDS, editing, rec);
+        if (changes.length && !isOwnerAcct(profile)) base.editLog = [...(editing.editLog || []), {
+          by: meEmail(profile),
+          at: auditNow(),
+          changes
+        }];
+        await db.collection("inventory").doc(editing.id).update(base);
+      }
       notify("Saved.", "ok");
       setEditing(null);
     } catch (e) {
@@ -5544,6 +5616,7 @@ function InvModal({
   onSave,
   onClose
 }) {
+  /* admin-only edit history rendered at the bottom */
   const [f, setF] = useState(initial || {
     brand: brands.find(b => brandOk(b)) || brands[0] || "",
     machineModel: "",
@@ -5686,7 +5759,9 @@ function InvModal({
     },
     disabled: !f.serialNo.trim() || !f.brand,
     onClick: () => onSave(f)
-  }, "Save record"));
+  }, "Save record"), isAdmin && initial && /*#__PURE__*/React.createElement(EditHistory, {
+    log: initial.editLog
+  }));
 }
 function HistoryModal({
   item,
@@ -5805,6 +5880,12 @@ function SpareParts({
         const patch = {
           ...fields
         };
+        const fchanges = recDiff(SPARE_DIFF_FIELDS, editing, fields);
+        if (fchanges.length && !isOwnerAcct(profile)) patch.editLog = [...(editing.editLog || []), {
+          by: meEmail(profile),
+          at: auditNow(),
+          changes: fchanges
+        }];
         if (wanted != null && wanted !== cur) {
           const delta = wanted - cur;
           const entry = {
@@ -6049,7 +6130,9 @@ function SparePartForm({
       description: f.description.trim(),
       __qty: qty
     })
-  }, "Save"));
+  }, "Save"), isAdmin && initial && /*#__PURE__*/React.createElement(EditHistory, {
+    log: initial.editLog
+  }));
 }
 function StockForm({
   onSave
