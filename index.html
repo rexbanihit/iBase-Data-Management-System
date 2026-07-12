@@ -152,12 +152,21 @@
   input::-ms-reveal, input::-ms-clear { display: none; }
   /* ═══ Tab-switch animations (v98) ═══ */
   @media (prefers-reduced-motion: no-preference) {
-    .ibase-tab-panel.anim-bounce { animation: ibase-tab-in .3s cubic-bezier(.2,.8,.25,1); }
-    .ibase-tab-panel.anim-bubble { animation: ibase-anim-bubble .38s cubic-bezier(.34,1.56,.64,1); }
-    .ibase-tab-panel.anim-zoom   { animation: ibase-anim-zoom .28s cubic-bezier(.2,.8,.25,1); }
-    .ibase-tab-panel.anim-slide  { animation: ibase-anim-slide .3s cubic-bezier(.2,.8,.25,1); }
-    .ibase-tab-panel.anim-fade   { animation: ibase-anim-fade .32s ease; }
-    .ibase-tab-panel.anim-flip   { animation: ibase-anim-flip .4s cubic-bezier(.2,.8,.25,1); transform-origin: 50% 0; }
+    .anim-bounce { animation: ibase-tab-in .3s cubic-bezier(.2,.8,.25,1); }
+    .anim-bubble { animation: ibase-anim-bubble .38s cubic-bezier(.34,1.56,.64,1); }
+    .anim-zoom   { animation: ibase-anim-zoom .28s cubic-bezier(.2,.8,.25,1); }
+    .anim-slide  { animation: ibase-anim-slide .3s cubic-bezier(.2,.8,.25,1); }
+    .anim-fade   { animation: ibase-anim-fade .32s ease; }
+    .anim-flip   { animation: ibase-anim-flip .4s cubic-bezier(.2,.8,.25,1); transform-origin: 50% 0; }
+    .anim-drop   { animation: ibase-anim-drop .42s cubic-bezier(.2,.8,.25,1); }
+    .anim-swing  { animation: ibase-anim-swing .45s cubic-bezier(.2,.8,.25,1); transform-origin: 20% 0; }
+    .anim-blur   { animation: ibase-anim-blur .34s ease; }
+    .anim-wipe   { animation: ibase-anim-wipe .38s cubic-bezier(.2,.8,.25,1); }
+    .ib-nav-fx   { display: inline-block; }
+    @keyframes ibase-anim-drop  { from { opacity:0; transform: translateY(-18px); } 62% { opacity:1; transform: translateY(4px); } 82% { transform: translateY(-2px); } to { opacity:1; transform: none; } }
+    @keyframes ibase-anim-swing { from { opacity:0; transform: rotate(-7deg) translateY(-6px); } 65% { opacity:1; transform: rotate(2.5deg); } to { opacity:1; transform: none; } }
+    @keyframes ibase-anim-blur  { from { opacity:0; filter: blur(7px); } to { opacity:1; filter: blur(0); } }
+    @keyframes ibase-anim-wipe  { from { opacity:.35; clip-path: inset(0 100% 0 0); } to { opacity:1; clip-path: inset(0 0 0 0); } }
     @keyframes ibase-anim-bubble { from { opacity:0; transform: scale(.82); } 70% { opacity:1; transform: scale(1.03); } to { opacity:1; transform: scale(1); } }
     @keyframes ibase-anim-zoom   { from { opacity:0; transform: scale(.92); } to { opacity:1; transform: none; } }
     @keyframes ibase-anim-slide  { from { opacity:0; transform: translateX(-26px); } to { opacity:1; transform: none; } }
@@ -12985,7 +12994,15 @@ function DangerZone({
     }
   }, "Inventory, spare parts and overtime land in the Bin as one restorable entry each. The audit trail is different: security rules make audit entries immutable, so deleting them is ", /*#__PURE__*/React.createElement("b", null, "permanent"), " — and the deletion itself is recorded as a fresh audit entry.")));
 }
-const TAB_ANIMS = [["bounce", "Bounce", "springs up with a playful overshoot"], ["bubble", "Bubble", "inflates softly like a bubble"], ["zoom", "Zoom", "zooms in and settles"], ["slide", "Slide", "glides in from the left"], ["fade", "Fade", "a clean, calm cross-fade"], ["flip", "Flip", "flips forward in 3-D"]];
+const TAB_ANIMS = [["default", "Default", "the system default (Bounce)"], ["bounce", "Bounce", "springs up with a playful overshoot"], ["bubble", "Bubble", "inflates softly like a bubble"], ["zoom", "Zoom", "zooms in and settles"], ["slide", "Slide", "glides in from the left"], ["fade", "Fade", "a clean, calm cross-fade"], ["flip", "Flip", "flips forward in 3-D"], ["drop", "Drop", "falls from above and lands with a bounce"], ["swing", "Swing", "swings in from the top corner"], ["blur", "Blur", "sharpens into focus"], ["wipe", "Wipe", "reveals left-to-right like a curtain"]];
+// "default" resolves to the system default style
+function tabAnimStyle(catalog) {
+  const v = catalog && catalog.tabAnim || "default";
+  return v === "default" ? "bounce" : v;
+}
+function tabAnimScope(catalog) {
+  return catalog && catalog.tabAnimScope || "content";
+}
 function AnimationsCard({
   catalog,
   profile,
@@ -13046,6 +13063,42 @@ function AnimationsCard({
       textTransform: "uppercase",
       marginBottom: 6
     }
+  }, "Apply to"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap",
+      marginBottom: 14
+    }
+  }, [["content", "🗔 Tab content", "the page area animates in"], ["tabs", "📑 Tab buttons", "the sidebar tab itself animates"], ["both", "✨ Both", "content and tab button together"]].map(([id, label, desc]) => /*#__PURE__*/React.createElement("button", {
+    key: id,
+    title: desc,
+    onClick: async () => {
+      try {
+        await db.doc("config/catalog").set({
+          tabAnimScope: id
+        }, {
+          merge: true
+        });
+        setNonce(n => n + 1);
+        logAudit(profile, "settings.animation", "scope → " + id);
+        notify("Animation applies to: " + label.slice(2) + ".", "ok");
+      } catch (e) {
+        notify("SERVER REFUSED:\n" + e.message, "error");
+      }
+    },
+    style: {
+      ...btnSt((catalog && catalog.tabAnimScope || "content") === id ? "var(--c-key)" : "var(--c-border)", (catalog && catalog.tabAnimScope || "content") === id ? "var(--c-bg)" : "var(--c-text2)"),
+      fontSize: 12
+    }
+  }, (catalog && catalog.tabAnimScope || "content") === id ? "✓ " : "", label))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      fontWeight: 800,
+      color: "var(--c-text4)",
+      textTransform: "uppercase",
+      marginBottom: 6
+    }
   }, "Preview"), /*#__PURE__*/React.createElement("div", {
     style: {
       height: 76,
@@ -13054,7 +13107,7 @@ function AnimationsCard({
     }
   }, /*#__PURE__*/React.createElement("div", {
     key: cur + "-" + nonce,
-    className: "ibase-tab-panel anim-" + cur,
+    className: "ibase-tab-panel anim-" + (cur === "default" ? "bounce" : cur),
     style: {
       border: "1px dashed var(--c-border)",
       borderRadius: 10,
@@ -15357,7 +15410,7 @@ function App() {
         gap: 4
       }
     }, /*#__PURE__*/React.createElement("span", {
-      className: active ? "ib-nav-on" : "",
+      className: active ? tabAnimScope(catalog) !== "content" ? "ib-nav-fx anim-" + tabAnimStyle(catalog) : "ib-nav-on" : "",
       style: {
         fontSize: 19,
         position: "relative",
@@ -15532,7 +15585,7 @@ function App() {
     tabId: tab
   }, /*#__PURE__*/React.createElement("div", {
     key: tab,
-    className: "ibase-tab-panel anim-" + (catalog && catalog.tabAnim || "bounce")
+    className: "ibase-tab-panel" + (tabAnimScope(catalog) !== "tabs" ? " anim-" + tabAnimStyle(catalog) : "")
   }, tab === "dashboard" && pCanTab(signedProfile, "dashboard", "view") && /*#__PURE__*/React.createElement(DashboardTab, {
     labs: labs
   }), tab === "labs" && pCanTab(signedProfile, "labs", "view") && /*#__PURE__*/React.createElement(LabsTab, {
