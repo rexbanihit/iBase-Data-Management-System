@@ -5036,10 +5036,11 @@ function VisitModal({
     isrNo: initial.isrNo || "",
     instrumentStatus: initial.instrumentStatus || "",
     firmwareVersion: initial.firmwareVersion || "",
+    phoneFixed: initial.phoneFixed !== false,
     engineer: initial.engineer || "",
     engineer2: initial.engineer2 || "",
     engineer3: initial.engineer3 || "",
-    machineStatus: initial.machineStatus || "Active",
+    machineStatus: initial.machineStatus || "",
     dtDeparture: initial.dtDeparture || "",
     dtArrivalHome: initial.dtArrivalHome || "",
     dtWorkStarted: initial.dtWorkStarted || "",
@@ -5070,7 +5071,7 @@ function VisitModal({
     engineer: "",
     engineer2: "",
     engineer3: "",
-    machineStatus: "Active",
+    machineStatus: "",
     dtDeparture: "",
     dtArrivalHome: "",
     dtWorkStarted: "",
@@ -5080,6 +5081,7 @@ function VisitModal({
     signedByName: "",
     attachments: [],
     extra: {},
+    phoneFixed: true,
     supportType: "",
     dtReported: "",
     dtArrivalAccount: "",
@@ -5095,6 +5097,7 @@ function VisitModal({
     ...x,
     [k]: v
   }));
+  const phone = f.supportType === "Phone support";
   const [pending, setPending] = useState([]); // new files chosen now (uploaded on save)
   const fileRef = useRef(null);
   const camRef = useRef(null);
@@ -5138,7 +5141,77 @@ function VisitModal({
       gridTemplateColumns: "1fr 1fr",
       gap: 12
     }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      gridColumn: "1 / -1"
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Support Type — is this Phone support or Onsite support? ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#f87171"
+    }
+  }, "*")), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      cursor: "pointer"
+    },
+    value: f.supportType,
+    onChange: e => set("supportType", e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "— select —"), /*#__PURE__*/React.createElement("option", null, "Not applicable"), /*#__PURE__*/React.createElement("option", null, "Onsite support"), /*#__PURE__*/React.createElement("option", null, "Phone support"))), phone && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Time & Date received ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#f87171"
+    }
+  }, "*")), /*#__PURE__*/React.createElement("input", {
+    type: "datetime-local",
+    style: inputSt(),
+    value: f.dtReported,
+    onChange: e => set("dtReported", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Time & Date finished ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "#f87171"
+    }
+  }, "*")), /*#__PURE__*/React.createElement("input", {
+    type: "datetime-local",
+    style: inputSt(),
+    value: f.dtWorkEnded,
+    onChange: e => set("dtWorkEnded", e.target.value)
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      gridColumn: "1 / -1",
+      display: "flex",
+      alignItems: "center",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    id: "ib-phone-fixed",
+    type: "checkbox",
+    checked: !!f.phoneFixed,
+    onChange: e => set("phoneFixed", e.target.checked),
+    style: {
+      cursor: "pointer"
+    }
+  }), /*#__PURE__*/React.createElement("label", {
+    htmlFor: "ib-phone-fixed",
+    style: {
+      fontSize: 12.5,
+      color: "var(--c-text3)",
+      cursor: "pointer"
+    }
+  }, "Fixed over the phone — ", /*#__PURE__*/React.createElement("b", null, "untick if an onsite visit is needed"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Time & Date of Departure"), /*#__PURE__*/React.createElement("input", {
+    type: "datetime-local",
+    style: inputSt(),
+    value: f.dtDeparture,
+    onChange: e => set("dtDeparture", e.target.value)
+  }))), !phone && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Type of Visit ", /*#__PURE__*/React.createElement("span", {
     style: {
@@ -5159,22 +5232,7 @@ function VisitModal({
     }
   }, sortAlpha(VISIT_TYPES).map(t => /*#__PURE__*/React.createElement("option", {
     key: t
-  }, t)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Support Type ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "#f87171"
-    }
-  }, "*")), /*#__PURE__*/React.createElement("select", {
-    style: {
-      ...inputSt(),
-      cursor: "pointer"
-    },
-    value: f.supportType,
-    onChange: e => set("supportType", e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: ""
-  }, "— select —"), /*#__PURE__*/React.createElement("option", null, "Onsite support"), /*#__PURE__*/React.createElement("option", null, "Phone support"))), /*#__PURE__*/React.createElement("div", {
+  }, t)))), /*#__PURE__*/React.createElement("div", {
     style: {
       gridColumn: "1 / -1"
     }
@@ -5401,7 +5459,7 @@ function VisitModal({
     style: inputSt(),
     value: f.dtArrivalHome,
     onChange: e => set("dtArrivalHome", e.target.value)
-  }))), initial && (initial.editLog || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+  })))), initial && (initial.editLog || []).length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 14,
       borderTop: "1px dashed var(--c-border)",
@@ -5426,7 +5484,7 @@ function VisitModal({
     }
   }, (e2.changes || []).map((c, j2) => /*#__PURE__*/React.createElement("li", {
     key: j2
-  }, c)))))), /*#__PURE__*/React.createElement("div", {
+  }, c)))))), !phone && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 14,
       display: "grid",
@@ -5546,13 +5604,13 @@ function VisitModal({
       fontSize: 11,
       color: "var(--c-text5)"
     }
-  }, "No attachments yet. Photos are compressed automatically; files up to ~700KB (free-plan limit)."))), /*#__PURE__*/React.createElement("button", {
+  }, "No attachments yet. Photos are compressed automatically; files up to ~700KB (free-plan limit).")))), /*#__PURE__*/React.createElement("button", {
     style: {
       ...btnSt("var(--c-key)", "var(--c-bg)"),
       marginTop: 16
     },
     onClick: () => {
-      const need = [[f.type && f.type !== "Not Applicable", "Type of Visit"], [f.supportType, "Support Type"], [String(f.isrNo || "").trim(), "ISR number"], [f.dtWorkStarted, "Date & time work started"], [f.dtWorkEnded, "Date & time work ended"], [f.systemCondition, "System Condition"], [String(f.remarks || "").trim(), "Description of Work"], [f.machineStatus, "Instrument after the visit"]];
+      const need = phone ? [[f.dtReported, "Time & Date received"], [f.dtWorkEnded, "Time & Date finished"]] : [[f.type && f.type !== "Not Applicable", "Type of Visit"], [f.supportType, "Support Type"], [String(f.isrNo || "").trim(), "ISR number"], [f.dtWorkStarted, "Date & time work started"], [f.dtWorkEnded, "Date & time work ended"], [f.systemCondition, "System Condition"], [String(f.remarks || "").trim(), "Description of Work"], [f.machineStatus, "Instrument after the visit"]];
       const missing = need.filter(x => !x[0]).map(x => x[1]);
       if (missing.length) {
         notify("Please complete the required field(s):\n• " + missing.join("\n• "), "error");
@@ -5562,6 +5620,7 @@ function VisitModal({
       onSave({
         id: initial ? initial.id : uid(),
         ...f,
+        type: phone ? "Phone support" : f.type,
         date: dISO || f.date || today(),
         engineer: engs[0] || "",
         engineer2: engs[1] || "",
@@ -6660,6 +6719,16 @@ function BinTab({
         ...data
       } = e.payload;
       await db.collection("inventory").add(data);
+    } else if (e.kind === "importFile") {
+      const r = e.payload && e.payload.record || {};
+      const {
+        id,
+        ...data
+      } = r;
+      await db.collection("importFiles").add({
+        ...data,
+        uploadedAt: data.uploadedAt || auditNow()
+      });
     } else if (e.kind === "sparePart") {
       const {
         id,
@@ -11769,12 +11838,54 @@ function ImportExcel({
   const [fieldsAdded, setFieldsAdded] = useState(false);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
-  async function onFile(e) {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = "";
-    if (!file) return;
+  // ── stored import files (re-usable archive) ──
+  const [storedFiles, setStoredFiles] = useState([]);
+  useEffect(() => {
+    const un = db.collection("importFiles").orderBy("uploadedAt", "desc").onSnapshot(s => setStoredFiles(s.docs.map(d => ({
+      id: d.id,
+      ...d.data()
+    }))), () => {});
+    return un;
+  }, []);
+  const abToB64 = buf => {
+    const u = new Uint8Array(buf);
+    let s2 = "";
+    for (let i2 = 0; i2 < u.length; i2 += 0x8000) s2 += String.fromCharCode.apply(null, u.subarray(i2, i2 + 0x8000));
+    return btoa(s2);
+  };
+  const b64ToAb = b64 => {
+    const bin = atob(b64);
+    const u = new Uint8Array(bin.length);
+    for (let i2 = 0; i2 < bin.length; i2++) u[i2] = bin.charCodeAt(i2);
+    return u.buffer;
+  };
+  const pendingArchive = useRef(null); // { name, b64, size } — archived after a successful import
+  async function archiveImportFile(summary) {
+    const p = pendingArchive.current;
+    if (!p) return;
+    pendingArchive.current = null;
+    if (p.b64.length > 950000) {
+      notify("File imported, but too large to archive for re-use (" + Math.round(p.size / 1024) + " KB > ~700 KB limit).", "error");
+      return;
+    }
+    if (storedFiles.some(r => r.name === p.name && r.size === p.size)) return; // identical file already archived
     try {
-      const buf = await file.arrayBuffer();
+      await db.collection("importFiles").add({
+        name: p.name,
+        size: p.size,
+        b64: p.b64,
+        dest,
+        summary: String(summary || ""),
+        uploadedAt: auditNow(),
+        uploadedBy: scrubOwner(meEmail(profile))
+      });
+      logAudit(profile, "import.archive", p.name + " (" + Math.round(p.size / 1024) + " KB)");
+    } catch (e2) {
+      notify("Imported OK, but archiving the file failed: " + e2.message, "error");
+    }
+  }
+  async function ingestWorkbook(buf, fileName) {
+    try {
       const wb = XLSX.read(buf, {
         type: "array",
         cellDates: true
@@ -11786,7 +11897,7 @@ function ImportExcel({
         defval: ""
       }));
       setGrids({
-        file: file.name,
+        file: fileName,
         sheets: g,
         names: wb.SheetNames
       });
@@ -11818,7 +11929,7 @@ function ImportExcel({
           }
         });
         setInvPlan({
-          file: file.name,
+          file: fileName,
           fresh,
           dupes,
           sheets: pInv.sheetInfo
@@ -11875,7 +11986,7 @@ function ImportExcel({
       });
       if (hdrMissing.length) {
         setMeta({
-          file: file.name,
+          file: fileName,
           rows: parsed.rows.length,
           skipped: parsed.skipped,
           sheets: parsed.sheetInfo,
@@ -11888,7 +11999,7 @@ function ImportExcel({
         return;
       }
       setMeta({
-        file: file.name,
+        file: fileName,
         rows: parsed.rows.length,
         skipped: parsed.skipped,
         sheets: parsed.sheetInfo,
@@ -11899,6 +12010,18 @@ function ImportExcel({
     } catch (err) {
       notify("Could not read the file: " + err.message, "error");
     }
+  }
+  async function onFile(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    const buf = await file.arrayBuffer();
+    pendingArchive.current = {
+      name: file.name,
+      b64: abToB64(buf),
+      size: file.size
+    };
+    await ingestWorkbook(buf, file.name);
   }
   async function run() {
     if (!plan) return;
@@ -11939,6 +12062,7 @@ function ImportExcel({
     }
     logAudit(profile, "import." + dest, (meta ? meta.file : "") + " → " + plan.tNewVisits + " visit(s), " + plan.tNewMachines + " machine(s), " + plan.tNewLabs + " lab(s)" + (withExtras ? " (incl. extra columns)" : ""));
     notify(failed ? "Import finished with " + failed + " failure(s) — " + done + " laborator" + (done === 1 ? "y" : "ies") + " written." : "✅ Import complete — " + plan.tNewVisits + " visit(s), " + plan.tNewMachines + " machine(s), " + plan.tNewLabs + " new lab(s). Oldest visit dates registered as installation dates.", failed ? "error" : "ok");
+    if (!failed) await archiveImportFile(plan.tNewVisits + " visit(s), " + plan.tNewMachines + " machine(s), " + plan.tNewLabs + " lab(s)");
     setBusy(false);
     setPlan(null);
     setMeta(null);
@@ -11966,6 +12090,7 @@ function ImportExcel({
     }
     logAudit(profile, "import.inventory", invPlan.file + " → " + done + " item(s)" + (failed ? " (" + failed + " failed)" : ""));
     notify(failed ? done + " added, " + failed + " refused." : "✅ " + done + " inventory item(s) imported. " + invPlan.dupes.length + " duplicate(s) skipped.", failed ? "error" : "ok");
+    if (!failed) await archiveImportFile(done + " inventory item(s)");
     setBusy(false);
     setInvPlan(null);
     setGrids(null);
@@ -12070,7 +12195,89 @@ function ImportExcel({
     }
   }, "🔒 The file itself is never stored — the system only extracts what's inside and writes the data into the tab you chose."), /*#__PURE__*/React.createElement(ImportRulesGuide, {
     dest: dest
-  }), /*#__PURE__*/React.createElement("input", {
+  }), storedFiles.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      border: "1px solid var(--c-border)",
+      borderRadius: 10,
+      padding: "10px 14px",
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: "var(--c-text4)",
+      textTransform: "uppercase",
+      marginBottom: 8
+    }
+  }, "🗂 Stored import files (", storedFiles.length, ")"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "var(--c-text5)",
+      marginBottom: 8
+    }
+  }, "Files are archived automatically after each successful import — re-inject one if anything happens to the system's data. Deleting moves the file to the Bin (restorable)."), storedFiles.map(rec => /*#__PURE__*/React.createElement("div", {
+    key: rec.id,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      padding: "6px 0",
+      borderTop: "1px solid var(--c-border)",
+      fontSize: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      color: "var(--c-text2)",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, "📄 ", rec.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: "var(--c-text5)"
+    }
+  }, String(rec.uploadedAt || "").replace("T", " ").slice(0, 16), " · ", Math.round((rec.size || 0) / 1024), " KB · → ", rec.dest, " · ", rec.summary || "")), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnSt("var(--c-key)", "var(--c-bg)"),
+      fontSize: 11.5
+    },
+    disabled: busy,
+    onClick: async () => {
+      try {
+        const ab = b64ToAb(rec.b64);
+        pendingArchive.current = null;
+        await ingestWorkbook(ab, rec.name);
+        notify("Loaded '" + rec.name + "' — review the preview below, then import.", "ok");
+      } catch (e2) {
+        notify("Could not load the stored file: " + e2.message, "error");
+      }
+    }
+  }, "▶ Use this file"), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnSt("#3a1d1d", "#fca5a5"),
+      fontSize: 11.5
+    },
+    onClick: async () => {
+      if (!confirm("Move '" + rec.name + "' to the Bin?")) return;
+      try {
+        await binIt("importFile", rec.name, {
+          record: rec
+        }, profile.email);
+        await db.collection("importFiles").doc(rec.id).delete();
+        logAudit(profile, "import.file.delete", rec.name);
+      } catch (e2) {
+        notify("SERVER REFUSED:\n" + e2.message, "error");
+      }
+    }
+  }, "🗑")))), /*#__PURE__*/React.createElement("input", {
     ref: fileRef,
     type: "file",
     accept: ".xlsx,.xls,.csv",
