@@ -11410,7 +11410,54 @@ function ImportRulesGuide({
     style: {
       marginTop: 6
     }
-  }, /*#__PURE__*/React.createElement(H, null, "Rules for every import"), /*#__PURE__*/React.createElement(R, null, "Headers are matched ", /*#__PURE__*/React.createElement(B, null, "by name, not position"), " — case, spaces and punctuation are ignored (\"Date & Time reported\" = \"DATE AND TIME REPORTED\")."), /*#__PURE__*/React.createElement(R, null, "The header row is found automatically within the first 25 rows; title rows above it are fine."), /*#__PURE__*/React.createElement(R, null, "Accepted files: ", /*#__PURE__*/React.createElement(B, null, ".xlsx / .xls / .csv"), ". Dates parse from ISO, Excel serials, MM/DD/YYYY, DD/MM/YYYY and plain text. Empty rows are skipped."), /*#__PURE__*/React.createElement(R, null, "The file itself is never stored — only its data is written."), dest === "logs" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(H, null, "LOGS — required vs optional values"), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Location"), " and ", /*#__PURE__*/React.createElement(B, null, "Sub-location"), " headers are required on every used sheet — missing headers block the import. ", /*#__PURE__*/React.createElement(B, null, "Location values must not be empty"), " (rows with a blank Location are excluded)."), /*#__PURE__*/React.createElement(R, null, "Every field is ", /*#__PURE__*/React.createElement(B, null, "required to have a value"), " EXCEPT these 10, which may be left blank: ", /*#__PURE__*/React.createElement(B, null, "Sub-location, Support type, Date & Time reported, Date & Time of Departure, Date & Time of Arrival to Account, Date & Time of Arrival to Home, Software Version, Firmware Version, Logged by, Attachment"), "."), /*#__PURE__*/React.createElement(R, null, "A row missing any ", /*#__PURE__*/React.createElement(B, null, "required"), " value is still imported, but the preview ", /*#__PURE__*/React.createElement(B, null, "counts and flags"), " it so you can review — nothing is silently dropped."), /*#__PURE__*/React.createElement(H, null, "LOGS — how rows are written"), /*#__PURE__*/React.createElement(R, null, "\"Preventive Maintenance\" in any spelling (\"Preventative Maintenance\", \"P.M.\", …) imports as ", /*#__PURE__*/React.createElement(B, null, "PM"), " and feeds the PM scheduler."), /*#__PURE__*/React.createElement(R, null, "No Date column needed — the visit date derives from Timestamp → Departure → Work started."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Serial routing:"), " a serial already registered in the system routes its rows to that existing machine and laboratory, whatever the file's Account says — this prevents duplicate machines. Laboratory names merge only when the ", /*#__PURE__*/React.createElement(B, null, "entire name"), " is identical (ignoring case/punctuation) — similar names never merge."), /*#__PURE__*/React.createElement(R, null, "Each machine's ", /*#__PURE__*/React.createElement(B, null, "oldest visit becomes its installation date"), " (unless one exists); imported PM visits re-anchor the Last PM and Next PM."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Duplicates skipped:"), " same date + type + ISR + engineer on the same machine; and — within the same machine — same ", /*#__PURE__*/React.createElement(B, null, "Timestamp + Name + ISR"), " (even if the type differs). Blank timestamps never collapse rows."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Excluded rows:"), " placeholder serials (-, ., na, n/a, not applicable, tf, to follow, blank, empty) and Accounts \"Office\", \"FAS - Manila\", \"Not Applicable\" are never written. The preview reports the excluded count."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "New accounts are your choice:"), " the preview lists every account the file would create, each with a checkbox + Select all — unchecked accounts (and all their rows) are skipped. Existing accounts always merge."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Unknown columns — 4 choices:"), " add them to the visits · add them as Visit-form fields · skip adding columns · skip adding form fields. Skipping simply imports without them."), /*#__PURE__*/React.createElement(R, null, "Imported visits are stamped ", /*#__PURE__*/React.createElement(B, null, "Logged by = \"excel\""), ". \"Logged by\" and \"Attachment\" columns in the file are recognized and ignored."), /*#__PURE__*/React.createElement(H, null, "LOGS — accepted headers (order does not matter)"), /*#__PURE__*/React.createElement(HdrHead, null), /*#__PURE__*/React.createElement(Hdr, {
+  }, /*#__PURE__*/React.createElement(H, null, "Rules for every import"), /*#__PURE__*/React.createElement(R, null, "Headers are matched ", /*#__PURE__*/React.createElement(B, null, "by name, not position"), " — case, spaces and punctuation are ignored (\"Date & Time reported\" = \"DATE AND TIME REPORTED\")."), /*#__PURE__*/React.createElement(R, null, "The header row is found automatically within the first 25 rows; title rows above it are fine."), /*#__PURE__*/React.createElement(R, null, "Accepted files: ", /*#__PURE__*/React.createElement(B, null, ".xlsx / .xls / .csv"), ". Dates parse from ISO, Excel serials, MM/DD/YYYY, DD/MM/YYYY and plain text. Empty rows are skipped."), /*#__PURE__*/React.createElement(R, null, "The file itself is never stored — only its data is written."), dest === "logs" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(H, null, "LOGS — required vs optional values"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 10,
+      margin: "4px 0 8px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      border: "1px solid #22c55e55",
+      borderRadius: 8,
+      padding: "8px 10px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      fontWeight: 800,
+      color: "#22c55e",
+      textTransform: "uppercase",
+      marginBottom: 4
+    }
+  }, "✓ Must have a value"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "var(--c-text4)",
+      lineHeight: 1.7
+    }
+  }, "Location · Account · Brand · Instrument · Serial number · Activity/Job type · ISR no. · Name · Date & Time work started · Date & Time work ended · Problem Description · System Condition · Instrument Status · Recommendation · Endorsed to · Priority · Description of Work")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      border: "1px solid #64748b55",
+      borderRadius: 8,
+      padding: "8px 10px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      fontWeight: 800,
+      color: "#94a3b8",
+      textTransform: "uppercase",
+      marginBottom: 4
+    }
+  }, "◦ May be blank"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "var(--c-text4)",
+      lineHeight: 1.7
+    }
+  }, "Sub-location · Support type · Date & Time reported · Date & Time of Departure · Date & Time of Arrival to Account · Date & Time of Arrival to Home · Software Version · Firmware Version · Logged by · Attachment"))), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Location"), " and ", /*#__PURE__*/React.createElement(B, null, "Sub-location"), " headers must be ", /*#__PURE__*/React.createElement(B, null, "present"), " on every used sheet (missing headers block the import). ", /*#__PURE__*/React.createElement(B, null, "Location values"), " must not be empty; the other 9 above may be."), /*#__PURE__*/React.createElement(R, null, "A row missing any ", /*#__PURE__*/React.createElement(B, null, "required"), " value is still imported, but the preview ", /*#__PURE__*/React.createElement(B, null, "counts and flags"), " it so you can review — nothing is silently dropped."), /*#__PURE__*/React.createElement(H, null, "LOGS — how rows are written"), /*#__PURE__*/React.createElement(R, null, "\"Preventive Maintenance\" in any spelling (\"Preventative Maintenance\", \"P.M.\", …) imports as ", /*#__PURE__*/React.createElement(B, null, "PM"), " and feeds the PM scheduler."), /*#__PURE__*/React.createElement(R, null, "No Date column needed — the visit date derives from Timestamp → Departure → Work started."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Serial routing:"), " a serial already registered in the system routes its rows to that existing machine and laboratory, whatever the file's Account says — this prevents duplicate machines. Laboratory names merge only when the ", /*#__PURE__*/React.createElement(B, null, "entire name"), " is identical (ignoring case/punctuation) — similar names never merge."), /*#__PURE__*/React.createElement(R, null, "Each machine's ", /*#__PURE__*/React.createElement(B, null, "oldest visit becomes its installation date"), " (unless one exists); imported PM visits re-anchor the Last PM and Next PM."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Duplicates skipped:"), " same date + type + ISR + engineer on the same machine; and — within the same machine — same ", /*#__PURE__*/React.createElement(B, null, "Timestamp + Name + ISR"), " (even if the type differs). Blank timestamps never collapse rows."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Excluded rows:"), " placeholder serials (-, ., na, n/a, not applicable, tf, to follow, blank, empty) and Accounts \"Office\", \"FAS - Manila\", \"Not Applicable\" are never written. The preview reports the excluded count."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "New accounts are your choice:"), " the preview lists every account the file would create, each with a checkbox + Select all — unchecked accounts (and all their rows) are skipped. Existing accounts always merge."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Unknown columns — 4 choices:"), " add them to the visits · add them as Visit-form fields · skip adding columns · skip adding form fields. Skipping simply imports without them."), /*#__PURE__*/React.createElement(R, null, "Imported visits are stamped ", /*#__PURE__*/React.createElement(B, null, "Logged by = \"excel\""), ". \"Logged by\" and \"Attachment\" columns in the file are recognized and ignored."), /*#__PURE__*/React.createElement(H, null, "LOGS — accepted headers (order does not matter)"), /*#__PURE__*/React.createElement(HdrHead, null), /*#__PURE__*/React.createElement(Hdr, {
     name: "Location",
     req: true,
     names: "location · region · area · territory"
@@ -11509,7 +11556,46 @@ function ImportRulesGuide({
       color: "#f59e0b",
       marginTop: 6
     }
-  }, "* required — the import is blocked if missing. Minimum to detect a LOGS sheet: ≥2 of Account / Serial number / Instrument / Date (or 1 + 2 others).")), dest === "inventory" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(H, null, "Machine Inventory — how rows are written"), /*#__PURE__*/React.createElement(R, null, "Detected when at least 2 recognized columns exist including one of: ", /*#__PURE__*/React.createElement(B, null, "Serial No, Item Code, Model"), "."), /*#__PURE__*/React.createElement(R, null, "Recognized fields: Brand, Model, Serial No, Item Code, Condition, Status, Import date, Ownership, Location, Dealer, Remarks, Sales person, PO date."), /*#__PURE__*/React.createElement(R, null, "Defaults when blank: Condition → ", /*#__PURE__*/React.createElement(B, null, "BRAND NEW"), " · Status → ", /*#__PURE__*/React.createElement(B, null, "Available"), " · Location → ", /*#__PURE__*/React.createElement(B, null, "warehouse"), "."), /*#__PURE__*/React.createElement(R, null, "Duplicates (same Serial No or Item Code already in stock) are skipped. No visits or PM data are written."), /*#__PURE__*/React.createElement(H, null, "Machine Inventory — accepted headers (order does not matter)"), /*#__PURE__*/React.createElement(HdrHead, null), /*#__PURE__*/React.createElement(Hdr, {
+  }, "* required — the import is blocked if missing. Minimum to detect a LOGS sheet: ≥2 of Account / Serial number / Instrument / Date (or 1 + 2 others)."), /*#__PURE__*/React.createElement(H, null, "LOGS — copy-paste header row"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "var(--c-text5)",
+      marginBottom: 4
+    }
+  }, "Paste into cell A1 in Excel (fills across). Add a ", /*#__PURE__*/React.createElement(B, null, "Location"), " and ", /*#__PURE__*/React.createElement(B, null, "Sub-location"), " column — both required as headers."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "flex-start"
+    }
+  }, /*#__PURE__*/React.createElement("textarea", {
+    readOnly: true,
+    onFocus: e => e.target.select(),
+    style: {
+      flex: 1,
+      fontSize: 10.5,
+      fontFamily: "monospace",
+      color: "var(--c-text3)",
+      background: "var(--c-bg2)",
+      border: "1px solid var(--c-border)",
+      borderRadius: 6,
+      padding: "6px 8px",
+      height: 52,
+      resize: "vertical"
+    },
+    value: "Timestamp\tName\tActivity/Job type\tSupport type\tAccount\tBrand\tInstrument\tSerial number\tISR no.\tDate & Time reported\tDate & Time of Departure\tDate & Time of Arrival to Account\tDate & Time work started\tDate & Time work ended\tDate & Time of Arrival to Home\tProblem Description\tSystem Condition\tInstrument Status\tRecommendation\tEndorsed to\tPriority\tDescription of Work\tSoftware Version\tFirmware Version\tLocation\tSub-location"
+  }), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnSt("var(--c-key)", "var(--c-bg)"),
+      fontSize: 11,
+      whiteSpace: "nowrap"
+    },
+    onClick: () => {
+      try {
+        navigator.clipboard.writeText("Timestamp\tName\tActivity/Job type\tSupport type\tAccount\tBrand\tInstrument\tSerial number\tISR no.\tDate & Time reported\tDate & Time of Departure\tDate & Time of Arrival to Account\tDate & Time work started\tDate & Time work ended\tDate & Time of Arrival to Home\tProblem Description\tSystem Condition\tInstrument Status\tRecommendation\tEndorsed to\tPriority\tDescription of Work\tSoftware Version\tFirmware Version\tLocation\tSub-location");
+      } catch (e) {}
+    }
+  }, "📋 Copy"))), dest === "inventory" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(H, null, "Machine Inventory — how rows are written"), /*#__PURE__*/React.createElement(R, null, "Detected when at least 2 recognized columns exist including one of: ", /*#__PURE__*/React.createElement(B, null, "Serial No, Item Code, Model"), "."), /*#__PURE__*/React.createElement(R, null, "Recognized fields: Brand, Model, Serial No, Item Code, Condition, Status, Import date, Ownership, Location, Dealer, Remarks, Sales person, PO date."), /*#__PURE__*/React.createElement(R, null, "Defaults when blank: Condition → ", /*#__PURE__*/React.createElement(B, null, "BRAND NEW"), " · Status → ", /*#__PURE__*/React.createElement(B, null, "Available"), " · Location → ", /*#__PURE__*/React.createElement(B, null, "warehouse"), "."), /*#__PURE__*/React.createElement(R, null, "Duplicates (same Serial No or Item Code already in stock) are skipped. No visits or PM data are written."), /*#__PURE__*/React.createElement(H, null, "Machine Inventory — accepted headers (order does not matter)"), /*#__PURE__*/React.createElement(HdrHead, null), /*#__PURE__*/React.createElement(Hdr, {
     name: "Brand",
     names: "brand · make · manufacturer"
   }), /*#__PURE__*/React.createElement(Hdr, {
