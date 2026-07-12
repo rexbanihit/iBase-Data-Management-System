@@ -3156,7 +3156,7 @@ function LabsTab({
     if ((instF || brandF || flagF) && !(l.machines || []).some(matchesFilters)) return false;
     const s = q.toLowerCase();
     if (!s) return true;
-    return String(l.name || "").toLowerCase().includes(s) || String(l.location || "").toLowerCase().includes(s) || (l.machines || []).some(m => String(m.serialNo || "").toLowerCase().includes(s) || String(m.instrument || "").toLowerCase().includes(s));
+    return String(l.name || "").toLowerCase().includes(s) || String(l.location || "").toLowerCase().includes(s) || String(l.subRegion || "").toLowerCase().includes(s) || (l.machines || []).some(m => String(m.serialNo || "").toLowerCase().includes(s) || String(m.instrument || "").toLowerCase().includes(s));
   }).sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const TCOLS = [{
     id: "lab",
@@ -3241,7 +3241,7 @@ function LabsTab({
     },
     value: q,
     onChange: e => setQ(e.target.value),
-    placeholder: "🔍 Search lab, location, serial, instrument…"
+    placeholder: "🔍 Search lab, location, sub-location, serial, instrument…"
   }), /*#__PURE__*/React.createElement("select", {
     style: {
       ...inputSt(),
@@ -3557,13 +3557,29 @@ function LabsTab({
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
         fontSize: 11,
         color: "var(--c-text3)",
         fontWeight: 700,
         textTransform: "uppercase",
-        letterSpacing: .8
+        letterSpacing: .8,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
       }
-    }, lab.name), /*#__PURE__*/React.createElement("div", {
+    }, lab.name), (lab.location || lab.subRegion) && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10.5,
+        color: "var(--c-text4)",
+        marginTop: 3,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }
+    }, "📍 ", [lab.location, lab.subRegion].filter(Boolean).join(" · "))), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 18,
         opacity: .5
