@@ -3845,6 +3845,7 @@ function LabDetail({
   const canManage = !!profile.isAdmin;
   const [addingM, setAddingM] = useState(false);
   const [editingM, setEditingM] = useState(null);
+  const [pmEditM, setPmEditM] = useState(null); // {machine} — edit Last PM only (all users)
   const [visitFor, setVisitFor] = useState(null);
   const [editingLab, setEditingLab] = useState(false);
   const [pmFor, setPmFor] = useState(null);
@@ -4041,7 +4042,15 @@ function LabDetail({
           visit: vs[vs.length - 1]
         });
       }
-    }, "🕓✏️"), " ", canManage && /*#__PURE__*/React.createElement("button", {
+    }, "🕓✏️"), " ", /*#__PURE__*/React.createElement("button", {
+      title: "Set / change the Last PM date — this updates the Next PM automatically",
+      style: {
+        ...btnSt("var(--c-border)", "var(--c-text2)"),
+        padding: "4px 9px",
+        fontSize: 11
+      },
+      onClick: () => setPmEditM(m)
+    }, "📅 PM"), " ", canManage && /*#__PURE__*/React.createElement("button", {
       title: "Edit machine",
       style: {
         ...btnSt("var(--c-border)", "var(--c-text2)"),
@@ -4084,6 +4093,37 @@ function LabDetail({
     onClose: () => setAddingM(false),
     onSave: async m => {
       if (await saveMachines([...(lab.machines || []), m], "Machine added.")) setAddingM(false);
+    }
+  }), pmEditM && /*#__PURE__*/React.createElement(LastPMModal, {
+    machine: pmEditM,
+    onClose: () => setPmEditM(null),
+    onSave: async newDate => {
+      const ok = await saveMachines((lab.machines || []).map(x => {
+        if (x.id !== pmEditM.id) return x;
+        const nm = {
+          ...x,
+          lastPM: newDate
+        };
+        // Next PM auto-updates from the new Last PM (or a later PM visit); blank when no basis.
+        nm.nextPM = "";
+        const nx = typeof nextPMDate === "function" ? nextPMDate(pmAnchor(nm), nm.pmInterval) : null;
+        if (nx) nm.nextPM = nx;
+        // PM-date history: record WHO changed it and when — the sole-owner is
+        // excluded entirely (no entry at all), matching every other history.
+        const oldD = String(x.lastPM || "").slice(0, 10),
+          newD = String(newDate || "").slice(0, 10);
+        if (oldD !== newD) {
+          nm.pmUpdatedBy = scrubOwner(meEmail(profile));
+          nm.pmUpdatedAt = auditNow();
+          if (!isOwnerAcct(profile)) nm.editLog = [...(x.editLog || []), {
+            by: meEmail(profile),
+            at: auditNow(),
+            changes: ["Last PM: \u201C" + (oldD || "—") + "\u201D \u2192 \u201C" + (newD || "—") + "\u201D"]
+          }];
+        }
+        return nm;
+      }), "Last PM date updated.");
+      if (ok) setPmEditM(null);
     }
   }), canManage && editingM && /*#__PURE__*/React.createElement(MachineModal, {
     showHistory: !!profile.isAdmin,
@@ -4311,6 +4351,104 @@ const tdSt = {
   fontSize: 13,
   borderBottom: "1px solid var(--c-border2)"
 };
+function LastPMModal({
+  machine,
+  onSave,
+  onClose
+}) {
+  const [d, setD] = useState(String(machine.lastPM || "").slice(0, 10));
+  const [busy, setBusy] = useState(false);
+  // preview the Next PM the save will produce
+  const preview = (() => {
+    const nm = {
+      ...machine,
+      lastPM: d
+    };
+    const nx = typeof nextPMDate === "function" ? nextPMDate(pmAnchor(nm), nm.pmInterval) : null;
+    return nx || "";
+  })();
+  return /*#__PURE__*/React.createElement(Modal, {
+    title: "Last PM date",
+    onClose: onClose
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: "var(--c-text3)",
+      marginBottom: 4
+    }
+  }, machine.instrument, " · ", machine.serialNo || "no serial"), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Last PM date"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    style: {
+      ...inputSt(),
+      marginBottom: 10
+    },
+    value: d,
+    onChange: e => setD(e.target.value)
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "var(--c-text4)",
+      marginBottom: 14
+    }
+  }, d ? machine.pmInterval ? /*#__PURE__*/React.createElement("span", null, "→ Next PM will be ", /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: "var(--c-text2)"
+    }
+  }, preview ? fmtDate(preview) : "—"), " (auto-calculated", machine.pmInterval === "weekly" ? ", weekly" : machine.pmInterval === "monthly" ? ", monthly" : " from a " + machine.pmInterval + "-month interval", ").") : /*#__PURE__*/React.createElement("span", null, "No PM interval is set on this machine, so a Next PM can't be calculated — that's normal.") : /*#__PURE__*/React.createElement("span", null, "Leaving this blank means no Next PM can be calculated — that's perfectly fine.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "var(--c-text5)",
+      marginBottom: 14
+    }
+  }, "Note: a logged PM visit that is more recent than this date will still take precedence when computing the Next PM."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-key)", "var(--c-bg)"),
+    disabled: busy,
+    onClick: async () => {
+      setBusy(true);
+      await onSave(d);
+      setBusy(false);
+    }
+  }, busy ? "Saving…" : "Save Last PM"), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: onClose
+  }, "Cancel")), (() => {
+    const pmLog = (machine.editLog || []).filter(e2 => (e2.changes || []).some(c => String(c).indexOf("Last PM:") === 0));
+    if (!pmLog.length) return null;
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 14,
+        borderTop: "1px dashed var(--c-border)",
+        paddingTop: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10.5,
+        fontWeight: 800,
+        color: "var(--c-text4)",
+        textTransform: "uppercase",
+        marginBottom: 6
+      }
+    }, "🕓 PM date history (", pmLog.length, ")"), pmLog.slice().reverse().map((e2, i2) => /*#__PURE__*/React.createElement("div", {
+      key: i2,
+      style: {
+        fontSize: 11.5,
+        color: "var(--c-text4)",
+        marginBottom: 5
+      }
+    }, /*#__PURE__*/React.createElement("b", null, String(e2.at || "").replace("T", " ").slice(0, 16)), " — ", scrubOwner(e2.by) || "—", /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginLeft: 12
+      }
+    }, (e2.changes || []).filter(c => String(c).indexOf("Last PM:") === 0).join("; ")))));
+  })());
+}
 function MachineModal({
   initial,
   onSave,
