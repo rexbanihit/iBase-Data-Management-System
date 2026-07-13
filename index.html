@@ -14894,31 +14894,6 @@ function UserRow({
   }, [u.id]);
   const isOwnerRow = isOwnerAcct(u);
   const iAmOwner = isOwnerAcct(me);
-  // ── per-user tab animation (device-local; never written to the server) ──
-  const [uiAnim, setUiAnim] = useState(() => {
-    try {
-      return {
-        style: localStorage.getItem("ibaseTabAnim") || "default",
-        scope: localStorage.getItem("ibaseTabAnimScope") || "content"
-      };
-    } catch (e) {
-      return {
-        style: "default",
-        scope: "content"
-      };
-    }
-  });
-  const onUiAnim = patch => setUiAnim(prev => {
-    const next = {
-      ...prev,
-      ...patch
-    };
-    try {
-      localStorage.setItem("ibaseTabAnim", next.style);
-      localStorage.setItem("ibaseTabAnimScope", next.scope);
-    } catch (e) {}
-    return next;
-  });
   const [roleEdit, setRoleEdit] = useState(false);
   const [roleVal, setRoleVal] = useState(u.role || "");
   useEffect(() => {
@@ -15170,6 +15145,31 @@ function UserRow({
 function App() {
   const [user, setUser] = useState(undefined);
   const [profile, setProfile] = useState(undefined);
+  // ── per-user tab animation (device-local; never written to the server) ──
+  const [uiAnim, setUiAnim] = useState(() => {
+    try {
+      return {
+        style: localStorage.getItem("ibaseTabAnim") || "default",
+        scope: localStorage.getItem("ibaseTabAnimScope") || "content"
+      };
+    } catch (e) {
+      return {
+        style: "default",
+        scope: "content"
+      };
+    }
+  });
+  const onUiAnim = patch => setUiAnim(prev => {
+    const next = {
+      ...prev,
+      ...patch
+    };
+    try {
+      localStorage.setItem("ibaseTabAnim", next.style);
+      localStorage.setItem("ibaseTabAnimScope", next.scope);
+    } catch (e) {}
+    return next;
+  });
   const [toast, setToast] = useState(null);
   const [theme, setTheme] = useState(() => {
     try {
