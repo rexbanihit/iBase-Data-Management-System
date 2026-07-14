@@ -1779,6 +1779,17 @@ function scrubOwner(e) {
   return s && s.toLowerCase() === OWNER_EMAIL ? "" : s;
 }
 
+// A logged visit may be edited ONLY by the person who logged it, an
+// administrator, or the owner. Imported ("excel") and unattributed visits
+// are administrator/owner-only — a regular user can never claim them.
+function canEditVisitBy(profile, v) {
+  if (!profile) return false;
+  if (profile.isAdmin || isOwnerAcct(profile)) return true;
+  const lb = String(v && v.loggedBy || "").trim().toLowerCase();
+  const me = String(meEmail(profile) || "").trim().toLowerCase();
+  return !!lb && lb !== "excel" && !!me && lb === me;
+}
+
 // THE one owner check, used everywhere (badge, cards, filters, gates).
 // Ownership is keyed to the owner EMAIL so it survives account re-creation;
 // the legacy UID is still honored for anything that referenced it.
@@ -4122,7 +4133,7 @@ function LabDetail({
         fontSize: 11
       },
       onClick: () => setPmFor(m)
-    }, "🛡 PM"), " ", catalog && catalog.visitEditEnabled && (canService || canManage) && (m.visits || []).length > 0 && /*#__PURE__*/React.createElement("button", {
+    }, "🛡 PM"), " ", catalog && catalog.visitEditEnabled && (canService || canManage) && (m.visits || []).length > 0 && canEditVisitBy(profile, (m.visits || []).slice().sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")))[(m.visits || []).length - 1]) && /*#__PURE__*/React.createElement("button", {
       title: "Correct this instrument's most recent visit — the change is kept in its history",
       style: {
         ...btnSt("var(--c-border)", "var(--c-text2)"),
@@ -4261,6 +4272,10 @@ function LabDetail({
     onClose: () => setEditVisit(null),
     onSave: async (v, newStatus, pending) => {
       const orig = editVisit.visit;
+      if (!canEditVisitBy(profile, orig)) {
+        notify("Only the person who logged this visit, an administrator, or the owner can edit it.", "error");
+        return;
+      }
       let attMetas = [];
       try {
         attMetas = await uploadAtts(pending || [], editVisit.machine.id, orig.id);
@@ -8278,6 +8293,10 @@ function VisitsTab({
   async function saveCorrection(v, newStatus, pending) {
     const row = editV;
     if (!row) return;
+    if (!canEditVisitBy(profile, row)) {
+      notify("Only the person who logged this visit, an administrator, or the owner can edit it.", "error");
+      return;
+    }
     const lab = labs.find(l => l.id === row._labId);
     if (!lab) {
       notify("Laboratory not found.", "error");
@@ -9158,7 +9177,7 @@ function VisitsTab({
         width: 86
       },
       onClick: e => e.stopPropagation()
-    }, editEnabled ? /*#__PURE__*/React.createElement("button", {
+    }, editEnabled ? canEditVisitBy(profile, v) ? /*#__PURE__*/React.createElement("button", {
       title: "Correct this visit — every change is kept in its history",
       style: {
         ...btnSt("var(--c-border)", "var(--c-text2)"),
@@ -9171,6 +9190,13 @@ function VisitsTab({
         setEditV(v);
       }
     }, "✏️") : /*#__PURE__*/React.createElement("span", {
+      title: "Only the person who logged this visit, an administrator, or the owner can edit it",
+      style: {
+        fontSize: 11,
+        color: "var(--c-text5)",
+        marginRight: 5
+      }
+    }, "👤🔒") : /*#__PURE__*/React.createElement("span", {
       title: "Turn on Settings → Tabs & Visibility → Visit / LOGS Corrections to edit visits",
       style: {
         fontSize: 11,
