@@ -3315,6 +3315,12 @@ function LabsTab({
     sv: m => m.installDate || "",
     render: m => /*#__PURE__*/React.createElement("span", null, m.installDate ? fmtDate(m.installDate) : "—")
   }, {
+    id: "last",
+    label: "Last PM",
+    w: 110,
+    sv: m => m.lastPM || "",
+    render: m => /*#__PURE__*/React.createElement("span", null, m.lastPM ? fmtDate(m.lastPM) : "—")
+  }, {
     id: "next",
     label: "Next PM",
     w: 110,
@@ -3920,6 +3926,9 @@ function LabDetail({
   // ONLY names registered under departments whose name contains
   // "Engineer(ing)" or "Specialist" may be picked when logging a visit.
   const engineerOptions = React.useMemo(() => Array.from(new Set((catalog && Array.isArray(catalog.departments) ? catalog.departments : []).filter(d => /engineer|specialist/i.test(String(d.name || ""))).flatMap(d => Array.isArray(d.employees) ? d.employees : []).map(x => String(x || "").trim()).filter(Boolean))).sort(), [catalog]);
+  // PM schedule editing: administrators, the owner, and anyone registered under
+  // an Engineering / Specialist department (matched by display name).
+  const canPMEdit = !!profile.isAdmin || isOwnerAcct(profile) || (engineerOptions || []).some(n => String(n).trim().toLowerCase() === String(profile.displayName || "").trim().toLowerCase());
   // machine-status suggestions: every status ever typed, across ALL laboratories
   const statusOptions = React.useMemo(() => Array.from(new Set((labs || []).flatMap(l => (l.machines || []).flatMap(m => [m.status, ...(m.visits || []).map(v => v.machineStatus)])).map(x => String(x || "").trim()).filter(Boolean))).sort(), [labs]);
   // "Service" rights (labs.edit): add a visit, update Last PM — NOT structural.
@@ -4041,7 +4050,7 @@ function LabDetail({
       width: "100%",
       borderCollapse: "collapse"
     }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Instrument", "Serial No", "Installed", "Installed by", "Next PM", "PM Flag", "Status", "Visits", ""].map(h => /*#__PURE__*/React.createElement("th", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Instrument", "Serial No", "Installed", "Installed by", "Last PM", "Next PM", "PM Flag", "Status", "Visits", ""].map(h => /*#__PURE__*/React.createElement("th", {
     key: h,
     style: thSt
   }, h)))), /*#__PURE__*/React.createElement("tbody", null, (lab.machines || []).map(m => {
@@ -4065,6 +4074,8 @@ function LabDetail({
         fontSize: 12
       }
     }, machineInstaller(m)), /*#__PURE__*/React.createElement("td", {
+      style: tdSt
+    }, m.lastPM ? fmtDate(m.lastPM) : "—"), /*#__PURE__*/React.createElement("td", {
       style: tdSt
     }, (() => {
       const n = pmComputedNext(m);
@@ -4125,8 +4136,8 @@ function LabDetail({
           visit: vs[vs.length - 1]
         });
       }
-    }, "🕓✏️"), " ", /*#__PURE__*/React.createElement("button", {
-      title: "Set / change the Last PM date — this updates the Next PM automatically",
+    }, "🕓✏️"), " ", canPMEdit && /*#__PURE__*/React.createElement("button", {
+      title: "Edit the PM schedule — Last PM date + frequency (quarterly / semi-annual / yearly). Next PM updates automatically.",
       style: {
         ...btnSt("var(--c-border)", "var(--c-text2)"),
         padding: "4px 9px",
@@ -4180,13 +4191,16 @@ function LabDetail({
   }), pmEditM && /*#__PURE__*/React.createElement(LastPMModal, {
     machine: pmEditM,
     onClose: () => setPmEditM(null),
-    onSave: async newDate => {
+    onSave: async (newDate, newIv) => {
       const ok = await saveMachines((lab.machines || []).map(x => {
         if (x.id !== pmEditM.id) return x;
         const nm = {
           ...x,
           lastPM: newDate
         };
+        // apply the chosen PM frequency (quarterly / semi-annual / yearly / custom)
+        const ivNew = newIv === undefined || newIv === null ? String(x.pmInterval == null ? "" : x.pmInterval) : String(newIv);
+        nm.pmInterval = ivNew === "" ? "" : isNaN(Number(ivNew)) ? ivNew : Number(ivNew);
         // Next PM auto-updates from the new Last PM (or a later PM visit); blank when no basis.
         nm.nextPM = "";
         const nx = typeof nextPMDate === "function" ? nextPMDate(pmAnchor(nm), nm.pmInterval) : null;
@@ -4195,17 +4209,23 @@ function LabDetail({
         // excluded entirely (no entry at all), matching every other history.
         const oldD = String(x.lastPM || "").slice(0, 10),
           newD = String(newDate || "").slice(0, 10);
-        if (oldD !== newD) {
+        const ivLbl = v => { const t = String(v == null ? "" : v); return t === "3" ? "Quarterly" : t === "6" ? "Semi-annual" : t === "12" ? "Yearly" : t === "" ? "—" : t; };
+        const oldIv = String(x.pmInterval == null ? "" : x.pmInterval);
+        const chg = [];
+        if (oldD !== newD) chg.push("Last PM: \u201C" + (oldD || "—") + "\u201D \u2192 \u201C" + (newD || "—") + "\u201D");
+        if (oldIv !== ivNew) chg.push("PM frequency: \u201C" + ivLbl(oldIv) + "\u201D \u2192 \u201C" + ivLbl(ivNew) + "\u201D");
+        if (chg.length) {
           nm.pmUpdatedBy = scrubOwner(meEmail(profile));
           nm.pmUpdatedAt = auditNow();
+          // the sole-owner leaves NO history entry at all — matching LOGS & Inventory.
           if (!isOwnerAcct(profile)) nm.editLog = [...(x.editLog || []), {
             by: meEmail(profile),
             at: auditNow(),
-            changes: ["Last PM: \u201C" + (oldD || "—") + "\u201D \u2192 \u201C" + (newD || "—") + "\u201D"]
+            changes: chg
           }];
         }
         return nm;
-      }), "Last PM date updated.");
+      }), "PM schedule updated.");
       if (ok) setPmEditM(null);
     }
   }), canManage && editingM && /*#__PURE__*/React.createElement(MachineModal, {
@@ -4441,18 +4461,20 @@ function LastPMModal({
   onClose
 }) {
   const [d, setD] = useState(String(machine.lastPM || "").slice(0, 10));
+  const [iv, setIv] = useState(String(machine.pmInterval === undefined || machine.pmInterval === null ? "" : machine.pmInterval));
   const [busy, setBusy] = useState(false);
-  // preview the Next PM the save will produce
+  // preview the Next PM the save will produce (with the chosen frequency)
   const preview = (() => {
     const nm = {
       ...machine,
-      lastPM: d
+      lastPM: d,
+      pmInterval: iv === "" ? "" : isNaN(Number(iv)) ? iv : Number(iv)
     };
     const nx = typeof nextPMDate === "function" ? nextPMDate(pmAnchor(nm), nm.pmInterval) : null;
     return nx || "";
   })();
   return /*#__PURE__*/React.createElement(Modal, {
-    title: "Last PM date",
+    title: "PM schedule — Last PM & frequency",
     onClose: onClose
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -4470,17 +4492,37 @@ function LastPMModal({
     },
     value: d,
     onChange: e => setD(e.target.value)
-  }), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "PM frequency"), /*#__PURE__*/React.createElement("select", {
+    style: {
+      ...inputSt(),
+      marginBottom: 10,
+      cursor: "pointer"
+    },
+    value: String(iv),
+    onChange: e => setIv(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "— no schedule —"), /*#__PURE__*/React.createElement("option", {
+    value: "3"
+  }, "Quarterly (every 3 months)"), /*#__PURE__*/React.createElement("option", {
+    value: "6"
+  }, "Semi-annual (every 6 months)"), /*#__PURE__*/React.createElement("option", {
+    value: "12"
+  }, "Yearly (every 12 months)"), iv !== "" && ["3", "6", "12"].indexOf(String(iv)) === -1 ? /*#__PURE__*/React.createElement("option", {
+    value: String(iv)
+  }, "Current: " + iv) : null), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11.5,
       color: "var(--c-text4)",
       marginBottom: 14
     }
-  }, d ? machine.pmInterval ? /*#__PURE__*/React.createElement("span", null, "→ Next PM will be ", /*#__PURE__*/React.createElement("b", {
+  }, d ? iv ? /*#__PURE__*/React.createElement("span", null, "→ Next PM will be ", /*#__PURE__*/React.createElement("b", {
     style: {
       color: "var(--c-text2)"
     }
-  }, preview ? fmtDate(preview) : "—"), " (auto-calculated", machine.pmInterval === "weekly" ? ", weekly" : machine.pmInterval === "monthly" ? ", monthly" : " from a " + machine.pmInterval + "-month interval", ").") : /*#__PURE__*/React.createElement("span", null, "No PM interval is set on this machine, so a Next PM can't be calculated — that's normal.") : /*#__PURE__*/React.createElement("span", null, "Leaving this blank means no Next PM can be calculated — that's perfectly fine.")), /*#__PURE__*/React.createElement("div", {
+  }, preview ? fmtDate(preview) : "—"), " (auto-calculated", String(iv) === "3" ? ", quarterly" : String(iv) === "6" ? ", semi-annual" : String(iv) === "12" ? ", yearly" : iv === "weekly" ? ", weekly" : iv === "monthly" ? ", monthly" : " from a " + iv + "-month interval", ").") : /*#__PURE__*/React.createElement("span", null, "No PM interval is set on this machine, so a Next PM can't be calculated — that's normal.") : /*#__PURE__*/React.createElement("span", null, "Leaving this blank means no Next PM can be calculated — that's perfectly fine.")), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: "var(--c-text5)",
@@ -4496,14 +4538,14 @@ function LastPMModal({
     disabled: busy,
     onClick: async () => {
       setBusy(true);
-      await onSave(d);
+      await onSave(d, iv);
       setBusy(false);
     }
-  }, busy ? "Saving…" : "Save Last PM"), /*#__PURE__*/React.createElement("button", {
+  }, busy ? "Saving…" : "Save PM schedule"), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: onClose
   }, "Cancel")), (() => {
-    const pmLog = (machine.editLog || []).filter(e2 => (e2.changes || []).some(c => String(c).indexOf("Last PM:") === 0));
+    const pmLog = (machine.editLog || []).filter(e2 => (e2.changes || []).some(c => (String(c).indexOf("Last PM:") === 0 || String(c).indexOf("PM frequency:") === 0)));
     if (!pmLog.length) return null;
     return /*#__PURE__*/React.createElement("div", {
       style: {
@@ -4519,7 +4561,7 @@ function LastPMModal({
         textTransform: "uppercase",
         marginBottom: 6
       }
-    }, "🕓 PM date history (", pmLog.length, ")"), pmLog.slice().reverse().map((e2, i2) => /*#__PURE__*/React.createElement("div", {
+    }, "🕓 PM schedule history (", pmLog.length, ")"), pmLog.slice().reverse().map((e2, i2) => /*#__PURE__*/React.createElement("div", {
       key: i2,
       style: {
         fontSize: 11.5,
@@ -4530,7 +4572,7 @@ function LastPMModal({
       style: {
         marginLeft: 12
       }
-    }, (e2.changes || []).filter(c => String(c).indexOf("Last PM:") === 0).join("; ")))));
+    }, (e2.changes || []).filter(c => (String(c).indexOf("Last PM:") === 0 || String(c).indexOf("PM frequency:") === 0)).join("; ")))));
   })());
 }
 function MachineModal({
