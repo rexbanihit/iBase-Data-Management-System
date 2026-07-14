@@ -4280,8 +4280,8 @@ function LabDetail({
         setEditVisit(null);
         return;
       }
-      updated.editLog = [...(orig.editLog || []), {
-        by: isOwnerAcct(profile) ? "" : meEmail(profile),
+      if (!isOwnerAcct(profile)) updated.editLog = [...(orig.editLog || []), {
+        by: meEmail(profile),
         at: auditNow(),
         changes
       }];
@@ -4545,7 +4545,7 @@ function LastPMModal({
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: onClose
   }, "Cancel")), (() => {
-    const pmLog = (machine.editLog || []).filter(e2 => (e2.changes || []).some(c => (String(c).indexOf("Last PM:") === 0 || String(c).indexOf("PM frequency:") === 0)));
+    const pmLog = (machine.editLog || []).filter(e2 => scrubOwner(e2.by) && (e2.changes || []).some(c => (String(c).indexOf("Last PM:") === 0 || String(c).indexOf("PM frequency:") === 0)));
     if (!pmLog.length) return null;
     return /*#__PURE__*/React.createElement("div", {
       style: {
@@ -4808,7 +4808,7 @@ function MachineModal({
       createdAt: auditNow()
     })
   }, "Save machine"), showHistory && initial && /*#__PURE__*/React.createElement(EditHistory, {
-    log: initial.editLog
+    log: (initial.editLog || []).filter(e9 => scrubOwner(e9.by))
   }));
 }
 // Read a picked file; images are downscaled/compressed so they fit the free
@@ -5475,7 +5475,7 @@ function VisitModal({
     style: inputSt(),
     value: f.dtArrivalHome,
     onChange: e => set("dtArrivalHome", e.target.value)
-  }))), initial && (initial.editLog || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+  }))), initial && ((initial.editLog || []).filter(e9 => scrubOwner(e9.by))).length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 14,
       borderTop: "1px dashed var(--c-border)",
@@ -5486,7 +5486,7 @@ function VisitModal({
       ...labelSt,
       marginBottom: 6
     }
-  }, "🕓 Edit history (", (initial.editLog || []).length, ")"), (initial.editLog || []).slice().reverse().map((e2, i2) => /*#__PURE__*/React.createElement("div", {
+  }, "🕓 Edit history (", ((initial.editLog || []).filter(e9 => scrubOwner(e9.by))).length, ")"), ((initial.editLog || []).filter(e9 => scrubOwner(e9.by))).slice().reverse().map((e2, i2) => /*#__PURE__*/React.createElement("div", {
     key: i2,
     style: {
       fontSize: 11.5,
@@ -8312,8 +8312,8 @@ function VisitsTab({
       setEditV(null);
       return;
     }
-    updated.editLog = [...(orig.editLog || []), {
-      by: isOwnerAcct(profile) ? "" : meEmail(profile),
+    if (!isOwnerAcct(profile)) updated.editLog = [...(orig.editLog || []), {
+      by: meEmail(profile),
       at: auditNow(),
       changes
     }];
@@ -9126,18 +9126,18 @@ function VisitsTab({
         return /*#__PURE__*/React.createElement("td", {
           key: id,
           style: base,
-          title: (lb || "—") + (v.loggedAt ? " · " + String(v.loggedAt).replace("T", " ").slice(0, 16) : "") + ((v.editLog || []).length ? "\n" + v.editLog.map(e => "✎ " + (scrubOwner(e.by) || "—") + " · " + String(e.at).replace("T", " ").slice(0, 16) + ": " + e.changes.join("; ")).join("\n") : "")
+          title: (lb || "—") + (v.loggedAt ? " · " + String(v.loggedAt).replace("T", " ").slice(0, 16) : "") + (((v.editLog || []).filter(e => scrubOwner(e.by))).length ? "\n" + (v.editLog || []).filter(e => scrubOwner(e.by)).map(e => "✎ " + scrubOwner(e.by) + " · " + String(e.at).replace("T", " ").slice(0, 16) + ": " + e.changes.join("; ")).join("\n") : "")
         }, grip, lb ? String(lb).split("@")[0] : "—", v.loggedAt ? /*#__PURE__*/React.createElement("span", {
           style: {
             color: "var(--c-text5)",
             fontSize: 10
           }
-        }, " · ", String(v.loggedAt).slice(5, 10)) : null, (v.editLog || []).length ? /*#__PURE__*/React.createElement("span", {
+        }, " · ", String(v.loggedAt).slice(5, 10)) : null, ((v.editLog || []).filter(e => scrubOwner(e.by))).length ? /*#__PURE__*/React.createElement("span", {
           style: {
             color: "#f59e0b",
             fontSize: 10
           }
-        }, " ✎", v.editLog.length) : null, (v.attachments || []).length ? /*#__PURE__*/React.createElement("span", {
+        }, " ✎", (v.editLog || []).filter(e => scrubOwner(e.by)).length) : null, (v.attachments || []).length ? /*#__PURE__*/React.createElement("span", {
           style: {
             color: "var(--c-text4)",
             fontSize: 10
@@ -9232,7 +9232,7 @@ function buildBackupSheets({
   const S = {};
   S["Laboratories"] = [["Laboratory", "Location", "Machines"]].concat(labs.map(l => [l.name || "", l.location || "", (l.machines || []).length]));
   S["Equipment Register"] = [["Laboratory", "Instrument", "Serial No", "Installed", "Last PM", "PM Interval", "Next PM", "Status", "Visits"]].concat(labs.flatMap(l => (l.machines || []).map(m => [l.name || "", m.instrument || "", m.serialNo || "", m.installDate || "", m.lastPM || "", m.pmInterval || "", m.nextPM || "", m.status || "", (m.visits || []).length])));
-  S["Service Visits"] = [["Date", "Timestamp", "Name", "Activity/Job type", "Support type", "Account", "Instrument", "Date and Time reported", "Serial number", "Date and Time of Departure", "Date and Time of Arrival to Account", "Date and Time work started", "Problem Description", "System Condition", "Instrument Status", "Recommendation", "Endorsed to", "Date and Time work ended", "Priority", "Description of Work", "ISR no.", "Date and Time of Arrival to Home", "Software Version", "Engineer 2", "Engineer 3", "Logged By", "Logged At", "Signed", "Signed by (name)", "Attachments", "Edit Log"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => [v.date || "", v.srcTimestamp || v.loggedAt || "", v.engineer || "", v.type || "", v.supportType || "", l.name || "", m.instrument || "", v.dtReported || "", m.serialNo || "", v.dtDeparture || "", v.dtArrivalAccount || "", v.dtWorkStarted || "", v.problemDesc || "", v.systemCondition || "", v.machineStatus || "", v.recommendation || "", v.endorsedTo || "", v.dtWorkEnded || "", v.priority || "", (v.remarks || "") + (extraFold(v) ? (v.remarks ? "\n" : "") + extraFold(v) : ""), v.isrNo || "", v.dtArrivalHome || "", v.softwareVersion || "", v.engineer2 || "", v.engineer3 || "", scrubOwner(v.loggedBy), v.loggedAt || "", v.signature ? "Yes" : "", v.signedByName || "", (v.attachments || []).map(a => a.name).join(", "), (v.editLog || []).map(e => (scrubOwner(e.by) || "—") + " @ " + e.at + ": " + e.changes.join("; ")).join(" | ")]))));
+  S["Service Visits"] = [["Date", "Timestamp", "Name", "Activity/Job type", "Support type", "Account", "Instrument", "Date and Time reported", "Serial number", "Date and Time of Departure", "Date and Time of Arrival to Account", "Date and Time work started", "Problem Description", "System Condition", "Instrument Status", "Recommendation", "Endorsed to", "Date and Time work ended", "Priority", "Description of Work", "ISR no.", "Date and Time of Arrival to Home", "Software Version", "Engineer 2", "Engineer 3", "Logged By", "Logged At", "Signed", "Signed by (name)", "Attachments", "Edit Log"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => [v.date || "", v.srcTimestamp || v.loggedAt || "", v.engineer || "", v.type || "", v.supportType || "", l.name || "", m.instrument || "", v.dtReported || "", m.serialNo || "", v.dtDeparture || "", v.dtArrivalAccount || "", v.dtWorkStarted || "", v.problemDesc || "", v.systemCondition || "", v.machineStatus || "", v.recommendation || "", v.endorsedTo || "", v.dtWorkEnded || "", v.priority || "", (v.remarks || "") + (extraFold(v) ? (v.remarks ? "\n" : "") + extraFold(v) : ""), v.isrNo || "", v.dtArrivalHome || "", v.softwareVersion || "", v.engineer2 || "", v.engineer3 || "", scrubOwner(v.loggedBy), v.loggedAt || "", v.signature ? "Yes" : "", v.signedByName || "", (v.attachments || []).map(a => a.name).join(", "), (v.editLog || []).filter(e => scrubOwner(e.by)).map(e => scrubOwner(e.by) + " @ " + e.at + ": " + e.changes.join("; ")).join(" | ")]))));
   S["Visit Attachments"] = [["Laboratory", "Machine", "Serial", "Visit Date", "Visit Type", "File", "Kind", "Size KB", "Uploaded (visit logged by)"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).flatMap(v => (v.attachments || []).map(a => [l.name || "", m.instrument || "", m.serialNo || "", v.date || "", v.type || "", a.name || "", a.kind || "", Math.round((a.size || 0) / 1024), v.loggedBy || ""])))));
   S["Machine Inventory"] = [["Brand", "Model", "Serial No", "Item Code", "Condition", "Status", "Import Date", "Ownership", "Location", "Dealer", "Sales Person", "PO Date", "Remarks"]].concat(inventory.map(it => [it.brand || "", it.machineModel || "", it.serialNo || "", it.itemCode || "", it.condition || "", it.status || "", it.importDate || "", it.ownership || "", it.location || "", it.dealer || "", it.salesPerson || "", it.poDate || "", it.remarks || ""]));
   S["Spare Parts"] = [["Brand", "Part No", "Description", "On Hand"]].concat(spareParts.map(p => [p.brand || "", p.partNumber || "", p.description || "", (p.receipts || []).reduce((s, r) => s + (Number(r.qty) || 0), 0) - (p.issues || []).reduce((s, r) => s + (Number(r.qty) || 0), 0)]));
