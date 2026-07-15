@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v118";
+  window.__IBASE_BUILD = "v119";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -2596,7 +2596,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v118"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v119"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -4486,6 +4486,7 @@ function LabDetail({
         // apply the chosen PM frequency (quarterly / semi-annual / yearly / custom)
         const ivNew = newIv === undefined || newIv === null ? String(x.pmInterval == null ? "" : x.pmInterval) : String(newIv);
         nm.pmInterval = ivNew === "" ? "" : isNaN(Number(ivNew)) ? ivNew : Number(ivNew);
+        nm.pmNoSchedule = ivNew === ""; // explicit "no schedule" — auto-defaults respect this
         // Next PM auto-updates from the new Last PM (or a later PM visit); blank when no basis.
         nm.nextPM = "";
         const nx = typeof nextPMDate === "function" ? nextPMDate(pmAnchor(nm), nm.pmInterval) : null;
@@ -11492,7 +11493,7 @@ function bestPMAnchor(m, vs) {
 }
 function sebiaPMPass(machines) {
   (machines || []).forEach(m => {
-    if ((m.pmInterval === "" || m.pmInterval === undefined || m.pmInterval === null) && /sebia/i.test(String(brandFromModel(m.instrument, "") || ""))) m.pmInterval = 12;
+    if ((m.pmInterval === "" || m.pmInterval === undefined || m.pmInterval === null) && !m.pmNoSchedule && /sebia/i.test(String(brandFromModel(m.instrument, "") || ""))) m.pmInterval = 12;
     // Rule: an installed instrument with NO PM history anchors its Last PM to
     // the installation date, so the Next PM auto-calculates from the schedule.
     if (m.pmInterval && m.installDate && !m.lastPM && !hasPMVisit(m.visits)) m.lastPM = String(m.installDate).slice(0, 10);
@@ -11501,12 +11502,33 @@ function sebiaPMPass(machines) {
   return machines;
 }
 function finalizeMachinePM(m, knownVisits) {
-  if ((m.pmInterval === "" || m.pmInterval === undefined || m.pmInterval === null) && /sebia/i.test(String(brandFromModel(m.instrument, "") || ""))) m.pmInterval = 12;
+  if ((m.pmInterval === "" || m.pmInterval === undefined || m.pmInterval === null) && !m.pmNoSchedule && /sebia/i.test(String(brandFromModel(m.instrument, "") || ""))) m.pmInterval = 12;
   const vs = Array.isArray(m.visits) && m.visits.length ? m.visits : knownVisits;
   if (m.pmInterval && m.installDate && !m.lastPM && !hasPMVisit(vs)) m.lastPM = String(m.installDate).slice(0, 10);
   m.nextPM = "";
   if (m.pmInterval) { const nx = nextPMDate(bestPMAnchor(m, vs), m.pmInterval); if (nx) m.nextPM = nx; }
   return m;
+}
+// Self-healing PM schedules for machines ALREADY stored (imported or added
+// before these rules existed): Sebia → yearly by default, Last PM anchors to
+// the installation date when there is no PM history, and the stored Next PM
+// is kept in sync with the schedule + latest evidence. Explicit choices are
+// always respected: a set schedule is never changed, and a machine marked
+// pmNoSchedule (the 📅 editor's "— no schedule —") is never re-defaulted.
+function normalizePMSchedules(machines) {
+  const out = (machines || []).map(m => ({ ...m }));
+  let changed = 0;
+  out.forEach(m => {
+    const before = JSON.stringify([m.pmInterval, m.lastPM, m.nextPM]);
+    if ((m.pmInterval === "" || m.pmInterval === undefined || m.pmInterval === null) && !m.pmNoSchedule && /sebia/i.test(String(brandFromModel(m.instrument, "") || ""))) m.pmInterval = 12;
+    if (m.pmInterval && m.installDate && !m.lastPM && !hasPMVisit(m.visits)) m.lastPM = String(m.installDate).slice(0, 10);
+    if (m.pmInterval && !(typeof isPull === "function" && isPull(m)) && !(typeof retiredStatus === "function" && retiredStatus(m.status))) {
+      const nx = nextPMDate(bestPMAnchor(m, m.visits), m.pmInterval);
+      if (nx && nx !== m.nextPM) m.nextPM = nx;
+    }
+    if (JSON.stringify([m.pmInterval, m.lastPM, m.nextPM]) !== before) changed++;
+  });
+  return { changed: changed, machines: out };
 }
 function impVisitKey(v) {
   return [v.date, String(v.type || "").toLowerCase(), String(v.isr || v.isrNo || "").toLowerCase(), String(v.engineer || "").toLowerCase(), String(v.srcTimestamp || v.dtDeparture || v.dtWorkStarted || "").toLowerCase()].join("|");
@@ -12229,7 +12251,7 @@ function labMergeSafe(cur, inc) {
     const k = mKey(im);
     if (idx[k] === undefined) { out.push(JSON.parse(JSON.stringify(im))); idx[k] = out.length - 1; return; }
     const t = out[idx[k]];
-    ["instrument", "serialNo", "installDate", "installedBy", "status", "lastPM", "pmInterval", "nextPM"].forEach(f => { if ((t[f] === undefined || t[f] === null || t[f] === "") && im[f] !== undefined && im[f] !== "") t[f] = im[f]; });
+    ["instrument", "serialNo", "installDate", "installedBy", "status", "lastPM", "pmInterval", "nextPM"].forEach(f => { if ((f === "pmInterval" || f === "nextPM") && t.pmNoSchedule) return; if ((t[f] === undefined || t[f] === null || t[f] === "") && im[f] !== undefined && im[f] !== "") t[f] = im[f]; });
     const seen = {};
     (t.visits || []).forEach(v => { seen[impVisitKey(v)] = true; });
     (im.visits || []).forEach(v => { const vk = impVisitKey(v); if (!seen[vk]) { t.visits = t.visits || []; t.visits.push(JSON.parse(JSON.stringify(v))); seen[vk] = true; } });
@@ -16127,6 +16149,34 @@ function App() {
   const labs = useCol("labs", !!signedProfile && (pCanTab(signedProfile, "labs", "view") || pCanTab(signedProfile, "overtime", "view") || pCanTab(signedProfile, "dashboard", "view") || pCanTab(signedProfile, "analytics", "view") || pCanTab(signedProfile, "visits", "view")), notify);
   // machines added in a laboratory auto-fill from inventory by serial number
   const invForLabs = useCol("inventory", !!signedProfile && pCanTab(signedProfile, "labs", "view"), notify);
+  // ── self-healing PM schedules: normalize stored machines once per session ──
+  const pmNormRef = useRef(false);
+  useEffect(() => {
+    if (pmNormRef.current) return;
+    if (!signedProfile || !Array.isArray(labs) || !labs.length || !catalog) return;
+    if (!(signedProfile.isAdmin || pCanTab(signedProfile, "labs", "edit"))) return;
+    pmNormRef.current = true;
+    (async () => {
+      let fixedMachines = 0, fixedLabs = 0;
+      for (const lab of labs) {
+        try {
+          const probe = normalizePMSchedules(lab.machines);
+          if (!probe.changed) continue;
+          await db.runTransaction(async tx => {
+            const ref = db.collection("labs").doc(lab.id);
+            const snap = await tx.get(ref);
+            if (!snap.exists) return;
+            const res = normalizePMSchedules((snap.data() || {}).machines);
+            if (!res.changed) return;
+            tx.update(ref, { machines: res.machines });
+            fixedMachines += res.changed;
+          });
+          fixedLabs++;
+        } catch (e) {}
+      }
+      if (fixedLabs) notify("🛠 PM schedules updated automatically — " + fixedMachines + " machine(s) across " + fixedLabs + " laborator" + (fixedLabs === 1 ? "y" : "ies") + " (Sebia → yearly by default; Last/Next PM calculated). Schedules can still be changed manually via 📅 PM.", "ok");
+    })();
+  }, [signedProfile, labs, catalog]);
   const users = useCol("users", !!signedProfile && signedProfile.isAdmin, notify);
   const binItems = useCol("bin", !!signedProfile && signedProfile.isAdmin, notify);
   const catalog = useDoc("config/catalog", !!signedProfile);
