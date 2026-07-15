@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v119";
+  window.__IBASE_BUILD = "v120";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -2596,7 +2596,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v119"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v120"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -16149,6 +16149,9 @@ function App() {
   const labs = useCol("labs", !!signedProfile && (pCanTab(signedProfile, "labs", "view") || pCanTab(signedProfile, "overtime", "view") || pCanTab(signedProfile, "dashboard", "view") || pCanTab(signedProfile, "analytics", "view") || pCanTab(signedProfile, "visits", "view")), notify);
   // machines added in a laboratory auto-fill from inventory by serial number
   const invForLabs = useCol("inventory", !!signedProfile && pCanTab(signedProfile, "labs", "view"), notify);
+  const users = useCol("users", !!signedProfile && signedProfile.isAdmin, notify);
+  const binItems = useCol("bin", !!signedProfile && signedProfile.isAdmin, notify);
+  const catalog = useDoc("config/catalog", !!signedProfile);
   // ── self-healing PM schedules: normalize stored machines once per session ──
   const pmNormRef = useRef(false);
   useEffect(() => {
@@ -16177,9 +16180,6 @@ function App() {
       if (fixedLabs) notify("🛠 PM schedules updated automatically — " + fixedMachines + " machine(s) across " + fixedLabs + " laborator" + (fixedLabs === 1 ? "y" : "ies") + " (Sebia → yearly by default; Last/Next PM calculated). Schedules can still be changed manually via 📅 PM.", "ok");
     })();
   }, [signedProfile, labs, catalog]);
-  const users = useCol("users", !!signedProfile && signedProfile.isAdmin, notify);
-  const binItems = useCol("bin", !!signedProfile && signedProfile.isAdmin, notify);
-  const catalog = useDoc("config/catalog", !!signedProfile);
   const dlCfg = useDoc("config/downloads", !!signedProfile); // ⬇ per-user download grants
   useEffect(() => {
     if (typeof window !== "undefined") window.__ibaseCatalog = catalog || {};
