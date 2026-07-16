@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v122";
+  window.__IBASE_BUILD = "v125";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -2437,6 +2437,434 @@ const DEFAULT_LOGIN_DEPTS = [
   { id: "acct",   name: "Accounting Department", icon: "🧾" },
   { id: "com",    name: "COM",                   icon: "📡" }
 ];
+// ── Backup & Restore ─────────────────────────────────────────────────────────
+// Documents are stored LOSSLESSLY inside the Excel file: each row carries the
+// full JSON, chunked across json1..jsonN columns (Excel caps a cell at 32,767
+// characters; laboratory records can be far larger). Summary columns exist
+// purely for human eyes.
+// Auto-discovery: the app scans ITS OWN shipped code for every
+// collection("…") literal — so any tab added in the future is caught by
+// Backup automatically, with no changes to this card.
+function bkDiscoverCollections() {
+  const found = {};
+  try {
+    const scripts = document.scripts || [];
+    for (let i = 0; i < scripts.length; i++) {
+      const txt = scripts[i] && scripts[i].text || "";
+      const re = /collection\("([A-Za-z0-9_]+)"\)/g;
+      let m;
+      while (m = re.exec(txt)) found[m[1]] = true;
+    }
+  } catch (e) {}
+  return Object.keys(found).sort();
+}
+// Small 3-way dialog (vanilla, like promptPassword): resolves the chosen
+// value or null on cancel/escape.
+function choiceDialog(title, lines, options) {
+  return new Promise(resolve => {
+    const ov = document.createElement("div");
+    ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;";
+    const card = document.createElement("div");
+    card.style.cssText = "background:var(--c-card,#111827);border:1px solid var(--c-border,#333);border-radius:14px;padding:22px 24px;width:min(94vw,460px);color:var(--c-text,#eee);font:inherit;";
+    const h = document.createElement("div"); h.textContent = title;
+    h.style.cssText = "font-weight:800;font-size:14px;margin-bottom:8px;";
+    card.appendChild(h);
+    (lines || []).forEach(l => { const p = document.createElement("div"); p.textContent = l; p.style.cssText = "font-size:12px;color:var(--c-text4,#99a);margin-bottom:5px;"; card.appendChild(p); });
+    const btns = document.createElement("div"); btns.style.cssText = "display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:14px;";
+    (options || []).forEach(op => {
+      const b = document.createElement("button"); b.textContent = op.label;
+      b.style.cssText = op.primary ? "background:var(--c-key,#38bdf8);color:#08131c;border:none;border-radius:8px;padding:8px 14px;font-weight:800;cursor:pointer;" : "background:none;border:1px solid var(--c-border,#333);border-radius:8px;padding:8px 12px;color:inherit;cursor:pointer;";
+      b.onclick = () => done(op.value);
+      btns.appendChild(b);
+    });
+    const no = document.createElement("button"); no.textContent = "Cancel";
+    no.style.cssText = "background:none;border:1px solid var(--c-border,#333);border-radius:8px;padding:8px 12px;color:var(--c-text5,#889);cursor:pointer;";
+    no.onclick = () => done(null);
+    btns.appendChild(no);
+    const done = v => { try { document.body.removeChild(ov); } catch (e) {} resolve(v); };
+    ov.onclick = e => { if (e.target === ov) done(null); };
+    card.appendChild(btns); ov.appendChild(card); document.body.appendChild(ov);
+  });
+}
+function bkChunk(str) {
+  const out = [];
+  for (let i = 0; i < str.length; i += 30000) out.push(str.slice(i, i + 30000));
+  return out.length ? out : [""];
+}
+function bkJoinRow(row, startIdx) {
+  let out = "";
+  for (let i = startIdx; i < row.length; i++) out += row[i] == null ? "" : String(row[i]);
+  return out;
+}
+const BK_UNITS = [
+  { key: "labs",      label: "🏥 Institutions & LOGS", hint: "laboratories · machines · every service visit — the LOGS tab is a view of this data, and the Overtime tab's computed hours derive from it too", sheets: ["labs"] },
+  { key: "inventory", label: "📦 Inventory", hint: "machine inventory · spare parts · reagents", sheets: ["inventory", "spareParts", "reagents"] },
+  { key: "ot",        label: "🕒 Overtime applications", hint: "FILED applications only — computed overtime hours are derived live from LOGS and restore with Institutions", sheets: ["otApplications"] },
+  { key: "sales",     label: "📊 Sales", hint: "the sales ledger", sheets: ["sales"] },
+  { key: "users",     label: "👥 Users & permissions", hint: "accounts, roles, tab rights (the owner record is never touched on restore)", sheets: ["users"] },
+  { key: "config",    label: "⚙ Settings & configuration", hint: "catalog · tabs · login cards · PM-kit rules · holidays · stored import files", sheets: ["config"] },
+  { key: "att",       label: "📎 Attachments", hint: "visit photos & files", sheets: ["attachments"] }
+];
+function bkSummary(coll, d) {
+  try {
+    if (coll === "labs") return String(d.name || "") + " · " + ((d.machines || []).length) + " machine(s)";
+    if (coll === "inventory") return [d.brand, d.machineModel, d.serialNo].filter(Boolean).join(" ");
+    if (coll === "spareParts") return [d.brand, d.partNumber].filter(Boolean).join(" ");
+    if (coll === "reagents") return [d.itemId, d.name].filter(Boolean).join(" · ");
+    if (coll === "sales") return [d.date, d.account, d.amount].filter(x => x !== undefined && x !== "").join(" · ");
+    if (coll === "users") return String(d.email || d.displayName || "");
+    if (coll === "attachments") return String(d.name || d.visitId || "");
+    return "";
+  } catch (e) { return ""; }
+}
+// ── Automatic backups → Google Drive ────────────────────────────────────────
+// The browser cannot wake itself at midnight: the schedule fires whenever an
+// ADMINISTRATOR has iBase open, with automatic catch-up for missed slots.
+// Drive access uses Google Identity Services with the drive.file scope (the
+// app can only see files/folders it created itself).
+function bkDue(cfg, nowMs, lastMs) {
+  if (!cfg || !cfg.enabled) return false;
+  const now = new Date(nowMs);
+  const at = String(cfg.atTime || "00:00");
+  const hh = Number(at.slice(0, 2)) || 0, mm = Number(at.slice(3, 5)) || 0;
+  const slotToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh, mm).getTime();
+  if (cfg.mode === "hours") {
+    const n = Math.max(1, Number(cfg.everyHours) || 24);
+    return nowMs - (lastMs || 0) >= n * 3600000;
+  }
+  if (cfg.mode === "daily") return nowMs >= slotToday && (lastMs || 0) < slotToday;
+  if (cfg.mode === "weekly") {
+    const days = Array.isArray(cfg.days) && cfg.days.length ? cfg.days : ["MO"];
+    const key = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"][now.getDay()];
+    // catch-up: due if ANY scheduled slot since the last backup has passed
+    for (let back = 0; back < 7; back++) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - back, hh, mm);
+      const k = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"][d.getDay()];
+      if (days.indexOf(k) === -1) continue;
+      const slot = d.getTime();
+      if (slot <= nowMs) return (lastMs || 0) < slot;
+    }
+    return false;
+  }
+  if (cfg.mode === "monthly") {
+    const dom = Math.min(28, Math.max(1, Number(cfg.dayOfMonth) || 1));
+    for (let back = 0; back < 2; back++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - back, dom, hh, mm);
+      const slot = d.getTime();
+      if (slot <= nowMs) return (lastMs || 0) < slot;
+    }
+    return false;
+  }
+  return false;
+}
+let __gisToken = null, __gisTokenAt = 0, __gisClient = null;
+function bkLoadGIS() {
+  return new Promise((res, rej) => {
+    if (window.google && window.google.accounts && window.google.accounts.oauth2) return res();
+    const sc = document.createElement("script");
+    sc.src = "https://accounts.google.com/gsi/client";
+    sc.onload = () => res(); sc.onerror = () => rej(new Error("Could not load Google Sign-In — check the connection / ad-blocker."));
+    document.head.appendChild(sc);
+  });
+}
+function bkGetToken(clientId, interactive) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      if (__gisToken && Date.now() - __gisTokenAt < 45 * 60000) return resolve(__gisToken);
+      await bkLoadGIS();
+      if (!__gisClient || __gisClient.__cid !== clientId) {
+        __gisClient = window.google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: "https://www.googleapis.com/auth/drive.file",
+          callback: () => {}
+        });
+        __gisClient.__cid = clientId;
+      }
+      __gisClient.callback = resp => {
+        if (resp && resp.access_token) { __gisToken = resp.access_token; __gisTokenAt = Date.now(); resolve(__gisToken); }
+        else reject(new Error(resp && resp.error || "Google Drive access was not granted."));
+      };
+      __gisClient.requestAccessToken({ prompt: interactive ? "consent" : "" });
+    } catch (e) { reject(e); }
+  });
+}
+async function bkDriveEnsureFolder(token) {
+  const q = encodeURIComponent("name = 'iBase Backups' and mimeType = 'application/vnd.google-apps.folder' and trashed = false");
+  const r = await fetch("https://www.googleapis.com/drive/v3/files?q=" + q + "&fields=files(id,name)", { headers: { Authorization: "Bearer " + token } });
+  const j = await r.json();
+  if (j.files && j.files.length) return j.files[0].id;
+  const c = await fetch("https://www.googleapis.com/drive/v3/files", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "iBase Backups", mimeType: "application/vnd.google-apps.folder" })
+  });
+  const cj = await c.json();
+  if (!cj.id) throw new Error("Could not create the Drive folder.");
+  return cj.id;
+}
+async function bkDriveUpload(token, folderId, fname, arrayBuf) {
+  const meta = { name: fname, parents: [folderId] };
+  const boundary = "ibase" + Date.now();
+  const head = "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + JSON.stringify(meta) + "\r\n--" + boundary + "\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n";
+  const tail = "\r\n--" + boundary + "--";
+  const body = new Blob([head, arrayBuf, tail]);
+  const r = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "multipart/related; boundary=" + boundary },
+    body: body
+  });
+  const j = await r.json();
+  if (!j.id) throw new Error("Drive refused the upload" + (j.error && j.error.message ? ": " + j.error.message : "."));
+  return j;
+}
+async function bkDrivePrune(token, folderId, keep) {
+  const q = encodeURIComponent("'" + folderId + "' in parents and trashed = false and name contains 'iBase_'");
+  const r = await fetch("https://www.googleapis.com/drive/v3/files?q=" + q + "&orderBy=createdTime desc&fields=files(id,name,createdTime)&pageSize=100", { headers: { Authorization: "Bearer " + token } });
+  const j = await r.json();
+  const files = j.files || [];
+  const extra = files.slice(Math.max(1, Number(keep) || 10));
+  for (const f of extra) {
+    try { await fetch("https://www.googleapis.com/drive/v3/files/" + f.id, { method: "DELETE", headers: { Authorization: "Bearer " + token } }); } catch (e) {}
+  }
+  return extra.length;
+}
+async function bkBuildFullWorkbook(setProg) {
+  const wb = XLSX.utils.book_new();
+  const meta = [["iBase backup"], ["created", auditNow()], ["build", String(window.__IBASE_BUILD || "")], ["scope", "EVERYTHING (automatic)"]];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(meta), "meta");
+  const curated = BK_UNITS.flatMap(u => u.sheets);
+  const sheets = Array.from(new Set([...curated, ...bkDiscoverCollections()]));
+  let total = 0;
+  for (const coll of sheets) {
+    if (setProg) setProg("Auto-backup: reading " + coll + "…");
+    const snap = await db.collection(coll).get();
+    let maxParts = 1;
+    const docs = snap.docs.map(d => { const parts = bkChunk(JSON.stringify(d.data() || {})); if (parts.length > maxParts) maxParts = parts.length; return { id: d.id, summary: bkSummary(coll, d.data() || {}), parts: parts }; });
+    const header = ["id", "summary", "parts"]; for (let i = 1; i <= maxParts; i++) header.push("json" + i);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([header, ...docs.map(x => [x.id, x.summary, x.parts.length, ...x.parts])]), coll.slice(0, 31));
+    total += docs.length;
+  }
+  return { wb: wb, total: total };
+}
+async function bkRunAutoBackup(cfg, profile, notify, setProg) {
+  const { wb, total } = await bkBuildFullWorkbook(setProg);
+  const fname = "iBase_AUTO_backup_" + new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-") + ".xlsx";
+  if (cfg.clientId) {
+    const token = await bkGetToken(cfg.clientId, false);
+    const folderId = await bkDriveEnsureFolder(token);
+    if (setProg) setProg("Auto-backup: uploading to Google Drive…");
+    await bkDriveUpload(token, folderId, fname, XLSX.write(wb, { type: "array", bookType: "xlsx" }));
+    const pruned = await bkDrivePrune(token, folderId, cfg.keep || 10);
+    logAudit(profile, "backup.auto", fname + " → Google Drive (" + total + " doc(s)" + (pruned ? ", " + pruned + " old file(s) pruned" : "") + ")");
+    notify("☁️ Automatic backup uploaded to Google Drive — " + fname + " (" + total + " document(s)).", "ok");
+  } else {
+    XLSX.writeFile(wb, fname);
+    logAudit(profile, "backup.auto", fname + " → local download (Drive not connected)");
+    notify("💾 Automatic backup downloaded locally — connect Google Drive in Settings for cloud copies.", "ok");
+  }
+}
+function BackupRestoreCard({ profile, notify }) {
+  const [busy, setBusy] = useState("");
+  const [prog, setProg] = useState("");
+  const [wipe, setWipe] = useState(false);
+  const fileRefs = useRef({});
+  const [cfg, setCfg] = useState(null);
+  useEffect(() => {
+    const un = db.doc("config/backupCfg").onSnapshot(snap => setCfg(snap.data() || {}), () => setCfg({}));
+    return un;
+  }, []);
+  const saveCfg = async patch => {
+    try {
+      await db.doc("config/backupCfg").set({ ...(cfg || {}), ...patch }, { merge: true });
+      logAudit(profile, "settings.backupCfg", JSON.stringify(patch).slice(0, 120));
+    } catch (e) { notify("SERVER REFUSED:\n" + e.message, "error"); }
+  };
+  const connectDrive = async () => {
+    const cid = String(cfg && cfg.clientId || "").trim();
+    if (!cid) { notify("Paste your Google OAuth Client ID first (instructions beside the field).", "error"); return; }
+    try {
+      await bkGetToken(cid, true);
+      notify("☁️ Google Drive connected — automatic backups will upload to the \u201CiBase Backups\u201D folder.", "ok");
+    } catch (e) { notify("Drive connection failed: " + e.message, "error"); }
+  };
+  const runNow = async () => {
+    setBusy("auto");
+    try { await bkRunAutoBackup(cfg || {}, profile, notify, setProg); await saveCfg({ lastAutoAt: Date.now() }); }
+    catch (e) { notify("Automatic backup failed: " + e.message, "error"); }
+    setBusy(""); setProg("");
+  };
+  async function fetchSheetRows(coll) {
+    const snap = await db.collection(coll).get();
+    let maxParts = 1;
+    const docs = snap.docs.map(d => {
+      const json = JSON.stringify(d.data() || {});
+      const parts = bkChunk(json);
+      if (parts.length > maxParts) maxParts = parts.length;
+      return { id: d.id, summary: bkSummary(coll, d.data() || {}), parts: parts };
+    });
+    const header = ["id", "summary", "parts"];
+    for (let i = 1; i <= maxParts; i++) header.push("json" + i);
+    const rows = docs.map(x => [x.id, x.summary, x.parts.length, ...x.parts]);
+    return { header: header, rows: rows, count: docs.length };
+  }
+  async function doBackup(unit) {
+    setBusy("b:" + (unit ? unit.key : "all"));
+    try {
+      const wb = XLSX.utils.book_new();
+      const meta = [["iBase backup"], ["created", auditNow()], ["build", String(window.__IBASE_BUILD || "")], ["scope", unit ? unit.label : "EVERYTHING"]];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(meta), "meta");
+      const curated = BK_UNITS.flatMap(u => u.sheets);
+      const discovered = bkDiscoverCollections();
+      const sheets = unit ? unit.sheets : Array.from(new Set([...curated, ...discovered]));
+      let total = 0;
+      for (const coll of sheets) {
+        setProg("Reading " + coll + "…");
+        const { header, rows, count } = await fetchSheetRows(coll);
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([header, ...rows]), coll.slice(0, 31));
+        total += count;
+      }
+      const fname = "iBase_backup_" + (unit ? unit.key : "FULL") + "_" + today() + ".xlsx";
+      XLSX.writeFile(wb, fname);
+      logAudit(profile, "backup.save", (unit ? unit.key : "FULL") + " · " + total + " document(s)");
+      notify("💾 Backup saved — " + fname + " (" + total + " document(s)). Keep it somewhere safe.", "ok");
+    } catch (e) { notify("Backup failed: " + e.message, "error"); }
+    setBusy(""); setProg("");
+  }
+  async function doRestore(unit, file) {
+    setBusy("r:" + unit.key);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const found = unit.sheets.filter(sh => wb.SheetNames.indexOf(sh.slice(0, 31)) !== -1);
+      if (!found.length) { notify("This file contains no \u201C" + unit.label + "\u201D data (expected sheet(s): " + unit.sheets.join(", ") + ").", "error"); setBusy(""); return; }
+      const parsed = {};
+      let totalDocs = 0;
+      for (const coll of found) {
+        const aoa = XLSX.utils.sheet_to_json(wb.Sheets[coll.slice(0, 31)], { header: 1 });
+        const docs = [];
+        for (let r = 1; r < aoa.length; r++) {
+          const row = aoa[r] || [];
+          const id = String(row[0] || "").trim();
+          if (!id) continue;
+          const json = bkJoinRow(row, 3);
+          try { docs.push({ id: id, data: JSON.parse(json) }); } catch (e) { throw new Error(coll + " row " + (r + 1) + " (" + id + ") is corrupted — restore aborted, nothing was written."); }
+        }
+        parsed[coll] = docs;
+        totalDocs += docs.length;
+      }
+      // pre-scan the live collections so the user can decide about duplicates
+      const existing = {};
+      let nNew = 0, nExisting = 0;
+      for (const coll of found) {
+        existing[coll] = {};
+        setProg("Comparing " + coll + " with the live data…");
+        try { const cur = await db.collection(coll).get(); cur.docs.forEach(dd => { existing[coll][dd.id] = true; }); } catch (e) {}
+        parsed[coll].forEach(d => { if (existing[coll][d.id]) nExisting++; else nNew++; });
+      }
+      const detail = found.map(c => parsed[c].length + " → " + c).join(", ");
+      const mode = await choiceDialog("♻ Restore " + unit.label, [
+        "From: " + file.name,
+        "In the file: " + detail,
+        "Compared with the system: " + nNew + " new · " + nExisting + " already exist (same id).",
+        nExisting ? "Choose what to do with the " + nExisting + " duplicates:" : "No duplicates — everything in the file is new.",
+        wipe ? "⚠ Full rollback is ON: with Replace, documents NOT in the backup will also be DELETED." : ""
+      ].filter(Boolean), nExisting ? [
+        { value: "add", label: "➕ Add new only (skip " + nExisting + ")" },
+        { value: "replace", label: "♻ Replace duplicates + add new", primary: true }
+      ] : [
+        { value: "add", label: "➕ Add " + nNew + " document(s)", primary: true }
+      ]);
+      if (!mode) { setBusy(""); setProg(""); return; }
+      if (!(await adminGuard(profile, notify, "Restore " + unit.label + " from " + file.name))) { setBusy(""); setProg(""); return; }
+      let written = 0, failed = 0, deleted = 0, skippedOwner = 0, skippedSame = 0;
+      for (const coll of found) {
+        const docs = parsed[coll];
+        const backupIds = {};
+        for (let i = 0; i < docs.length; i++) {
+          const d = docs[i];
+          backupIds[d.id] = true;
+          if (coll === "users" && (d.id === OWNER_UID || String(d.data && d.data.email || "").toLowerCase() === OWNER_EMAIL)) { skippedOwner++; continue; }
+          if (mode === "add" && existing[coll][d.id]) { skippedSame++; continue; }
+          setProg("Restoring " + coll + " " + (i + 1) + "/" + docs.length + "…");
+          try { await db.collection(coll).doc(d.id).set(d.data); written++; } catch (e) { failed++; }
+        }
+        if (wipe && mode === "replace") {
+          setProg("Checking " + coll + " for documents to remove…");
+          try {
+            const cur = await db.collection(coll).get();
+            for (const dd of cur.docs) {
+              if (backupIds[dd.id]) continue;
+              if (coll === "users" && (dd.id === OWNER_UID || String((dd.data() || {}).email || "").toLowerCase() === OWNER_EMAIL)) continue;
+              try { await db.collection(coll).doc(dd.id).delete(); deleted++; } catch (e) { failed++; }
+            }
+          } catch (e) {}
+        }
+      }
+      logAudit(profile, "backup.restore", unit.key + " · " + written + " written" + (deleted ? ", " + deleted + " deleted" : "") + (failed ? ", " + failed + " FAILED" : ""));
+      notify((failed ? "♻ Restore finished with " + failed + " failure(s). " : "♻ Restore complete. ") + written + " document(s) written" + (skippedSame ? ", " + skippedSame + " duplicate(s) skipped" : "") + (deleted ? ", " + deleted + " removed (full rollback)" : "") + (skippedOwner ? ", owner record left untouched" : "") + ".", failed ? "error" : "ok");
+    } catch (e) { notify("Restore failed: " + e.message, "error"); }
+    setBusy(""); setProg("");
+  }
+  return /*#__PURE__*/React.createElement("div", { style: cardSt },
+    /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 6 } }, "💾 Backup & Restore"),
+    /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, color: "var(--c-text5)", marginBottom: 10 } },
+      "Each backup is an Excel file holding the FULL data losslessly (the summary columns are just for reading — the json columns are what restore uses; don't edit them). Restore is per-tab, overwrites by document id, and asks for your password. ",
+      /*#__PURE__*/React.createElement("b", null, "Restore any backup file"), " — a FULL backup can restore any single tab."),
+    cfg === null ? null : /*#__PURE__*/React.createElement("div", { style: { border: "1px dashed var(--c-border)", borderRadius: 10, padding: "10px 14px", marginBottom: 12 } },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 6 } }, "⏰ Automatic backup → Google Drive"),
+      /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: "var(--c-text5)", marginBottom: 8 } },
+        "Runs while an administrator has iBase open; a missed slot runs at the next admin sign-in (catch-up). Uploads land in a Drive folder named ", /*#__PURE__*/React.createElement("b", null, "iBase Backups"), " (created automatically)."),
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 8 } },
+        /*#__PURE__*/React.createElement("label", { style: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--c-text3)", cursor: "pointer", paddingBottom: 8 } },
+          /*#__PURE__*/React.createElement("input", { type: "checkbox", checked: !!cfg.enabled, onChange: e => saveCfg({ enabled: e.target.checked }) }), "Enabled"),
+        /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: labelSt }, "Schedule"),
+          /*#__PURE__*/React.createElement("select", { style: { ...inputSt(), cursor: "pointer" }, value: cfg.mode || "daily", onChange: e => saveCfg({ mode: e.target.value }) },
+            /*#__PURE__*/React.createElement("option", { value: "hours" }, "Every N hours"),
+            /*#__PURE__*/React.createElement("option", { value: "daily" }, "Every day at a time"),
+            /*#__PURE__*/React.createElement("option", { value: "weekly" }, "Weekly (pick days)"),
+            /*#__PURE__*/React.createElement("option", { value: "monthly" }, "Monthly (pick day)"))),
+        (cfg.mode || "daily") === "hours" ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: labelSt }, "Every X hours"),
+          /*#__PURE__*/React.createElement("input", { type: "number", min: "1", style: { ...inputSt(), width: 90 }, value: cfg.everyHours || 24, onChange: e => saveCfg({ everyHours: Number(e.target.value) || 24 }) })) : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: labelSt }, "At (24h)"),
+          /*#__PURE__*/React.createElement("input", { type: "time", style: { ...inputSt(), width: 110 }, value: cfg.atTime || "00:00", onChange: e => saveCfg({ atTime: e.target.value || "00:00" }) })),
+        (cfg.mode || "daily") === "monthly" ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: labelSt }, "Day of month (1–28)"),
+          /*#__PURE__*/React.createElement("input", { type: "number", min: "1", max: "28", style: { ...inputSt(), width: 90 }, value: cfg.dayOfMonth || 1, onChange: e => saveCfg({ dayOfMonth: Number(e.target.value) || 1 }) })) : null,
+        /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", { style: labelSt }, "Keep last N files"),
+          /*#__PURE__*/React.createElement("input", { type: "number", min: "1", style: { ...inputSt(), width: 90 }, value: cfg.keep || 10, onChange: e => saveCfg({ keep: Number(e.target.value) || 10 }) }))),
+      (cfg.mode || "daily") === "weekly" ? /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 } },
+        ["MO", "TU", "WE", "TH", "FR", "SA", "SU"].map(d => { const on = (cfg.days || []).indexOf(d) !== -1; return /*#__PURE__*/React.createElement("button", { key: d, style: { ...btnSt(on ? "var(--c-key)" : "var(--c-border)", on ? "var(--c-bg)" : "var(--c-text2)"), padding: "3px 9px", fontSize: 11 }, onClick: () => saveCfg({ days: on ? (cfg.days || []).filter(x => x !== d) : [...(cfg.days || []), d] }) }, d); })) : null,
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" } },
+        /*#__PURE__*/React.createElement("div", { style: { flex: "1 1 300px" } }, /*#__PURE__*/React.createElement("label", { style: labelSt }, "Google OAuth Client ID (from console.cloud.google.com — see the setup note)"),
+          /*#__PURE__*/React.createElement("input", { style: inputSt(), value: cfg.clientId || "", placeholder: "1234567890-xxxxxxxx.apps.googleusercontent.com", onChange: e => saveCfg({ clientId: e.target.value.trim() }) })),
+        /*#__PURE__*/React.createElement("button", { style: btnSt("var(--c-border)", "var(--c-text2)"), disabled: !!busy, onClick: connectDrive }, "🔗 Connect Google Drive"),
+        /*#__PURE__*/React.createElement("button", { style: btnSt("var(--c-key)", "var(--c-bg)"), disabled: !!busy, onClick: runNow }, busy === "auto" ? "Backing up…" : "☁️ Backup to Drive now"),
+        cfg.lastAutoAt ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: "var(--c-text5)" } }, "Last automatic: ", new Date(cfg.lastAutoAt).toLocaleString()) : null)),
+    /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "center", marginBottom: 10, flexWrap: "wrap" } },
+      /*#__PURE__*/React.createElement("button", { style: btnSt("var(--c-key)", "var(--c-bg)"), disabled: !!busy, onClick: () => doBackup(null) }, busy === "b:all" ? "Backing up…" : "⬇ Backup EVERYTHING"),
+      /*#__PURE__*/React.createElement("label", { style: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--c-text4)", cursor: "pointer" } },
+        /*#__PURE__*/React.createElement("input", { type: "checkbox", checked: wipe, onChange: e => setWipe(e.target.checked) }),
+        "Full rollback on restore (also delete documents not in the backup)"),
+      prog ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, color: "var(--c-text4)" } }, prog) : null),
+    BK_UNITS.map(u => /*#__PURE__*/React.createElement("div", { key: u.key, style: { display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderTop: "1px solid var(--c-border)", fontSize: 12.5, flexWrap: "wrap" } },
+      /*#__PURE__*/React.createElement("span", { style: { flex: 1, minWidth: 220 } }, u.label, /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, color: "var(--c-text5)" } }, u.hint)),
+      /*#__PURE__*/React.createElement("button", { style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "4px 10px", fontSize: 11.5 }, disabled: !!busy, onClick: () => doBackup(u) }, busy === "b:" + u.key ? "…" : "⬇ Backup"),
+      /*#__PURE__*/React.createElement("button", { style: { ...btnSt("var(--c-border)", "#f59e0b"), padding: "4px 10px", fontSize: 11.5 }, disabled: !!busy, onClick: () => { const el = fileRefs.current[u.key]; if (el) { el.value = ""; el.click(); } } }, busy === "r:" + u.key ? "…" : "♻ Restore"),
+      /*#__PURE__*/React.createElement("input", { type: "file", accept: ".xlsx,.xls", style: { display: "none" }, ref: el => { fileRefs.current[u.key] = el; }, onChange: e => { const f = e.target.files && e.target.files[0]; if (f) doRestore(u, f); } }))),
+    (() => {
+      const curated = {};
+      BK_UNITS.forEach(u => u.sheets.forEach(sh => { curated[sh] = true; }));
+      const extras = bkDiscoverCollections().filter(c => !curated[c]);
+      if (!extras.length) return null;
+      return /*#__PURE__*/React.createElement(React.Fragment, null,
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginTop: 12, marginBottom: 2 } }, "🧩 Auto-discovered (future tabs land here by themselves)"),
+        extras.map(c => { const u2 = { key: "auto-" + c, label: "🧩 " + c, sheets: [c] };
+          return /*#__PURE__*/React.createElement("div", { key: c, style: { display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderTop: "1px solid var(--c-border)", fontSize: 12.5, flexWrap: "wrap" } },
+            /*#__PURE__*/React.createElement("span", { style: { flex: 1, minWidth: 220 } }, u2.label, /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, color: "var(--c-text5)" } }, "collection found in the app's code")),
+            /*#__PURE__*/React.createElement("button", { style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "4px 10px", fontSize: 11.5 }, disabled: !!busy, onClick: () => doBackup(u2) }, busy === "b:" + u2.key ? "…" : "⬇ Backup"),
+            /*#__PURE__*/React.createElement("button", { style: { ...btnSt("var(--c-border)", "#f59e0b"), padding: "4px 10px", fontSize: 11.5 }, disabled: !!busy, onClick: () => { const el = fileRefs.current[u2.key]; if (el) { el.value = ""; el.click(); } } }, busy === "r:" + u2.key ? "…" : "♻ Restore"),
+            /*#__PURE__*/React.createElement("input", { type: "file", accept: ".xlsx,.xls", style: { display: "none" }, ref: el => { fileRefs.current[u2.key] = el; }, onChange: e => { const f = e.target.files && e.target.files[0]; if (f) doRestore(u2, f); } }));
+        }));
+    })());
+}
 function PMKitRulesCard({ profile, notify }) {
   const [rules, setRules] = useState(null);
   const [models, setModels] = useState([]);
@@ -2633,7 +3061,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v122"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v125"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -14607,6 +15035,9 @@ function SettingsTab({
   }), /*#__PURE__*/React.createElement(PMKitRulesCard, {
     profile: profile,
     notify: notify
+  }), /*#__PURE__*/React.createElement(BackupRestoreCard, {
+    profile: profile,
+    notify: notify
   }), /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
@@ -16296,6 +16727,27 @@ function App() {
   const users = useCol("users", !!signedProfile && signedProfile.isAdmin, notify);
   const binItems = useCol("bin", !!signedProfile && signedProfile.isAdmin, notify);
   const catalog = useDoc("config/catalog", !!signedProfile);
+  // ── automatic-backup scheduler: admin sessions check the schedule each minute ──
+  const bkCfg = useDoc("config/backupCfg", !!signedProfile && !!signedProfile.isAdmin);
+  const bkBusyRef = useRef(false);
+  useEffect(() => {
+    if (!signedProfile || !signedProfile.isAdmin) return;
+    const tick = setInterval(async () => {
+      try {
+        if (bkBusyRef.current) return;
+        const c = bkCfg;
+        if (!c || !c.enabled) return;
+        if (!bkDue(c, Date.now(), Number(c.lastAutoAt) || 0)) return;
+        bkBusyRef.current = true;
+        // claim the slot FIRST so a second admin session doesn't double-run
+        await db.doc("config/backupCfg").set({ lastAutoAt: Date.now() }, { merge: true });
+        await bkRunAutoBackup(c, signedProfile, notify, null);
+      } catch (e) {
+        notify("Automatic backup failed: " + e.message + (String(e.message).indexOf("granted") !== -1 ? " — open Settings → 💾 and reconnect Google Drive." : ""), "error");
+      } finally { bkBusyRef.current = false; }
+    }, 60000);
+    return () => clearInterval(tick);
+  }, [signedProfile && signedProfile.isAdmin, bkCfg]);
   // ── self-healing PM schedules: normalize stored machines once per session ──
   const pmNormRef = useRef(false);
   useEffect(() => {
