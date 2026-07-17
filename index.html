@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v137";
+  window.__IBASE_BUILD = "v138";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3098,7 +3098,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v137"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v138"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -4049,11 +4049,17 @@ function LabsTab({
     _flag: pmFlag(m),
     _next: pmComputedNext(m)
   }))), [labs]);
-  const matchesFilters = m => (!instF || String(m.instrument || "").trim() === instF) && (!brandF || brandFromModel(m.instrument, (labs.find(l => (l.machines || []).some(x => x.id === m.id)) || {}).brand) === brandF) && (!flagF || pmFlag(m) === flagF) && (!(pmFrom || pmTo) || m._next && (!pmFrom || m._next >= pmFrom) && (!pmTo || m._next <= pmTo));
+  const matchesFilters = m => {
+    // Works for BOTH views: table rows carry _next; the cards view passes raw
+    // machines, so compute the Next PM here (this was the malfunction — raw
+    // machines have no _next, so any date/quarter filter emptied the cards).
+    const nx = m._next !== undefined ? m._next : pmComputedNext(m);
+    return (!instF || String(m.instrument || "").trim() === instF) && (!brandF || brandFromModel(m.instrument, (labs.find(l => (l.machines || []).some(x => x.id === m.id)) || {}).brand) === brandF) && (!flagF || pmFlag(m) === flagF) && (!(pmFrom || pmTo) || nx && (!pmFrom || nx >= pmFrom) && (!pmTo || nx <= pmTo));
+  };
   const emptyLabs = labs.filter(l => activeMachines(l).length === 0);
   const shown = labs.filter(l => {
     if (!showEmpty && activeMachines(l).length === 0) return false;
-    if ((instF || brandF || flagF) && !(l.machines || []).some(matchesFilters)) return false;
+    if ((instF || brandF || flagF || pmFrom || pmTo) && !(l.machines || []).some(matchesFilters)) return false;
     const s = q.toLowerCase();
     if (!s) return true;
     return String(l.name || "").toLowerCase().includes(s) || String(l.location || "").toLowerCase().includes(s) || String(l.subRegion || "").toLowerCase().includes(s) || (l.machines || []).some(m => String(m.serialNo || "").toLowerCase().includes(s) || String(m.instrument || "").toLowerCase().includes(s));
@@ -4234,7 +4240,7 @@ function LabsTab({
     onChange: e => setFlagF(e.target.value)
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "All PM flags"), ["Overdue", "Due This Week", "Due This Month", "Due Next Month", "OK"].map(f => /*#__PURE__*/React.createElement("option", {
+  }, "All PM flags"), ["Overdue", "Due This Week", "Due This Month", "Due Next Month", "OK", "Pulled-out"].map(f => /*#__PURE__*/React.createElement("option", {
     key: f
   }, f))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: {
@@ -4321,7 +4327,7 @@ function LabsTab({
       setPmFrom("");
       setPmTo("");
     }
-  }, "✕ Clear range"), (q || instF || brandF || flagF) && /*#__PURE__*/React.createElement("button", {
+  }, "✕ Clear range"), (q || instF || brandF || flagF || pmFrom || pmTo) && /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: () => {
       setQ("");
