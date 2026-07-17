@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v128";
+  window.__IBASE_BUILD = "v129";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3065,7 +3065,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v128"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v129"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -5913,7 +5913,7 @@ function VisitModal({
     extra: {
       ...(initial.extra || {})
     },
-    pmType: initial.pmType || "",
+    pmType: initial.pmType || (String(initial.type || "").trim().toUpperCase() === "PM" && (initial.pmKitReplaced === "yes" || initial.pmKitReplaced === true) ? "with-kit" : ""),
     pmKitReplaced: initial.pmKitReplaced === true || initial.pmKitReplaced === "yes" ? "yes" : "no",
     providedWith: Array.isArray(initial.providedWith) ? initial.providedWith : [],
     supportType: initial.supportType || "",
@@ -6035,7 +6035,7 @@ function VisitModal({
     onChange: e => setF(x => ({ ...x, pmType: e.target.value }))
   }, /*#__PURE__*/React.createElement("option", { value: "" }, "— select —"),
      /*#__PURE__*/React.createElement("option", { value: "with-kit" }, "Preventive Maintenance (With PM Kit)"),
-     /*#__PURE__*/React.createElement("option", { value: "without-kit" }, "Preventive Maintenance (Without PM Kit)"))) : null, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+     /*#__PURE__*/React.createElement("option", { value: "without-kit" }, "Preventive Maintenance (Without PM Kit)"))) : null, f.type !== "PM" ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "PM Kit replaced during this visit"), /*#__PURE__*/React.createElement("select", {
     style: inputSt(),
@@ -6043,7 +6043,7 @@ function VisitModal({
     onChange: e => setF(x => ({ ...x, pmKitReplaced: e.target.value })),
     title: "Yes resets the PM Kit cycle from this visit's date — regardless of the visit purpose"
   }, /*#__PURE__*/React.createElement("option", { value: "no" }, "No"),
-     /*#__PURE__*/React.createElement("option", { value: "yes" }, "Yes"))), f.type === "Installation" || f.type === "PM" ? /*#__PURE__*/React.createElement("div", { style: { gridColumn: "1 / -1" } }, /*#__PURE__*/React.createElement("label", {
+     /*#__PURE__*/React.createElement("option", { value: "yes" }, "Yes"))) : null, f.type === "Installation" || f.type === "PM" ? /*#__PURE__*/React.createElement("div", { style: { gridColumn: "1 / -1" } }, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Provided with", f.type === "Installation" ? /*#__PURE__*/React.createElement("span", { style: { color: "#f87171" } }, " *") : null),
   /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 14, flexWrap: "wrap", padding: "4px 2px" } },
@@ -6470,8 +6470,7 @@ function VisitModal({
         id: initial ? initial.id : uid(),
         ...f,
         date: dISO || f.date || today(),
-        pmType: f.type === "PM" ? f.pmType : "",
-        pmKitReplaced: f.pmKitReplaced === "yes" ? "yes" : "no",
+        ...pmKitFields(f.type, f.pmType, f.pmKitReplaced),
         providedWith: f.type === "Installation" ? (f.providedWith || []).filter(i => PROVIDED_INSTALL.indexOf(i) !== -1) : f.type === "PM" ? (f.providedWith || []).filter(i => PROVIDED_PM.indexOf(i) !== -1) : [],
         engineer: engs[0] || "",
         engineer2: engs[1] || "",
@@ -12161,6 +12160,19 @@ function normalizePMSchedules(machines) {
 }
 // Import-value normalizers for the documentation columns. Tolerant of human
 // spellings; a header that is absent simply yields blanks (nothing enforced).
+// ONE source of truth for the kit fields. PM visits: the PM Type select IS
+// the answer — "With PM Kit" means the kit was replaced (pmKitReplaced
+// derives from it; a stray Replaced=Yes on a PM row with no PM Type infers
+// With-Kit; an explicit Without-Kit always wins over a contradicting Yes).
+// Non-PM visits: only the Yes/No replacement question applies.
+function pmKitFields(type, pmTypeRaw, replacedRaw) {
+  const isPM = String(type || "").trim().toUpperCase() === "PM";
+  const yes = replacedRaw === "yes" || replacedRaw === true;
+  if (!isPM) return { pmType: "", pmKitReplaced: yes ? "yes" : "no" };
+  let pt = pmTypeRaw === "with-kit" || pmTypeRaw === "without-kit" ? pmTypeRaw : "";
+  if (!pt && yes) pt = "with-kit";
+  return { pmType: pt, pmKitReplaced: pt === "with-kit" ? "yes" : "no" };
+}
 function impNormPmType(v, type) {
   if (String(type || "").trim().toUpperCase() !== "PM") return "";
   const s2 = String(v || "").toLowerCase();
@@ -12317,8 +12329,7 @@ function impBuildPlan(rows, labs, importerEmail, includeExtras) {
         remarks: r.remarks || "",
         signature: "",
         signedByName: "",
-        pmType: impNormPmType(r.pmType, r.type),
-        pmKitReplaced: impNormYesNo(r.pmKitReplaced),
+        ...pmKitFields(r.type, impNormPmType(r.pmType, r.type), impNormYesNo(r.pmKitReplaced)),
         providedWith: impNormProvided(r.providedWith, r.type),
         attachments: [],
         ...(includeExtras && r.extra && Object.keys(r.extra).length ? {
