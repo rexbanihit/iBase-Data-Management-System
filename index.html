@@ -323,7 +323,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v125";
+  window.__IBASE_BUILD = "v128";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -2637,7 +2637,8 @@ async function bkBuildFullWorkbook(setProg) {
   let total = 0;
   for (const coll of sheets) {
     if (setProg) setProg("Auto-backup: reading " + coll + "…");
-    const snap = await db.collection(coll).get();
+    let snap;
+    try { snap = await db.collection(coll).get(); } catch (e) { continue; } // owner-only collections skip cleanly
     let maxParts = 1;
     const docs = snap.docs.map(d => { const parts = bkChunk(JSON.stringify(d.data() || {})); if (parts.length > maxParts) maxParts = parts.length; return { id: d.id, summary: bkSummary(coll, d.data() || {}), parts: parts }; });
     const header = ["id", "summary", "parts"]; for (let i = 1; i <= maxParts; i++) header.push("json" + i);
@@ -2717,16 +2718,19 @@ function BackupRestoreCard({ profile, notify }) {
       const discovered = bkDiscoverCollections();
       const sheets = unit ? unit.sheets : Array.from(new Set([...curated, ...discovered]));
       let total = 0;
+      const skipped = [];
       for (const coll of sheets) {
         setProg("Reading " + coll + "…");
-        const { header, rows, count } = await fetchSheetRows(coll);
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([header, ...rows]), coll.slice(0, 31));
-        total += count;
+        try {
+          const { header, rows, count } = await fetchSheetRows(coll);
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([header, ...rows]), coll.slice(0, 31));
+          total += count;
+        } catch (e) { skipped.push(coll); } // e.g. owner-only collections (audit)
       }
       const fname = "iBase_backup_" + (unit ? unit.key : "FULL") + "_" + today() + ".xlsx";
       XLSX.writeFile(wb, fname);
-      logAudit(profile, "backup.save", (unit ? unit.key : "FULL") + " · " + total + " document(s)");
-      notify("💾 Backup saved — " + fname + " (" + total + " document(s)). Keep it somewhere safe.", "ok");
+      logAudit(profile, "backup.save", (unit ? unit.key : "FULL") + " · " + total + " document(s)" + (skipped.length ? " (skipped: " + skipped.join(", ") + ")" : ""));
+      notify("💾 Backup saved — " + fname + " (" + total + " document(s))." + (skipped.length ? "\nSkipped (no read access): " + skipped.join(", ") + " — the owner's backups include these." : "") + " Keep it somewhere safe.", "ok");
     } catch (e) { notify("Backup failed: " + e.message, "error"); }
     setBusy(""); setProg("");
   }
@@ -3061,7 +3065,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v125"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v128"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -5911,6 +5915,7 @@ function VisitModal({
     },
     pmType: initial.pmType || "",
     pmKitReplaced: initial.pmKitReplaced === true || initial.pmKitReplaced === "yes" ? "yes" : "no",
+    providedWith: Array.isArray(initial.providedWith) ? initial.providedWith : [],
     supportType: initial.supportType || "",
     dtReported: initial.dtReported || "",
     dtArrivalAccount: initial.dtArrivalAccount || "",
@@ -5942,6 +5947,7 @@ function VisitModal({
     extra: {},
     pmType: "",
     pmKitReplaced: "no",
+    providedWith: [],
     supportType: "",
     dtReported: "",
     dtArrivalAccount: "",
@@ -6037,7 +6043,30 @@ function VisitModal({
     onChange: e => setF(x => ({ ...x, pmKitReplaced: e.target.value })),
     title: "Yes resets the PM Kit cycle from this visit's date — regardless of the visit purpose"
   }, /*#__PURE__*/React.createElement("option", { value: "no" }, "No"),
-     /*#__PURE__*/React.createElement("option", { value: "yes" }, "Yes"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+     /*#__PURE__*/React.createElement("option", { value: "yes" }, "Yes"))), f.type === "Installation" || f.type === "PM" ? /*#__PURE__*/React.createElement("div", { style: { gridColumn: "1 / -1" } }, /*#__PURE__*/React.createElement("label", {
+    style: labelSt
+  }, "Provided with", f.type === "Installation" ? /*#__PURE__*/React.createElement("span", { style: { color: "#f87171" } }, " *") : null),
+  /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 14, flexWrap: "wrap", padding: "4px 2px" } },
+    (f.type === "Installation" ? PROVIDED_INSTALL : PROVIDED_PM).map(item => {
+      const on = (f.providedWith || []).indexOf(item) !== -1;
+      return /*#__PURE__*/React.createElement("label", {
+        key: item,
+        style: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: on ? "var(--c-text2)" : "var(--c-text4)", cursor: "pointer" }
+      }, /*#__PURE__*/React.createElement("input", {
+        type: "checkbox",
+        checked: on,
+        onChange: () => setF(x => {
+          const cur = x.providedWith || [];
+          let nx;
+          if (item === "None") nx = cur.indexOf("None") !== -1 ? [] : ["None"];
+          else {
+            nx = cur.filter(i => i !== "None");
+            nx = nx.indexOf(item) !== -1 ? nx.filter(i => i !== item) : [...nx, item];
+          }
+          return { ...x, providedWith: nx };
+        })
+      }), item);
+    }))) : null, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelSt
   }, "Support Type ", /*#__PURE__*/React.createElement("span", {
     style: {
@@ -6430,7 +6459,7 @@ function VisitModal({
       marginTop: 16
     },
     onClick: () => {
-      const need = [[f.type && f.type !== "Not Applicable", "Type of Visit"], [f.supportType, "Support Type"], [String(f.isrNo || "").trim(), "ISR number"], [f.dtWorkStarted, "Date & time work started"], [f.dtWorkEnded, "Date & time work ended"], [f.systemCondition, "System Condition"], [String(f.remarks || "").trim(), "Description of Work"], [f.machineStatus, "Instrument after the visit"], [f.type !== "PM" || f.pmType, "PM Type (With / Without PM Kit)"]];
+      const need = [[f.type && f.type !== "Not Applicable", "Type of Visit"], [f.supportType, "Support Type"], [String(f.isrNo || "").trim(), "ISR number"], [f.dtWorkStarted, "Date & time work started"], [f.dtWorkEnded, "Date & time work ended"], [f.systemCondition, "System Condition"], [String(f.remarks || "").trim(), "Description of Work"], [f.machineStatus, "Instrument after the visit"], [f.type !== "PM" || f.pmType, "PM Type (With / Without PM Kit)"], [f.type !== "Installation" || (f.providedWith || []).length, "Provided with (tick the documents — or None)"]];
       const missing = need.filter(x => !x[0]).map(x => x[1]);
       if (missing.length) {
         notify("Please complete the required field(s):\n• " + missing.join("\n• "), "error");
@@ -6443,6 +6472,7 @@ function VisitModal({
         date: dISO || f.date || today(),
         pmType: f.type === "PM" ? f.pmType : "",
         pmKitReplaced: f.pmKitReplaced === "yes" ? "yes" : "no",
+        providedWith: f.type === "Installation" ? (f.providedWith || []).filter(i => PROVIDED_INSTALL.indexOf(i) !== -1) : f.type === "PM" ? (f.providedWith || []).filter(i => PROVIDED_PM.indexOf(i) !== -1) : [],
         engineer: engs[0] || "",
         engineer2: engs[1] || "",
         engineer3: engs[2] || "",
@@ -8942,6 +8972,24 @@ const VGRID_COLS = [{
   sv: v => String(v.type || ""),
   get: v => visitKindLabel(v)
 }, {
+  id: "pmtype",
+  label: "PM Type",
+  w: 130,
+  sv: v => v.pmType === "with-kit" ? "With PM Kit" : v.pmType === "without-kit" ? "Without PM Kit" : "",
+  get: v => v.pmType === "with-kit" ? "With PM Kit" : v.pmType === "without-kit" ? "Without PM Kit" : ""
+}, {
+  id: "kitrep",
+  label: "PM Kit Replaced",
+  w: 120,
+  sv: v => v.pmKitReplaced === "yes" || v.pmKitReplaced === true ? "Yes" : "",
+  get: v => v.pmKitReplaced === "yes" || v.pmKitReplaced === true ? "Yes" : ""
+}, {
+  id: "provided",
+  label: "Provided with",
+  w: 180,
+  sv: v => (v.providedWith || []).join(", "),
+  get: v => (v.providedWith || []).join(", ")
+}, {
   id: "support",
   label: "Support type",
   w: 110,
@@ -10083,7 +10131,7 @@ function buildBackupSheets({
   const S = {};
   S["Laboratories"] = [["Laboratory", "Location", "Machines"]].concat(labs.map(l => [l.name || "", l.location || "", (l.machines || []).length]));
   S["Equipment Register"] = [["Laboratory", "Instrument", "Serial No", "Installed", "Last PM", "PM Interval", "Next PM", "Status", "Visits"]].concat(labs.flatMap(l => (l.machines || []).map(m => [l.name || "", m.instrument || "", m.serialNo || "", m.installDate || "", m.lastPM || "", m.pmInterval || "", m.nextPM || "", m.status || "", (m.visits || []).length])));
-  S["Service Visits"] = [["Date", "Timestamp", "Name", "Activity/Job type", "Support type", "Account", "Instrument", "Date and Time reported", "Serial number", "Date and Time of Departure", "Date and Time of Arrival to Account", "Date and Time work started", "Problem Description", "System Condition", "Instrument Status", "Recommendation", "Endorsed to", "Date and Time work ended", "Priority", "Description of Work", "ISR no.", "Date and Time of Arrival to Home", "Software Version", "Engineer 2", "Engineer 3", "Logged By", "Logged At", "Signed", "Signed by (name)", "Attachments", "Edit Log"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => [v.date || "", v.srcTimestamp || v.loggedAt || "", v.engineer || "", visitKindLabel(v) || "", v.supportType || "", l.name || "", m.instrument || "", v.dtReported || "", m.serialNo || "", v.dtDeparture || "", v.dtArrivalAccount || "", v.dtWorkStarted || "", v.problemDesc || "", v.systemCondition || "", v.machineStatus || "", v.recommendation || "", v.endorsedTo || "", v.dtWorkEnded || "", v.priority || "", (v.remarks || "") + (extraFold(v) ? (v.remarks ? "\n" : "") + extraFold(v) : ""), v.isrNo || "", v.dtArrivalHome || "", v.softwareVersion || "", v.engineer2 || "", v.engineer3 || "", scrubOwner(v.loggedBy), v.loggedAt || "", v.signature ? "Yes" : "", v.signedByName || "", (v.attachments || []).map(a => a.name).join(", "), (v.editLog || []).filter(e => scrubOwner(e.by)).map(e => scrubOwner(e.by) + " @ " + e.at + ": " + e.changes.join("; ")).join(" | ")]))));
+  S["Service Visits"] = [["Date", "Timestamp", "Name", "Activity/Job type", "Support type", "Account", "Instrument", "Date and Time reported", "Serial number", "Date and Time of Departure", "Date and Time of Arrival to Account", "Date and Time work started", "Problem Description", "System Condition", "Instrument Status", "Recommendation", "Endorsed to", "Date and Time work ended", "Priority", "Description of Work", "ISR no.", "Date and Time of Arrival to Home", "Software Version", "Engineer 2", "Engineer 3", "Logged By", "Logged At", "Signed", "Signed by (name)", "Attachments", "Edit Log", "Provided with", "PM Type", "PM Kit Replaced"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).map(v => [v.date || "", v.srcTimestamp || v.loggedAt || "", v.engineer || "", visitKindLabel(v) || "", v.supportType || "", l.name || "", m.instrument || "", v.dtReported || "", m.serialNo || "", v.dtDeparture || "", v.dtArrivalAccount || "", v.dtWorkStarted || "", v.problemDesc || "", v.systemCondition || "", v.machineStatus || "", v.recommendation || "", v.endorsedTo || "", v.dtWorkEnded || "", v.priority || "", (v.remarks || "") + (extraFold(v) ? (v.remarks ? "\n" : "") + extraFold(v) : ""), v.isrNo || "", v.dtArrivalHome || "", v.softwareVersion || "", v.engineer2 || "", v.engineer3 || "", scrubOwner(v.loggedBy), v.loggedAt || "", v.signature ? "Yes" : "", v.signedByName || "", (v.attachments || []).map(a => a.name).join(", "), (v.editLog || []).filter(e => scrubOwner(e.by)).map(e => scrubOwner(e.by) + " @ " + e.at + ": " + e.changes.join("; ")).join(" | "), (v.providedWith || []).join(", "), v.pmType === "with-kit" ? "With PM Kit" : v.pmType === "without-kit" ? "Without PM Kit" : "", v.pmKitReplaced === "yes" || v.pmKitReplaced === true ? "Yes" : ""]))));
   S["Visit Attachments"] = [["Laboratory", "Machine", "Serial", "Visit Date", "Visit Type", "File", "Kind", "Size KB", "Uploaded (visit logged by)"]].concat(labs.flatMap(l => (l.machines || []).flatMap(m => (m.visits || []).flatMap(v => (v.attachments || []).map(a => [l.name || "", m.instrument || "", m.serialNo || "", v.date || "", v.type || "", a.name || "", a.kind || "", Math.round((a.size || 0) / 1024), v.loggedBy || ""])))));
   S["Machine Inventory"] = [["Brand", "Model", "Serial No", "Item Code", "Condition", "Status", "Import Date", "Ownership", "Location", "Dealer", "Sales Person", "PO Date", "Remarks"]].concat(inventory.map(it => [it.brand || "", it.machineModel || "", it.serialNo || "", it.itemCode || "", it.condition || "", it.status || "", it.importDate || "", it.ownership || "", it.location || "", it.dealer || "", it.salesPerson || "", it.poDate || "", it.remarks || ""]));
   S["Spare Parts"] = [["Brand", "Part No", "Description", "On Hand"]].concat(spareParts.map(p => [p.brand || "", p.partNumber || "", p.description || "", (p.receipts || []).reduce((s, r) => s + (Number(r.qty) || 0), 0) - (p.issues || []).reduce((s, r) => s + (Number(r.qty) || 0), 0)]));
@@ -10156,7 +10204,9 @@ function AuditTab({
   profile,
   notify
 }) {
-  const entries = useCol("audit", true, notify);
+  // OWNER-ONLY since v126 — matches rules v17 (read: isOwner()); admins
+  // included in the lock-out. Everyone still WRITES audit entries as before.
+  const entries = useCol("audit", isOwnerAcct(profile), notify);
   const [q, setQ] = useState("");
   // The sole owner's actions are invisible to everyone else — administrators
   // and users never see the owner's trace. Only the owner sees his own entries.
@@ -11709,6 +11759,10 @@ const IMP_SYN = {
   // "Logged by" is set by the importer; "Attachment" holds files added in-app.
   _ignoreLogged: ["loggedby"],
   _ignoreAttachment: ["attachment", "attachments"],
+  _ignoreEditLog: ["editlog"],
+  pmType: ["pmtype", "pmkittype"],
+  pmKitReplaced: ["pmkitreplaced", "pmkitreplacedduringthisvisit", "kitreplaced"],
+  providedWith: ["providedwith", "documentsprovided", "provided"],
   installDate: ["installdate", "dateinstalled", "installationdate", "dateofinstallation"]
 };
 // Inventory-destination header map (Machine Inventory)
@@ -11877,6 +11931,9 @@ function impRowsFromGrid(grid, hi, map) {
       engineer3: g("engineer3"),
       status: g("status"),
       remarks: g("remarks"),
+      pmType: g("pmType"),
+      pmKitReplaced: g("pmKitReplaced"),
+      providedWith: g("providedWith"),
       supportType: g("supportType"),
       problemDesc: g("problemDesc"),
       systemCondition: g("systemCondition"),
@@ -12007,6 +12064,9 @@ function bestPMAnchor(m, vs) {
   });
   return a;
 }
+// "Provided with" — the paperwork handed over during a visit, per visit type.
+const PROVIDED_INSTALL = ["Installation Sheet / Checklist", "Installation Certificate", "None"];
+const PROVIDED_PM = ["PM Checklist", "PM Certificate", "Cal Certificate", "Updated PM Sticker"];
 // ── PM Kit lifecycle ─────────────────────────────────────────────────────────
 // Which kit rule applies: an exact-model rule wins, then a brand-wide rule
 // (model left blank), then the default of every 12 months.
@@ -12098,6 +12158,36 @@ function normalizePMSchedules(machines) {
     if (JSON.stringify([m.pmInterval, m.lastPM, m.nextPM]) !== before) changed++;
   });
   return { changed: changed, machines: out };
+}
+// Import-value normalizers for the documentation columns. Tolerant of human
+// spellings; a header that is absent simply yields blanks (nothing enforced).
+function impNormPmType(v, type) {
+  if (String(type || "").trim().toUpperCase() !== "PM") return "";
+  const s2 = String(v || "").toLowerCase();
+  if (!s2.trim()) return "";
+  if (/without/.test(s2) || /\bno\b/.test(s2)) return "without-kit";
+  if (/with|yes|kit/.test(s2)) return "with-kit";
+  return "";
+}
+function impNormYesNo(v) {
+  const s2 = String(v || "").trim().toLowerCase();
+  return s2 === "yes" || s2 === "y" || s2 === "true" || s2 === "1" || s2 === "replaced" ? "yes" : "no";
+}
+function impNormProvided(v, type) {
+  const t = String(type || "").trim().toUpperCase();
+  const list = t === "PM" ? PROVIDED_PM : t === "INSTALLATION" ? PROVIDED_INSTALL : [];
+  if (!list.length) return [];
+  const norm = x => String(x).toLowerCase().replace(/[^a-z]/g, "");
+  const parts = String(v || "").split(/[;,\/|]+/).map(x => x.trim()).filter(Boolean);
+  const out = [];
+  parts.forEach(p => {
+    const np = norm(p);
+    if (!np) return;
+    const hit = list.find(L => { const nl = norm(L); return nl === np || nl.indexOf(np) !== -1 && np.length > 3 || np.indexOf(nl) !== -1; });
+    if (hit && out.indexOf(hit) === -1) out.push(hit);
+  });
+  if (out.length > 1 && out.indexOf("None") !== -1) return out.filter(x => x !== "None");
+  return out;
 }
 function impVisitKey(v) {
   return [v.date, String(v.type || "").toLowerCase(), String(v.isr || v.isrNo || "").toLowerCase(), String(v.engineer || "").toLowerCase(), String(v.srcTimestamp || v.dtDeparture || v.dtWorkStarted || "").toLowerCase()].join("|");
@@ -12227,6 +12317,9 @@ function impBuildPlan(rows, labs, importerEmail, includeExtras) {
         remarks: r.remarks || "",
         signature: "",
         signedByName: "",
+        pmType: impNormPmType(r.pmType, r.type),
+        pmKitReplaced: impNormYesNo(r.pmKitReplaced),
+        providedWith: impNormProvided(r.providedWith, r.type),
         attachments: [],
         ...(includeExtras && r.extra && Object.keys(r.extra).length ? {
           extra: r.extra
@@ -14521,7 +14614,7 @@ function SettingsTab({
   }, {
     id: "audit",
     label: "🧾 Audit",
-    adminOnly: true
+    ownerOnly: true
   }, {
     id: "admins",
     label: "👑 Administrators",
@@ -14559,7 +14652,7 @@ function SettingsTab({
     labs: labs,
     profile: profile,
     notify: notify
-  }), eff === "audit" && /*#__PURE__*/React.createElement(AuditTab, {
+  }), eff === "audit" && iAmOwner && /*#__PURE__*/React.createElement(AuditTab, {
     profile: profile,
     notify: notify
   }), eff === "import" && iAmOwner && /*#__PURE__*/React.createElement(ImportExcel, {
