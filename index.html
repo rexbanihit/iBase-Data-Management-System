@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v154";
+  window.__IBASE_BUILD = "v155";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3118,7 +3118,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v154"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v155"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -11223,120 +11223,7 @@ function OvertimeTab({
         flexDirection: "column",
         gap: 4
       }
-    }, otForm ? /*#__PURE__*/React.createElement(Modal, {
-    title: "📄 Overtime Form — fill out to file",
-    onClose: () => setOtForm(null)
-  }, (() => {
-    const fm = otForm.f;
-    const uf = (k2, v2) => setOtForm(x => {
-      const nf = { ...x.f, [k2]: v2 };
-      if (k2 === "reqFrom" || k2 === "reqTo") {
-        const sp = otSpanHours(nf.reqFrom, nf.reqTo);
-        if (sp != null) nf.totalOt = sp.toFixed(2);
-      }
-      return { ...x, f: nf };
-    });
-    const pRow = (label, k2, ro) => /*#__PURE__*/React.createElement("div", {
-      style: { display: "flex", alignItems: "flex-end", gap: 6, margin: "6px 0", fontSize: 12, fontWeight: 700 }
-    }, label, /*#__PURE__*/React.createElement("input", {
-      style: { flex: 1, border: "none", borderBottom: "1px solid #000", outline: "none", background: "transparent", color: "#000", fontSize: 12, fontWeight: 400, padding: "0 3px" },
-      value: fm[k2],
-      readOnly: !!ro,
-      onChange: e => uf(k2, e.target.value)
-    }));
-    const tIn = (k2, w2) => /*#__PURE__*/React.createElement("input", {
-      style: { width: w2, border: "none", borderBottom: "1px solid #000", outline: "none", background: "transparent", color: "#000", fontSize: 12, padding: "0 3px" },
-      value: fm[k2],
-      onChange: e => uf(k2, e.target.value)
-    });
-    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-      style: { background: "#fff", color: "#000", border: "2px solid #000", padding: "12px 14px", fontFamily: "Arial, Helvetica, sans-serif" }
     }, /*#__PURE__*/React.createElement("div", {
-      style: { textAlign: "center", fontWeight: 800, fontSize: 15, marginBottom: 10 }
-    }, "OVERTIME FORM"), pRow("Name:", "name"), pRow("Department:", "department"), pRow("Date Filed:", "dateFiled"), pRow("Date of OT:", "dateOfOt"), /*#__PURE__*/React.createElement("div", {
-      style: { display: "flex", justifyContent: "space-between", margin: "12px 0 2px", fontSize: 12, fontWeight: 700 }
-    }, "Requested Time", "OFFICE Time"), /*#__PURE__*/React.createElement("div", {
-      style: { display: "flex", justifyContent: "space-between", fontSize: 12 }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", { style: { margin: "4px 0", fontStyle: "italic", fontWeight: 700 } }, "From: ", tIn("reqFrom", 150)), /*#__PURE__*/React.createElement("div", { style: { margin: "4px 0", fontStyle: "italic", fontWeight: 700 } }, "To: ", tIn("reqTo", 150))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", { style: { margin: "4px 0", fontStyle: "italic", fontWeight: 700 } }, "From: ", tIn("officeFrom", 90)), /*#__PURE__*/React.createElement("div", { style: { margin: "4px 0", fontStyle: "italic", fontWeight: 700 } }, "To: ", tIn("officeTo", 90)))), /*#__PURE__*/React.createElement("div", {
-      style: { display: "flex", alignItems: "center", justifyContent: "space-between", margin: "14px 0 10px" }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: { fontStyle: "italic", fontWeight: 800, fontSize: 12.5 }
-    }, "TOTAL OT Hours Rendered"), /*#__PURE__*/React.createElement("input", {
-      style: { border: "2px solid #000", width: 110, height: 40, textAlign: "center", fontSize: 15, fontWeight: 800, background: "transparent", color: "#000", outline: "none" },
-      value: fm.totalOt,
-      onChange: e => uf("totalOt", e.target.value)
-    })), /*#__PURE__*/React.createElement("div", {
-      style: { fontSize: 12, fontWeight: 700, marginBottom: 4 }
-    }, "Tasks to be DONE:"), /*#__PURE__*/React.createElement("textarea", {
-      rows: 5,
-      style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", resize: "vertical", background: "repeating-linear-gradient(transparent, transparent 20px, #000 20px, #000 21px)", lineHeight: "21px", fontSize: 12, color: "#000", fontFamily: "inherit", padding: "0 2px" },
-      value: fm.tasks,
-      onChange: e => uf("tasks", e.target.value)
-    }), /*#__PURE__*/React.createElement("div", { style: { marginTop: 12 } }, pRow("Requested By:", "requestedBy"), pRow("Noted By:", "notedBy"), pRow("Approved By:", "approvedBy"))), /*#__PURE__*/React.createElement("div", {
-      style: { display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }
-    }, otForm.standalone ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("select", {
-      style: { ...inputSt(), maxWidth: 250 },
-      value: otForm.id || "",
-      onChange: e => {
-        const sel = (otFormsList || []).find(x => x.id === e.target.value);
-        if (!sel) { setOtForm(x => ({ ...x, id: "", f: blankOtF() })); return; }
-        setOtForm(x => ({ ...x, id: sel.id, f: { ...blankOtF(), ...sel.f } }));
-      }
-    }, /*#__PURE__*/React.createElement("option", { value: "" }, "➕ New form (unsaved)"), (otFormsList || []).map(sh => /*#__PURE__*/React.createElement("option", {
-      key: sh.id,
-      value: sh.id
-    }, String(sh.savedAt || "").slice(0, 16).replace("T", " ") + " · OT " + (sh.f && sh.f.dateOfOt || "—")))), /*#__PURE__*/React.createElement("button", {
-      style: btnSt("var(--c-key)", "var(--c-bg)"),
-      onClick: () => {
-        const u2 = auth.currentUser && auth.currentUser.uid || "";
-        if (!u2) return;
-        const id2 = otForm.id || u2 + "_otf_" + Date.now();
-        db.collection("smer").doc(id2).set({ uid: u2, kind: "otform", by: meEmail(profile) || "", f: otForm.f, savedAt: new Date().toISOString() }).then(() => {
-          setOtForm(x => ({ ...x, id: id2 }));
-          notify("Overtime form saved to your account.", "ok");
-        }).catch(e => notify("Save failed: " + (e && e.message || e), "error"));
-      }
-    }, "💾 Save form"), otForm.id ? /*#__PURE__*/React.createElement("button", {
-      style: btnSt("#3a1d1d", "#fca5a5"),
-      onClick: () => {
-        if (!confirm("Delete this saved Overtime Form?")) return;
-        db.collection("smer").doc(otForm.id).delete().then(() => setOtForm(x => ({ ...x, id: "", f: blankOtF() })));
-      }
-    }, "🗑 Delete") : null) : /*#__PURE__*/React.createElement("button", {
-      style: btnSt("var(--c-key)", "var(--c-bg)"),
-      onClick: () => {
-        applyFor(otForm.engName, otForm.date, otForm.cash, otForm.offset, otForm.f);
-        setOtForm(null);
-        notify("Overtime filed with the form (" + otForm.cash + "h cash / " + otForm.offset + "h offset).", "ok");
-      }
-    }, "📄 File OT application"), /*#__PURE__*/React.createElement("button", {
-      style: btnSt("var(--c-border)", "var(--c-text2)"),
-      onClick: () => printOtForm(otForm.f),
-      title: "Prints at quarter-A4 (105 × 148 mm)"
-    }, "🖨 Print (¼ A4)"), /*#__PURE__*/React.createElement("button", {
-      style: btnSt("var(--c-border)", "var(--c-text2)"),
-      onClick: () => setOtForm(null)
-    }, "Cancel")));
-  })()) : null, isrView ? /*#__PURE__*/React.createElement(Modal, {
-    title: "🔎 ISR " + isrView,
-    wide: true,
-    onClose: () => setIsrView(null)
-  }, (() => {
-    const hits = visitsForIsr(isrView);
-    if (!hits.length) return /*#__PURE__*/React.createElement("div", { style: { color: "var(--c-text4)", fontSize: 12.5 } }, "No service visit carries this ISR number.");
-    return hits.map((v, vi) => /*#__PURE__*/React.createElement("div", {
-      key: vi,
-      style: { borderTop: vi ? "1px solid var(--c-border)" : "none", paddingTop: vi ? 12 : 0, marginTop: vi ? 12 : 0 }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: { fontWeight: 800, fontSize: 13, marginBottom: 8 }
-    }, (v.type || "Visit"), " · ", fmtDate(v.date), " — ", v._machine, " @ ", v._lab), /*#__PURE__*/React.createElement("div", {
-      style: { display: "grid", gridTemplateColumns: "170px 1fr", gap: "4px 10px", fontSize: 12.5 }
-    }, VGRID_COLS.filter(c => c.id !== "act" && c.sv).flatMap(c => {
-      const val = String(c.sv(v) || "");
-      if (!val) return [];
-      return [/*#__PURE__*/React.createElement("div", { key: c.id + "L", style: { color: "var(--c-text5)" } }, c.label), /*#__PURE__*/React.createElement("div", { key: c.id + "V", style: { whiteSpace: "pre-wrap", wordBreak: "break-word" } }, val)];
-    }))));
-  })()) : null, /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         alignItems: "center",
@@ -11900,7 +11787,124 @@ function OvertimeTab({
       marginLeft: "auto"
     },
     onClick: () => setShowSettings(true)
-  }, "⚙ Office Hours, Holidays & Cutoff")), !hasAnyData && /*#__PURE__*/React.createElement("div", {
+  }, "⚙ Office Hours, Holidays & Cutoff"), /*#__PURE__*/React.createElement("button", {
+    title: "Open a blank OVERTIME FORM — fill it out like Excel, save it, print at ¼ A4",
+    style: { ...btnSt("var(--c-key)", "var(--c-bg)"), padding: "7px 12px" },
+    onClick: () => setOtForm({ standalone: true, id: "", f: blankOtF() })
+  }, "📄 Overtime Form")), otForm ? /*#__PURE__*/React.createElement(Modal, {
+    title: "📄 Overtime Form — fill out to file",
+    onClose: () => setOtForm(null)
+  }, (() => {
+    const fm = otForm.f;
+    const uf = (k2, v2) => setOtForm(x => {
+      const nf = { ...x.f, [k2]: v2 };
+      if (k2 === "reqFrom" || k2 === "reqTo") {
+        const sp = otSpanHours(nf.reqFrom, nf.reqTo);
+        if (sp != null) nf.totalOt = sp.toFixed(2);
+      }
+      return { ...x, f: nf };
+    });
+    const pRow = (label, k2, ro) => /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", alignItems: "flex-end", gap: 6, margin: "6px 0", fontSize: 12, fontWeight: 700 }
+    }, label, /*#__PURE__*/React.createElement("input", {
+      style: { flex: 1, border: "none", borderBottom: "1px solid #000", outline: "none", background: "transparent", color: "#000", fontSize: 12, fontWeight: 400, padding: "0 3px" },
+      value: fm[k2],
+      readOnly: !!ro,
+      onChange: e => uf(k2, e.target.value)
+    }));
+    const tIn = (k2, w2) => /*#__PURE__*/React.createElement("input", {
+      style: { width: w2, border: "none", borderBottom: "1px solid #000", outline: "none", background: "transparent", color: "#000", fontSize: 12, padding: "0 3px" },
+      value: fm[k2],
+      onChange: e => uf(k2, e.target.value)
+    });
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: { background: "#fff", color: "#000", border: "2px solid #000", padding: "12px 14px", fontFamily: "Arial, Helvetica, sans-serif" }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { textAlign: "center", fontWeight: 800, fontSize: 15, marginBottom: 10 }
+    }, "OVERTIME FORM"), pRow("Name:", "name"), pRow("Department:", "department"), pRow("Date Filed:", "dateFiled"), pRow("Date of OT:", "dateOfOt"), /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", justifyContent: "space-between", margin: "12px 0 2px", fontSize: 12, fontWeight: 700 }
+    }, "Requested Time", "OFFICE Time"), /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", justifyContent: "space-between", fontSize: 12 }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", { style: { margin: "4px 0", fontStyle: "italic", fontWeight: 700 } }, "From: ", tIn("reqFrom", 150)), /*#__PURE__*/React.createElement("div", { style: { margin: "4px 0", fontStyle: "italic", fontWeight: 700 } }, "To: ", tIn("reqTo", 150))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", { style: { margin: "4px 0", fontStyle: "italic", fontWeight: 700 } }, "From: ", tIn("officeFrom", 90)), /*#__PURE__*/React.createElement("div", { style: { margin: "4px 0", fontStyle: "italic", fontWeight: 700 } }, "To: ", tIn("officeTo", 90)))), /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", alignItems: "center", justifyContent: "space-between", margin: "14px 0 10px" }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: { fontStyle: "italic", fontWeight: 800, fontSize: 12.5 }
+    }, "TOTAL OT Hours Rendered"), /*#__PURE__*/React.createElement("input", {
+      style: { border: "2px solid #000", width: 110, height: 40, textAlign: "center", fontSize: 15, fontWeight: 800, background: "transparent", color: "#000", outline: "none" },
+      value: fm.totalOt,
+      onChange: e => uf("totalOt", e.target.value)
+    })), /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 12, fontWeight: 700, marginBottom: 4 }
+    }, "Tasks to be DONE:"), /*#__PURE__*/React.createElement("textarea", {
+      rows: 5,
+      style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", resize: "vertical", background: "repeating-linear-gradient(transparent, transparent 20px, #000 20px, #000 21px)", lineHeight: "21px", fontSize: 12, color: "#000", fontFamily: "inherit", padding: "0 2px" },
+      value: fm.tasks,
+      onChange: e => uf("tasks", e.target.value)
+    }), /*#__PURE__*/React.createElement("div", { style: { marginTop: 12 } }, pRow("Requested By:", "requestedBy"), pRow("Noted By:", "notedBy"), pRow("Approved By:", "approvedBy"))), /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }
+    }, otForm.standalone ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("select", {
+      style: { ...inputSt(), maxWidth: 250 },
+      value: otForm.id || "",
+      onChange: e => {
+        const sel = (otFormsList || []).find(x => x.id === e.target.value);
+        if (!sel) { setOtForm(x => ({ ...x, id: "", f: blankOtF() })); return; }
+        setOtForm(x => ({ ...x, id: sel.id, f: { ...blankOtF(), ...sel.f } }));
+      }
+    }, /*#__PURE__*/React.createElement("option", { value: "" }, "➕ New form (unsaved)"), (otFormsList || []).map(sh => /*#__PURE__*/React.createElement("option", {
+      key: sh.id,
+      value: sh.id
+    }, String(sh.savedAt || "").slice(0, 16).replace("T", " ") + " · OT " + (sh.f && sh.f.dateOfOt || "—")))), /*#__PURE__*/React.createElement("button", {
+      style: btnSt("var(--c-key)", "var(--c-bg)"),
+      onClick: () => {
+        const u2 = auth.currentUser && auth.currentUser.uid || "";
+        if (!u2) return;
+        const id2 = otForm.id || u2 + "_otf_" + Date.now();
+        db.collection("smer").doc(id2).set({ uid: u2, kind: "otform", by: meEmail(profile) || "", f: otForm.f, savedAt: new Date().toISOString() }).then(() => {
+          setOtForm(x => ({ ...x, id: id2 }));
+          notify("Overtime form saved to your account.", "ok");
+        }).catch(e => notify("Save failed: " + (e && e.message || e), "error"));
+      }
+    }, "💾 Save form"), otForm.id ? /*#__PURE__*/React.createElement("button", {
+      style: btnSt("#3a1d1d", "#fca5a5"),
+      onClick: () => {
+        if (!confirm("Delete this saved Overtime Form?")) return;
+        db.collection("smer").doc(otForm.id).delete().then(() => setOtForm(x => ({ ...x, id: "", f: blankOtF() })));
+      }
+    }, "🗑 Delete") : null) : /*#__PURE__*/React.createElement("button", {
+      style: btnSt("var(--c-key)", "var(--c-bg)"),
+      onClick: () => {
+        applyFor(otForm.engName, otForm.date, otForm.cash, otForm.offset, otForm.f);
+        setOtForm(null);
+        notify("Overtime filed with the form (" + otForm.cash + "h cash / " + otForm.offset + "h offset).", "ok");
+      }
+    }, "📄 File OT application"), /*#__PURE__*/React.createElement("button", {
+      style: btnSt("var(--c-border)", "var(--c-text2)"),
+      onClick: () => printOtForm(otForm.f),
+      title: "Prints at quarter-A4 (105 × 148 mm)"
+    }, "🖨 Print (¼ A4)"), /*#__PURE__*/React.createElement("button", {
+      style: btnSt("var(--c-border)", "var(--c-text2)"),
+      onClick: () => setOtForm(null)
+    }, "Cancel")));
+  })()) : null, isrView ? /*#__PURE__*/React.createElement(Modal, {
+    title: "🔎 ISR " + isrView,
+    wide: true,
+    onClose: () => setIsrView(null)
+  }, (() => {
+    const hits = visitsForIsr(isrView);
+    if (!hits.length) return /*#__PURE__*/React.createElement("div", { style: { color: "var(--c-text4)", fontSize: 12.5 } }, "No service visit carries this ISR number.");
+    return hits.map((v, vi) => /*#__PURE__*/React.createElement("div", {
+      key: vi,
+      style: { borderTop: vi ? "1px solid var(--c-border)" : "none", paddingTop: vi ? 12 : 0, marginTop: vi ? 12 : 0 }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { fontWeight: 800, fontSize: 13, marginBottom: 8 }
+    }, (v.type || "Visit"), " · ", fmtDate(v.date), " — ", v._machine, " @ ", v._lab), /*#__PURE__*/React.createElement("div", {
+      style: { display: "grid", gridTemplateColumns: "170px 1fr", gap: "4px 10px", fontSize: 12.5 }
+    }, VGRID_COLS.filter(c => c.id !== "act" && c.sv).flatMap(c => {
+      const val = String(c.sv(v) || "");
+      if (!val) return [];
+      return [/*#__PURE__*/React.createElement("div", { key: c.id + "L", style: { color: "var(--c-text5)" } }, c.label), /*#__PURE__*/React.createElement("div", { key: c.id + "V", style: { whiteSpace: "pre-wrap", wordBreak: "break-word" } }, val)];
+    }))));
+  })()) : null, !hasAnyData && /*#__PURE__*/React.createElement("div", {
     style: {
       ...cardSt,
       textAlign: "center",
@@ -11933,15 +11937,7 @@ function OvertimeTab({
       flexWrap: "wrap",
       marginBottom: 14
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: { display: "flex", flexDirection: "column", gap: 4 }
-  }, /*#__PURE__*/React.createElement("label", {
-    style: labelSt
-  }, "Document overtime"), /*#__PURE__*/React.createElement("button", {
-    title: "Open a blank OVERTIME FORM — fill it out like an Excel sheet, save it, print at ¼ A4",
-    style: { ...btnSt("var(--c-key)", "var(--c-bg)"), padding: "7px 12px" },
-    onClick: () => setOtForm({ standalone: true, id: "", f: blankOtF() })
-  }, "📄 Overtime Form")), isMgr && /*#__PURE__*/React.createElement("div", {
+  }, isMgr && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
