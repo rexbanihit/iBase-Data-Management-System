@@ -267,6 +267,20 @@
     @keyframes ibase-anim-stretch { from { opacity:0; transform: scaleY(.06) scaleX(1.15); } to { opacity:1; transform: none; } }
     .anim-glitch    { animation: ibase-anim-glitch .45s steps(1,end); }
     @keyframes ibase-anim-glitch { 0% { opacity:0; transform: translate(-7px,3px); } 20% { opacity:1; transform: translate(5px,-4px); } 40% { transform: translate(-4px,2px); } 60% { transform: translate(3px,3px); } 80% { transform: translate(-2px,-2px); } 100% { transform: none; } }
+    .anim-fold    { animation: ibase-anim-fold .5s cubic-bezier(.2,.8,.25,1); transform-origin: top center; }
+    @keyframes ibase-anim-fold { from { opacity:0; transform: perspective(700px) rotateX(-85deg); } to { opacity:1; transform: none; } }
+    .anim-iris    { animation: ibase-anim-iris .5s ease-out; }
+    @keyframes ibase-anim-iris { from { opacity:0; clip-path: circle(0% at 50% 50%); } to { opacity:1; clip-path: circle(120% at 50% 50%); } }
+    .anim-shutter { animation: ibase-anim-shutter .45s ease-out; }
+    @keyframes ibase-anim-shutter { from { opacity:0; clip-path: inset(50% 0 50% 0); } to { opacity:1; clip-path: inset(0 0 0 0); } }
+    .anim-tumble  { animation: ibase-anim-tumble .55s cubic-bezier(.2,.8,.25,1); }
+    @keyframes ibase-anim-tumble { from { opacity:0; transform: translateY(-26px) rotate(-160deg) scale(.6); } to { opacity:1; transform: none; } }
+    .anim-pop     { animation: ibase-anim-pop .38s cubic-bezier(.34,1.56,.64,1); }
+    @keyframes ibase-anim-pop { 0% { opacity:0; transform: scale(.55); } 70% { opacity:1; transform: scale(1.08); } 100% { transform: scale(1); } }
+    .anim-drift   { animation: ibase-anim-drift .7s ease-out; }
+    @keyframes ibase-anim-drift { from { opacity:0; transform: translate(-18px,14px); } to { opacity:1; transform: none; } }
+    .anim-wave    { animation: ibase-anim-wave .6s ease-out; }
+    @keyframes ibase-anim-wave { 0% { opacity:0; transform: skewX(14deg) translateX(-16px); } 55% { opacity:1; transform: skewX(-7deg) translateX(6px); } 80% { transform: skewX(3deg); } 100% { transform: none; } }
     .ib-dash-bar { transform-origin: left center; animation: ib-bar-grow .6s cubic-bezier(.2,.8,.25,1) backwards; }
     @keyframes ib-bar-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
     .ib-dash-pie { animation: ib-pie-in .55s cubic-bezier(.2,.8,.25,1); transform-origin: 50% 50%; }
@@ -323,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v150";
+  window.__IBASE_BUILD = "v151";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3104,7 +3118,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v150"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v151"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -9455,7 +9469,12 @@ function VisitsTab({
   const [selected, setSelected] = useState({});
   const [rowHeights, setRowHeights] = useState({});
   const [delMode, setDelMode] = useState(false); // admins arm deletion FIRST, then pick rows
-  const [histFor, setHistFor] = useState(null); // 🕓 tap-to-view edit history (touch has no hover) // per-row Excel-style overrides
+  const [histFor, setHistFor] = useState(null); // 🕓 tap-to-view edit history (touch has no hover)
+  React.useEffect(() => {
+    // Changing any filter quietly leaves delete mode — it can never linger
+    // unnoticed into normal browsing.
+    setDelMode(false);
+  }, [typeF, engF, from, to, q]); // per-row Excel-style overrides
   const [bulkBusy, setBulkBusy] = useState(false);
   const [limit, setLimit] = useState(200); // rows shown; expandable to ALL
   const dragCol = useRef(null);
@@ -9908,7 +9927,7 @@ function VisitsTab({
       style: { ...btnSt("var(--c-border)", "#fca5a5"), padding: "6px 10px", fontSize: 11.5 },
       onClick: () => { setSelected({}); setDelMode(true); }
     }, "🗑 Delete service visit");
-    return /*#__PURE__*/React.createElement(React.Fragment, null,
+    return /*#__PURE__*/React.createElement("div", { style: { display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid #ef4444", background: "rgba(239,68,68,.10)", borderRadius: 10, padding: "4px 8px" } },
       /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 800, color: "#f87171" } }, "Delete mode — click the row(s) to remove", nSel ? " (" + nSel + " selected)" : ""),
       /*#__PURE__*/React.createElement("button", {
         title: nSel ? "Move the selected visit(s) to the 🗑 Bin — asks to confirm first" : "Select at least one row",
@@ -10621,6 +10640,20 @@ function OvertimeTab({
 }) {
   const isMgr = pIsOtManager(profile);
   const editable = pCanTab(profile, "overtime", "edit");
+  const [isrView, setIsrView] = useState(null); // ISR → full visit details (movable popup)
+  function visitsForIsr(isr) {
+    const key = String(isr || "").trim().toLowerCase();
+    const out = [];
+    (labs || []).forEach(l => (l.machines || []).forEach(m => (m.visits || []).forEach(v => {
+      if (String(v.isrNo || "").trim().toLowerCase() === key) out.push({
+        ...v,
+        _lab: l.name,
+        _machine: (m.instrument || "") + (m.serial ? " · " + m.serial : ""),
+        _mId: m.id
+      });
+    })));
+    return out;
+  }
   // resolved below, after engineerNames exists (case-insensitive matching)
   const otSettingsRaw = useDoc("config/otSettings", true);
   // Merge stored settings over the defaults so a PARTIAL document (e.g. missing
@@ -10934,7 +10967,26 @@ function OvertimeTab({
         flexDirection: "column",
         gap: 4
       }
+    }, isrView ? /*#__PURE__*/React.createElement(Modal, {
+    title: "🔎 ISR " + isrView,
+    wide: true,
+    onClose: () => setIsrView(null)
+  }, (() => {
+    const hits = visitsForIsr(isrView);
+    if (!hits.length) return /*#__PURE__*/React.createElement("div", { style: { color: "var(--c-text4)", fontSize: 12.5 } }, "No service visit carries this ISR number.");
+    return hits.map((v, vi) => /*#__PURE__*/React.createElement("div", {
+      key: vi,
+      style: { borderTop: vi ? "1px solid var(--c-border)" : "none", paddingTop: vi ? 12 : 0, marginTop: vi ? 12 : 0 }
     }, /*#__PURE__*/React.createElement("div", {
+      style: { fontWeight: 800, fontSize: 13, marginBottom: 8 }
+    }, (v.type || "Visit"), " · ", fmtDate(v.date), " — ", v._machine, " @ ", v._lab), /*#__PURE__*/React.createElement("div", {
+      style: { display: "grid", gridTemplateColumns: "170px 1fr", gap: "4px 10px", fontSize: 12.5 }
+    }, VGRID_COLS.filter(c => c.id !== "act" && c.sv).flatMap(c => {
+      const val = String(c.sv(v) || "");
+      if (!val) return [];
+      return [/*#__PURE__*/React.createElement("div", { key: c.id + "L", style: { color: "var(--c-text5)" } }, c.label), /*#__PURE__*/React.createElement("div", { key: c.id + "V", style: { whiteSpace: "pre-wrap", wordBreak: "break-word" } }, val)];
+    }))));
+  })()) : null, /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         alignItems: "center",
@@ -11359,7 +11411,22 @@ function OvertimeTab({
         fontFamily: "monospace",
         color: "var(--c-text3)"
       }
-    }, d.isrNos && d.isrNos.length ? d.isrNos.join(", ") : "—"), /*#__PURE__*/React.createElement("td", {
+    }, d.isrNos && d.isrNos.length ? d.isrNos.map((isr2, ix2) => /*#__PURE__*/React.createElement(React.Fragment, {
+      key: isr2 + "-" + ix2
+    }, ix2 ? ", " : null, /*#__PURE__*/React.createElement("button", {
+      title: "Show everything logged under ISR " + isr2,
+      style: {
+        background: "none",
+        border: "none",
+        padding: 0,
+        cursor: "pointer",
+        color: "var(--c-key)",
+        textDecoration: "underline",
+        fontFamily: "monospace",
+        fontSize: 11.5
+      },
+      onClick: () => setIsrView(isr2)
+    }, isr2))) : "—"), /*#__PURE__*/React.createElement("td", {
       style: {
         ...tdSt,
         fontFamily: "monospace"
@@ -11399,7 +11466,7 @@ function OvertimeTab({
         fontWeight: 800,
         color: d.otHours > 0 ? "#fbbf24" : "var(--c-text5)"
       }
-    }, d.otHours.toFixed(2)), /*#__PURE__*/React.createElement("td", {
+    }, d.otHours > 0 ? d.otHours.toFixed(2) : "—"), /*#__PURE__*/React.createElement("td", {
       style: tdSt
     }, d.otHours > 0 ? /*#__PURE__*/React.createElement(OtAppCell, {
       engName: engName,
@@ -14498,7 +14565,7 @@ function DangerZone({
     }
   }, "Inventory, spare parts and overtime land in the Bin as one restorable entry each. The audit trail is different: security rules make audit entries immutable, so deleting them is ", /*#__PURE__*/React.createElement("b", null, "permanent"), " — and the deletion itself is recorded as a fresh audit entry.")));
 }
-const TAB_ANIMS = [["default", "Default", "the system default (Bounce)"], ["none", "None", "no animation at all"], ["bounce", "Bounce", "springs up with a playful overshoot"], ["bubble", "Bubble", "inflates softly like a bubble"], ["zoom", "Zoom", "zooms in and settles"], ["slide", "Slide", "glides in from the left"], ["fade", "Fade", "a clean, calm cross-fade"], ["flip", "Flip", "flips forward in 3-D"], ["drop", "Drop", "falls from above and lands with a bounce"], ["swing", "Swing", "swings in from the top corner"], ["blur", "Blur", "sharpens into focus"], ["wipe", "Wipe", "reveals left-to-right like a curtain"], ["spin", "Spin", "twists in with a quick quarter-turn"], ["elastic", "Elastic", "stretches like jelly and snaps into shape"], ["rise", "Rise", "rises smoothly from below"], ["skew", "Skew", "slants in and straightens up"], ["glow", "Glow", "fades in with a bright flash"], ["drop", "Drop", "falls in and lands with a soft squash"], ["swing", "Swing", "swings in like a pendulum"], ["elastic", "Elastic", "stretches in with a rubbery snap"], ["blur", "Blur", "sharpens into focus"], ["curtain", "Curtain", "unrolls from the top like a curtain"], ["sweep", "Sweep", "sweeps in with a diagonal wipe"], ["spiral", "Spiral", "spins inward and settles"], ["newspaper", "Newspaper", "whirls in like a spinning headline"], ["stretch", "Stretch", "expands out from a horizontal line"], ["glitch", "Glitch", "snaps in with a digital jitter"]];
+const TAB_ANIMS = [["default", "Default", "the system default (Bounce)"], ["none", "None", "no animation at all"], ["bounce", "Bounce", "springs up with a playful overshoot"], ["bubble", "Bubble", "inflates softly like a bubble"], ["zoom", "Zoom", "zooms in and settles"], ["slide", "Slide", "glides in from the left"], ["fade", "Fade", "a clean, calm cross-fade"], ["flip", "Flip", "flips forward in 3-D"], ["drop", "Drop", "falls from above and lands with a bounce"], ["swing", "Swing", "swings in from the top corner"], ["blur", "Blur", "sharpens into focus"], ["wipe", "Wipe", "reveals left-to-right like a curtain"], ["spin", "Spin", "twists in with a quick quarter-turn"], ["elastic", "Elastic", "stretches like jelly and snaps into shape"], ["rise", "Rise", "rises smoothly from below"], ["skew", "Skew", "slants in and straightens up"], ["glow", "Glow", "fades in with a bright flash"], ["curtain", "Curtain", "unrolls from the top like a curtain"], ["sweep", "Sweep", "sweeps in with a diagonal wipe"], ["spiral", "Spiral", "spins inward and settles"], ["newspaper", "Newspaper", "whirls in like a spinning headline"], ["stretch", "Stretch", "expands out from a horizontal line"], ["glitch", "Glitch", "snaps in with a digital jitter"], ["fold", "Fold", "folds down like a sheet of paper"], ["iris", "Iris", "opens from the center like a camera iris"], ["shutter", "Shutter", "opens like horizontal shutters"], ["tumble", "Tumble", "tumbles in with a rolling spin"], ["pop", "Pop", "pops in with a snappy overshoot"], ["drift", "Drift", "drifts in gently from the corner"], ["wave", "Wave", "sways in and settles like a wave"]];
 // "default" resolves to the system default style.
 // PER-USER: reads the local ui preference object — never the shared catalog.
 function tabAnimStyle(ui) {
