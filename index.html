@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v151";
+  window.__IBASE_BUILD = "v152";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3118,7 +3118,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v151"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v152"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -10632,6 +10632,177 @@ class TabBoundary extends React.Component {
     return this.props.children;
   }
 }
+// ─── SMER: Semi-Monthly Expense Report (replica of the company form; A4) ────
+function SmerTab({ profile, notify }) {
+  const uid = auth.currentUser && auth.currentUser.uid || "";
+  const emptyRow = () => ({ date: "", travel: "", kmFrom: "", kmTo: "", totalKm: "", instrument: "", isr: "", dcr: "", meals: "", parking: "" });
+  const blank = () => ({ name: profile && profile.name || "", position: "Field Service Engineer", rows: Array.from({ length: 23 }, emptyRow), parkingS: "", tollS: "", loadS: "" });
+  const [sheets, setSheets] = useState(null);
+  const [curId, setCurId] = useState("");
+  const [f, setF] = useState(blank);
+  useEffect(() => {
+    if (!uid) return;
+    const un = db.collection("smer").where("uid", "==", uid).onSnapshot(sn => {
+      const arr = [];
+      sn.forEach(d => arr.push({ id: d.id, ...d.data() }));
+      arr.sort((a, b) => String(b.savedAt || "").localeCompare(String(a.savedAt || "")));
+      setSheets(arr);
+    }, () => setSheets([]));
+    return un;
+  }, [uid]);
+  const num = x => { const n = parseFloat(String(x == null ? "" : x).replace(/,/g, "")); return isNaN(n) ? 0 : n; };
+  const setRow = (i, k, val) => setF(x => {
+    const rows = x.rows.slice();
+    rows[i] = { ...rows[i], [k]: val };
+    if (k === "kmFrom" || k === "kmTo") {
+      const a = parseFloat(rows[i].kmFrom), b = parseFloat(rows[i].kmTo);
+      if (!isNaN(a) && !isNaN(b)) rows[i].totalKm = String(Math.round((b - a) * 100) / 100);
+    }
+    return { ...x, rows };
+  });
+  const tKm = f.rows.reduce((a, r) => a + num(r.totalKm), 0);
+  const tMeals = f.rows.reduce((a, r) => a + num(r.meals), 0);
+  const tPark = f.rows.reduce((a, r) => a + num(r.parking), 0);
+  const grand = tKm + tMeals + num(f.parkingS) + num(f.tollS) + num(f.loadS);
+  function saveSheet() {
+    const id = curId || uid + "_" + Date.now();
+    db.collection("smer").doc(id).set({ uid: uid, by: meEmail(profile) || "", name: f.name, position: f.position, rows: f.rows, parkingS: f.parkingS, tollS: f.tollS, loadS: f.loadS, savedAt: new Date().toISOString() }).then(() => {
+      setCurId(id);
+      notify("SMER sheet saved.", "ok");
+    }).catch(e => notify("Save failed: " + (e && e.message || e), "error"));
+  }
+  function loadSheet(id) {
+    const sh = (sheets || []).find(x => x.id === id);
+    if (!sh) { setCurId(""); setF(blank()); return; }
+    setCurId(id);
+    setF({ name: sh.name || "", position: sh.position || "Field Service Engineer", rows: Array.isArray(sh.rows) && sh.rows.length === 23 ? sh.rows.map(r => ({ ...emptyRow(), ...r })) : Array.from({ length: 23 }, emptyRow), parkingS: sh.parkingS || "", tollS: sh.tollS || "", loadS: sh.loadS || "" });
+  }
+  function delSheet() {
+    if (!curId) return;
+    if (!confirm("Delete this saved SMER sheet? This cannot be undone.")) return;
+    db.collection("smer").doc(curId).delete().then(() => { setCurId(""); setF(blank()); notify("Sheet deleted.", "ok"); }).catch(e => notify("Delete failed: " + (e && e.message || e), "error"));
+  }
+  function xlsxOut() {
+    const aoa = [["SEMI-MONTHLY EXPENSE REPORT (SMER)"], ["Name:", f.name], ["Position:", f.position], ["One hospital/laboratory per box. Pls use separate sheet if necessary."], ["Date", "Travel Details (From/To)", "Daily KM Reading/FARE — From", "Daily KM Reading/FARE — To", "Total KM/FARE", "Instrument", "ISR Number", "DCR (TIME & OUT)", "Meals", "Parking/Toll/Load"]].concat(f.rows.map(r => [r.date, r.travel, r.kmFrom, r.kmTo, r.totalKm, r.instrument, r.isr, r.dcr, r.meals, r.parking]), [["TOTAL:", "", "", "", tKm.toFixed(2), "", "", "", tMeals.toFixed(2), tPark.toFixed(2)], [], ["1. Gas/Fare", tKm.toFixed(2)], ["2. Meals", tMeals.toFixed(2)], ["3. Parking", num(f.parkingS).toFixed(2)], ["4. Toll", num(f.tollS).toFixed(2)], ["5. Load", num(f.loadS).toFixed(2)], ["TOTAL :", grand.toFixed(2)]]);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = [{ wch: 11 }, { wch: 30 }, { wch: 13 }, { wch: 13 }, { wch: 12 }, { wch: 22 }, { wch: 12 }, { wch: 16 }, { wch: 9 }, { wch: 14 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "SMER");
+    XLSX.writeFile(wb, "SMER_" + (f.name || "sheet").replace(/[^A-Za-z0-9]+/g, "_") + ".xlsx");
+  }
+  function printSheet() {
+    const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const cells = r => [r.date, r.travel, r.kmFrom, r.kmTo, r.totalKm, r.instrument, r.isr, r.dcr, r.meals, r.parking];
+    const body = f.rows.map(r => "<tr>" + cells(r).map(c => "<td>" + esc(c) + "&nbsp;</td>").join("") + "</tr>").join("");
+    const html = "<!doctype html><html><head><title>SMER</title><style>@page{size:A4 landscape;margin:8mm}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:4px 6px}.logo{display:flex;align-items:center;gap:10px}.sq{display:grid;grid-template-columns:repeat(3,11px);grid-auto-rows:11px}.sq i{display:block}.sq i.b{background:#1a1a1a}.brand{border-left:2px solid #000;padding-left:10px}.fas{font-weight:900;font-size:24px;letter-spacing:2px;line-height:1}.sub{font-size:9.5px;line-height:1.1}h1{font-size:13px;text-align:center;margin:-18px 0 8px;font-weight:800}.meta{font-size:11.5px;font-weight:700;margin:1px 0}.meta span{font-weight:400;border-bottom:1px solid #000;display:inline-block;min-width:420px;padding:0 4px}.note{font-size:9.5px;font-style:italic;margin:2px 0 4px}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #000;font-size:9.8px;padding:1.5px 3px;height:15.5px;overflow:hidden;white-space:nowrap}th{font-weight:700;text-align:center}.y{background:#ffff00 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tot td{font-weight:700}.foot{display:flex;justify-content:space-between;margin-top:10px}.sums{font-size:11px;width:300px}.sums div{display:flex;justify-content:space-between;padding:1px 0}.sums .u{border-bottom:1px solid #000;min-width:90px;text-align:right}.sums .g{font-weight:800;border-top:1px solid #000;margin-top:3px;padding-top:3px}.sig{width:280px;text-align:center;font-size:10.5px}.sig .l{border-top:1px solid #000;margin-top:30px;padding-top:2px}</style></head><body>" +
+      '<div class="logo"><div class="sq"><i class="b"></i><i></i><i class="b"></i><i></i><i class="b"></i><i></i><i class="b"></i><i class="b"></i><i></i></div><div class="brand"><div class="fas">FAS</div><div class="sub">Diagnostic<br>Group<br>Inc.</div></div></div>' +
+      "<h1>SEMI-MONTHLY EXPENSE REPORT(SMER)</h1>" +
+      '<div class="meta">Name: <span>' + esc(f.name) + '</span></div><div class="meta">Position: <span>' + esc(f.position) + '</span></div>' +
+      '<div class="note">One hospital/laboratory per box. Pls use separate sheet if necessary.</div>' +
+      '<table><colgroup><col style="width:9%"><col style="width:18%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:17%"><col style="width:8%"><col style="width:11%"><col style="width:6%"><col style="width:7%"></colgroup>' +
+      '<tr><th rowspan="2">Date</th><th rowspan="2">Travel Details (From/To)</th><th colspan="2" class="y">Daily KM Reading/FARE</th><th rowspan="2" class="y">Total KM/FARE</th><th rowspan="2">Instrument</th><th rowspan="2">ISR<br>Number</th><th rowspan="2">DCR (TIME &amp; OUT)</th><th rowspan="2" class="y">Meals</th><th rowspan="2" class="y">Parking/<br>Toll/Load</th></tr>' +
+      '<tr><th class="y">From</th><th class="y">To</th></tr>' + body +
+      '<tr class="tot"><td style="text-align:center">TOTAL:</td><td></td><td></td><td></td><td style="text-align:right">' + tKm.toFixed(2) + '</td><td></td><td></td><td></td><td style="text-align:right">' + tMeals.toFixed(2) + '</td><td style="text-align:right">' + tPark.toFixed(2) + "</td></tr></table>" +
+      '<div class="foot"><div class="sums"><div><span>1. Gas/Fare</span><span class="u">' + tKm.toFixed(2) + '</span></div><div><span>2. Meals</span><span class="u">' + tMeals.toFixed(2) + '</span></div><div><span>3. Parking</span><span class="u">' + num(f.parkingS).toFixed(2) + '</span></div><div><span>4. Toll</span><span class="u">' + num(f.tollS).toFixed(2) + '</span></div><div><span>5. Load</span><span class="u">' + num(f.loadS).toFixed(2) + '</span></div><div class="g"><span>TOTAL :</span><span class="u">' + grand.toFixed(2) + '</span></div></div>' +
+      '<div class="sig"><div class="l">Employee&#39;s Signature</div><div class="l" style="margin-top:44px">Vice President for Operations</div></div></div></body></html>';
+    const w = window.open("", "_blank", "width=1150,height=780");
+    if (!w) { notify("Allow pop-ups to print the SMER sheet.", "error"); return; }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { try { w.print(); } catch (e) {} }, 300);
+  }
+  const paperIn = extra => ({ width: "100%", border: "none", outline: "none", background: "transparent", color: "#000", fontSize: 11.5, fontFamily: "Arial, Helvetica, sans-serif", padding: "1px 3px", ...(extra || {}) });
+  const bTd = extra => ({ border: "1px solid #000", padding: 0, height: 21, ...(extra || {}) });
+  const yl = { background: "#ffff00", color: "#000" };
+  const models = (window.__ibaseCatalog && window.__ibaseCatalog.machines || []).map(x => x.model).filter(Boolean);
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }
+  }, /*#__PURE__*/React.createElement("select", {
+    style: { ...inputSt(), maxWidth: 300 },
+    value: curId,
+    onChange: e => loadSheet(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", { value: "" }, "➕ New sheet (unsaved)"), (sheets || []).map(sh => /*#__PURE__*/React.createElement("option", {
+    key: sh.id,
+    value: sh.id
+  }, String(sh.savedAt || "").slice(0, 16).replace("T", " ") + " · " + (sh.name || "unnamed")))), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-key)", "var(--c-bg)"),
+    onClick: saveSheet
+  }, "💾 Save"), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: printSheet,
+    title: "Opens a print view sized for A4 landscape"
+  }, "🖨 Print (A4)"), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: xlsxOut
+  }, "⬇ Excel"), curId ? /*#__PURE__*/React.createElement("button", {
+    style: btnSt("#3a1d1d", "#fca5a5"),
+    onClick: delSheet
+  }, "🗑 Delete sheet") : null, /*#__PURE__*/React.createElement("span", {
+    style: { fontSize: 11, color: "var(--c-text5)" }
+  }, "Sheets save to your account only. Totals compute automatically, like Excel.")), /*#__PURE__*/React.createElement("div", {
+    style: { background: "#ffffff", color: "#000", border: "1px solid var(--c-border)", borderRadius: 6, padding: "14px 16px", maxWidth: 1150, overflowX: "auto", boxShadow: "0 6px 24px rgba(0,0,0,.25)" }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", alignItems: "center", gap: 10 }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { display: "grid", gridTemplateColumns: "repeat(3, 11px)", gridAutoRows: "11px" }
+  }, [1, 0, 1, 0, 1, 0, 1, 1, 0].map((b, i) => /*#__PURE__*/React.createElement("i", {
+    key: i,
+    style: { display: "block", background: b ? "#1a1a1a" : "transparent" }
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: { borderLeft: "2px solid #000", paddingLeft: 10 }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { fontWeight: 900, fontSize: 24, letterSpacing: 2, lineHeight: 1 }
+  }, "FAS"), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 9.5, lineHeight: 1.1 }
+  }, "Diagnostic", /*#__PURE__*/React.createElement("br", null), "Group", /*#__PURE__*/React.createElement("br", null), "Inc.")), /*#__PURE__*/React.createElement("div", {
+    style: { flex: 1, textAlign: "center", fontWeight: 800, fontSize: 14, alignSelf: "center" }
+  }, "SEMI-MONTHLY EXPENSE REPORT(SMER)")), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 12, fontWeight: 700, margin: "6px 0 1px", display: "flex", gap: 6 }
+  }, "Name:", /*#__PURE__*/React.createElement("input", {
+    style: paperIn({ borderBottom: "1px solid #000", maxWidth: 520, fontWeight: 400 }),
+    value: f.name,
+    onChange: e => setF(x => ({ ...x, name: e.target.value }))
+  })), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 12, fontWeight: 700, margin: "1px 0", display: "flex", gap: 6 }
+  }, "Position:", /*#__PURE__*/React.createElement("input", {
+    style: paperIn({ borderBottom: "1px solid #000", maxWidth: 520, fontWeight: 400 }),
+    value: f.position,
+    onChange: e => setF(x => ({ ...x, position: e.target.value }))
+  })), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 10, fontStyle: "italic", margin: "2px 0 5px" }
+  }, "One hospital/laboratory per box. Pls use separate sheet if necessary."), /*#__PURE__*/React.createElement("table", {
+    style: { width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: 1050 }
+  }, /*#__PURE__*/React.createElement("colgroup", null, ["9%", "18%", "8%", "8%", "8%", "17%", "8%", "11%", "6%", "7%"].map((w, i) => /*#__PURE__*/React.createElement("col", {
+    key: i,
+    style: { width: w }
+  }))), /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11 }) }, "Date"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11 }) }, "Travel Details (From/To)"), /*#__PURE__*/React.createElement("th", { colSpan: 2, style: bTd({ ...yl, fontSize: 11 }) }, "Daily KM Reading/FARE"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11 }) }, "Total KM/FARE"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11 }) }, "Instrument"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11 }) }, "ISR", /*#__PURE__*/React.createElement("br", null), "Number"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ fontSize: 11 }) }, "DCR (TIME & OUT)"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11 }) }, "Meals"), /*#__PURE__*/React.createElement("th", { rowSpan: 2, style: bTd({ ...yl, fontSize: 11 }) }, "Parking/", /*#__PURE__*/React.createElement("br", null), "Toll/Load")), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", { style: bTd({ ...yl, fontSize: 11 }) }, "From"), /*#__PURE__*/React.createElement("th", { style: bTd({ ...yl, fontSize: 11 }) }, "To"))), /*#__PURE__*/React.createElement("tbody", null, f.rows.map((r, i) => /*#__PURE__*/React.createElement("tr", {
+    key: i
+  }, /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), value: r.date, onChange: e => setRow(i, "date", e.target.value), placeholder: "" })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), value: r.travel, onChange: e => setRow(i, "travel", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: "right" }), value: r.kmFrom, onChange: e => setRow(i, "kmFrom", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: "right" }), value: r.kmTo, onChange: e => setRow(i, "kmTo", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { title: "Auto-computes To − From when both are numbers; you can also type a fare directly", style: paperIn({ textAlign: "right" }), value: r.totalKm, onChange: e => setRow(i, "totalKm", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), list: "smer-models", value: r.instrument, onChange: e => setRow(i, "instrument", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), value: r.isr, onChange: e => setRow(i, "isr", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn(), value: r.dcr, onChange: e => setRow(i, "dcr", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: "right" }), value: r.meals, onChange: e => setRow(i, "meals", e.target.value) })), /*#__PURE__*/React.createElement("td", { style: bTd() }, /*#__PURE__*/React.createElement("input", { style: paperIn({ textAlign: "right" }), value: r.parking, onChange: e => setRow(i, "parking", e.target.value) })))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "center", fontWeight: 800, fontSize: 11.5 }) }, "TOTAL:"), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "right", fontWeight: 800, fontSize: 11.5, padding: "0 3px" }) }, tKm.toFixed(2)), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd() }), /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "right", fontWeight: 800, fontSize: 11.5, padding: "0 3px" }) }, tMeals.toFixed(2)), /*#__PURE__*/React.createElement("td", { style: bTd({ textAlign: "right", fontWeight: 800, fontSize: 11.5, padding: "0 3px" }) }, tPark.toFixed(2))))), /*#__PURE__*/React.createElement("datalist", { id: "smer-models" }, models.map((m2, i2) => /*#__PURE__*/React.createElement("option", { key: m2 + i2, value: m2 }))), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", justifyContent: "space-between", marginTop: 14, flexWrap: "wrap", gap: 20 }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 12, width: 300 }
+  }, [["1. Gas/Fare", tKm.toFixed(2), null], ["2. Meals", tMeals.toFixed(2), null], ["3. Parking", null, "parkingS"], ["4. Toll", null, "tollS"], ["5. Load", null, "loadS"]].map(([lb, val, key2]) => /*#__PURE__*/React.createElement("div", {
+    key: lb,
+    style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "1px 0" }
+  }, /*#__PURE__*/React.createElement("span", null, lb), key2 ? /*#__PURE__*/React.createElement("input", {
+    style: paperIn({ borderBottom: "1px solid #000", width: 90, textAlign: "right" }),
+    value: f[key2],
+    onChange: e => setF(x => ({ ...x, [key2]: e.target.value }))
+  }) : /*#__PURE__*/React.createElement("span", {
+    style: { borderBottom: "1px solid #000", minWidth: 90, textAlign: "right" }
+  }, val))), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", justifyContent: "space-between", fontWeight: 800, borderTop: "1px solid #000", marginTop: 4, paddingTop: 3 }
+  }, /*#__PURE__*/React.createElement("span", null, "TOTAL :"), /*#__PURE__*/React.createElement("span", {
+    style: { borderBottom: "1px solid #000", minWidth: 90, textAlign: "right" }
+  }, grand.toFixed(2)))), /*#__PURE__*/React.createElement("div", {
+    style: { width: 280, textAlign: "center", fontSize: 11 }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { borderTop: "1px solid #000", marginTop: 34, paddingTop: 2 }
+  }, "Employee's Signature"), /*#__PURE__*/React.createElement("div", {
+    style: { borderTop: "1px solid #000", marginTop: 46, paddingTop: 2 }
+  }, "Vice President for Operations")))));
+}
 function OvertimeTab({
   profile,
   labs,
@@ -17282,6 +17453,9 @@ function App() {
   }, (signedProfile.isAdmin || pCanTab(signedProfile, "overtime", "view")) && !tabHidden(tabsCfg, "overtime") && {
     id: "overtime",
     label: tabLabel(tabsCfg, "overtime", "🕒 Overtime")
+  }, !tabHidden(tabsCfg, "smer") && {
+    id: "smer",
+    label: tabLabel(tabsCfg, "smer", "🧾 SMER")
   }, signedProfile.isAdmin && !tabHidden(tabsCfg, "bin") && {
     id: "bin",
     label: tabLabel(tabsCfg, "bin", "🗑 Bin")
@@ -17573,6 +17747,9 @@ function App() {
     profile: signedProfile,
     labs: labs,
     catalog: catalog,
+    notify: notify
+  }), tab === "smer" && /*#__PURE__*/React.createElement(SmerTab, {
+    profile: signedProfile,
     notify: notify
   }), tab === "overtime" && pCanTab(signedProfile, "overtime", "view") && /*#__PURE__*/React.createElement(OvertimeTab, {
     profile: signedProfile,
