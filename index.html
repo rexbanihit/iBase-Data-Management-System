@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v188";
+  window.__IBASE_BUILD = "v193";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3154,7 +3154,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v188"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v193"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -3269,6 +3269,7 @@ function Login({
     style: {
       fontSize: 9,
       color: "var(--c-author)",
+      opacity: "var(--c-author-op, 0.06)",
       letterSpacing: 2,
       textTransform: "uppercase",
       marginTop: 6
@@ -3565,17 +3566,24 @@ function ITable({
       onMouseDown: e => startResize(e, cid),
       onClick: e => e.stopPropagation(),
       draggable: false,
+      title: "Drag to resize this column",
       onDragStart: e => {
         e.preventDefault();
         e.stopPropagation();
       },
+      onMouseEnter: e => { e.currentTarget.style.background = "var(--c-key)"; e.currentTarget.style.opacity = "1"; },
+      onMouseLeave: e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.opacity = "0"; },
       style: {
         position: "absolute",
-        right: 0,
-        top: 0,
-        bottom: 0,
-        width: 7,
-        cursor: "col-resize"
+        right: -2,
+        top: 3,
+        bottom: 3,
+        width: 4,
+        borderRadius: 2,
+        background: "transparent",
+        opacity: 0,
+        cursor: "col-resize",
+        transition: "opacity .1s"
       }
     }));
   }))), /*#__PURE__*/React.createElement("tbody", null, shown.map((r, i) => {
@@ -5388,12 +5396,14 @@ const thSt = {
   color: "var(--c-text4)",
   textTransform: "uppercase",
   letterSpacing: .5,
-  borderBottom: "1px solid var(--c-border)"
+  borderBottom: "1px solid var(--c-border)",
+  borderRight: "1px solid var(--c-border)"
 };
 const tdSt = {
   padding: "8px 10px",
   fontSize: 13,
-  borderBottom: "1px solid var(--c-border2)"
+  borderBottom: "1px solid var(--c-border2)",
+  borderRight: "1px solid var(--c-border2)"
 };
 function LastPMModal({
   machine,
@@ -9670,31 +9680,30 @@ function VisitsTab({
   }), [all, labF, brandF, machineF, typeF, engF, from, to, q]);
   const colDef = id => VGRID_COLS.find(c => c.id === id);
   const shown = useMemo(() => {
-    const c = colDef(sort.col);
-    if (!c) return filtered;
-    // The Date column orders by the ACTUAL work chronology, parsed to real
-    // time — Date & Time work started first, then the source timestamp, then
-    // the plain date. Parsing (not text comparison) makes imported rows in
-    // other date formats order correctly beside form-entered ISO values, so
-    // the latest visit by work-started is ALWAYS the top-most row.
+    // Order STRICTLY by "Date & Time work started" (dtWorkStarted), parsed to real
+    // time so imported rows in other date formats still order correctly. This is the
+    // default view for every user: the latest work-started visit is ALWAYS on top.
+    // NOTE: this is intentionally NOT the source timestamp — only the work-started value.
     const workTs = v => {
-      const cands = [v.dtWorkStarted, v.srcTimestamp, v.date];
-      for (const c2 of cands) {
-        if (!c2) continue;
-        const t2 = Date.parse(String(c2));
-        if (!isNaN(t2)) return t2;
-      }
-      return 0;
+      const t = Date.parse(String((v && v.dtWorkStarted) || ""));
+      return isNaN(t) ? -Infinity : t; // no work-started time → sinks to the bottom
     };
-    if (sort.col === "date") return [...filtered].sort((a, b) => sort.dir * (workTs(a) - workTs(b)));
-    const recency = v => workTs(v);
+    // The default "date" view (and any click on the work-started column) sorts by work-started.
+    if (sort.col === "date" || sort.col === "wstart") {
+      return [...filtered].sort((a, b) => {
+        const d2 = workTs(b) - workTs(a); // newest first when dir = -1
+        return (sort.dir === -1 ? d2 : -d2) || String(b.dtWorkStarted || "").localeCompare(String(a.dtWorkStarted || ""));
+      });
+    }
+    const c = colDef(sort.col);
+    if (!c) return [...filtered].sort((a, b) => workTs(b) - workTs(a)); // unknown col → still newest work-started first
     return [...filtered].sort((a, b) => {
       const p = sort.dir * String(c.sv(a)).localeCompare(String(c.sv(b)), undefined, {
         numeric: true,
         sensitivity: "base"
       });
       if (p !== 0) return p;
-      return recency(b) - recency(a);
+      return workTs(b) - workTs(a); // tie-break: newest work-started first
     });
   }, [filtered, sort]);
   function clickSort(id) {
@@ -10691,6 +10700,15 @@ class TabBoundary extends React.Component {
 }
 // ─── WPOA: Weekly Plan of Activities (Excel-like team board · LIVE-SYNCED · A4) ──
 function WpoaTab({ profile, notify }) {
+  // Alphabetical employee roster from the shared catalog (departments' employees
+  // + any registered names) — same source the visit form uses; everyone can read /config.
+  const wpoaEmployees = React.useMemo(() => {
+    const cat = (typeof window !== "undefined" && window.__ibaseCatalog) || {};
+    const fromDeps = (cat.departments || []).flatMap(d => Array.isArray(d.employees) ? d.employees : []);
+    const fromList = (cat.employees || []).map(e2 => e2 && (e2.name || e2));
+    const fromUsers = (typeof window !== "undefined" && window.__ibaseEngineers) || [];
+    return [...new Set(fromDeps.concat(fromList, fromUsers).map(x => String(x || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  }, []);
   const holidaysDoc = useDoc("config/holidays", true);
   const holidayMap = useMemo(() => otHolidayMapFromList(holidaysDoc && holidaysDoc.list || []), [holidaysDoc]);
   const DAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
@@ -11021,12 +11039,12 @@ function WpoaTab({ profile, notify }) {
   }, li === 0 ? /*#__PURE__*/React.createElement("td", {
     rowSpan: 3,
     style: { border: CELLBORDER, boxSizing: "border-box", background: "#fff", verticalAlign: "middle", padding: 0, position: "relative" }
-  }, /*#__PURE__*/React.createElement("input", {
+  }, /*#__PURE__*/React.createElement("select", {
     value: nameOf(sec, pid),
-    placeholder: "[Name]",
+    title: "Pick the employee for this board",
     onChange: e => writeName(sec, pid, e.target.value),
-    style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: "transparent", color: "#000", fontWeight: 700, textAlign: "center", fontSize: 11.5, fontFamily: "inherit" }
-  }), /*#__PURE__*/React.createElement("button", {
+    style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: "transparent", color: "#000", fontWeight: 700, textAlign: "center", fontSize: 11.5, fontFamily: "inherit", cursor: "pointer", appearance: "none", WebkitAppearance: "none", MozAppearance: "none" }
+  }, /*#__PURE__*/React.createElement("option", { value: "" }, "[Name]"), (nameOf(sec, pid) && !wpoaEmployees.includes(nameOf(sec, pid))) ? /*#__PURE__*/React.createElement("option", { value: nameOf(sec, pid) }, nameOf(sec, pid)) : null, wpoaEmployees.map(nm => /*#__PURE__*/React.createElement("option", { key: nm, value: nm }, nm))), /*#__PURE__*/React.createElement("button", {
     title: "Remove this name row",
     onClick: () => delPerson(sec, pid),
     style: { position: "absolute", top: 1, right: 1, background: "none", border: "none", cursor: "pointer", fontSize: 9, color: "#a00" }
@@ -16023,6 +16041,17 @@ function SettingsTab({
       db.doc("config/themes").set({ ov: next }).catch(e => notify("Theme save refused: " + e.message, "error"));
     }, 350);
   };
+  const authorAlpha = themeOv && themeOv.authorAlpha != null ? Number(themeOv.authorAlpha) : 0.06;
+  const aaTimer = React.useRef(null);
+  const [aaLoc, setAaLoc] = useState(null);
+  const writeAuthorAlpha = v => {
+    const val = Math.max(0, Math.min(1, Number(v)));
+    setAaLoc(val);
+    clearTimeout(aaTimer.current);
+    aaTimer.current = setTimeout(() => {
+      db.doc("config/themes").set({ authorAlpha: val }, { merge: true }).catch(e => notify("Save refused: " + e.message, "error"));
+    }, 300);
+  };
   const restoreTheme = id => {
     const cur = { ...(themeOv && themeOv.ov || {}) };
     delete cur[id];
@@ -16381,7 +16410,23 @@ function SettingsTab({
     style: { fontWeight: 800, fontSize: 15, marginBottom: 4 }
   }, "🎨 Theme Studio — sole owner"), /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 12, color: "var(--c-text4)", marginBottom: 14 }
-  }, "Tune every theme: pick its accent color and set the panel opacity (0 = fully transparent, 255 = solid). Changes save automatically and apply live for every signed-in user. Each theme can be restored to its factory look independently."), THEMES.map(t2 => {
+  }, "Tune every theme: pick its accent color and set the panel opacity (0 = fully transparent, 255 = solid). Changes save automatically and apply live for every signed-in user. Each theme can be restored to its factory look independently."), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 12px", margin: "0 0 14px", border: "1px solid var(--c-border)", borderRadius: 8, background: "var(--c-bg2)" }
+  }, /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, fontSize: 12.5 } }, "\u201cDeveloped by Rex Banihit\u201d credit \u2014 visibility"), /*#__PURE__*/React.createElement("input", {
+    type: "range", min: 0, max: 100, step: 1,
+    value: Math.round((aaLoc != null ? aaLoc : authorAlpha) * 100),
+    onChange: e => writeAuthorAlpha(Number(e.target.value) / 100),
+    style: { flex: 1, minWidth: 160, cursor: "pointer" }
+  }), /*#__PURE__*/React.createElement("input", {
+    type: "number", min: 0, max: 100, step: 1,
+    value: Math.round((aaLoc != null ? aaLoc : authorAlpha) * 100),
+    onChange: e => writeAuthorAlpha(Number(e.target.value) / 100),
+    style: { width: 64, padding: "4px 6px", background: "var(--c-bg)", color: "var(--c-text)", border: "1px solid var(--c-border)", borderRadius: 6, textAlign: "center" }
+  }), /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: "var(--c-text4)", minWidth: 96 } }, "% opacity \u00b7 all users"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => writeAuthorAlpha(0.06),
+    title: "Back to the near-invisible default",
+    style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "4px 10px", fontSize: 11 }
+  }, "\u21ba Default")), THEMES.map(t2 => {
     const e2 = effT(t2.id);
     return /*#__PURE__*/React.createElement("div", {
       key: t2.id,
@@ -16448,7 +16493,7 @@ function SettingsTab({
       background: "var(--c-bg)",
       padding: "10px 0 12px",
       marginBottom: 12,
-      boxShadow: "0 -26px 0 0 var(--c-bg), 0 6px 14px rgba(0,0,0,.35)"
+      boxShadow: "0 6px 14px rgba(0,0,0,.35)"
     }
   }, visibleSubs.map(subBtn)), eff === "danger" && iAmOwner && /*#__PURE__*/React.createElement(DangerZone, {
     labs: labs,
@@ -18525,7 +18570,7 @@ function App() {
       el.id = "ibase-theme-ov";
       document.head.appendChild(el);
     }
-    el.textContent = Object.keys(ov).map(id => {
+    const themeCss = Object.keys(ov).map(id => {
       const o = ov[id] || {};
       const d = readThemeDefaults(id);
       const lines = [];
@@ -18533,6 +18578,10 @@ function App() {
       if (o.alpha != null && Number(o.alpha) < 255) lines.push("--c-card:color-mix(in srgb, " + (d.card || "#111827") + " " + (Number(o.alpha) / 255 * 100).toFixed(1) + "%, transparent)");
       return lines.length ? '[data-theme="' + id + '"]{' + lines.join(";") + "}" : "";
     }).filter(Boolean).join("\n");
+    // Author-credit opacity is a single global value (0..1) shared by all users.
+    const aa = themeOvDoc && themeOvDoc.authorAlpha;
+    const authorCss = aa != null ? ":root{--c-author-op:" + Math.max(0, Math.min(1, Number(aa))) + "}" : "";
+    el.textContent = themeCss + "\n" + authorCss;
   }, [themeOvDoc]);
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
