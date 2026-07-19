@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v187";
+  window.__IBASE_BUILD = "v188";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3154,7 +3154,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v187"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v188"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -12436,7 +12436,7 @@ function OvertimeTab({
       }
     };
     // Headers are interchangeable sort keys; the DEFAULT order is the latest date first.
-    const daysSorted = useMemo(() => [...days].sort((a2, b2) => {
+    const daysSorted = useMemo(() => [...days].filter(d => (Number(d.otHours) || 0) > 0).sort((a2, b2) => {
       const ka = otSortKey(a2, otSort.col), kb = otSortKey(b2, otSort.col);
       const c2 = typeof ka === "number" && typeof kb === "number" ? ka - kb : String(ka).localeCompare(String(kb), undefined, { numeric: true });
       return c2 !== 0 ? otSort.dir * c2 : String(b2.date || "").localeCompare(String(a2.date || ""));
@@ -12636,13 +12636,13 @@ function OvertimeTab({
         color: "var(--c-text5)",
         marginTop: 6
       }
-    }, "Day span = earliest start → latest end across the visits above.", " ", d.isHoliday || d.restDay ? (d.isHoliday ? "Holiday (" + d.holidayName + ")" : "Scheduled rest day") + ": the ENTIRE span counts as overtime." : "Ordinary weekday: overtime counts from 6:30 PM onwards (office end + grace); hours before that are regular."))))), days.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    }, "Day span = earliest start → latest end across the visits above.", " ", d.isHoliday || d.restDay ? (d.isHoliday ? "Holiday (" + d.holidayName + ")" : "Scheduled rest day") + ": the ENTIRE span counts as overtime." : "Ordinary weekday: overtime counts from 6:30 PM onwards (office end + grace); hours before that are regular."))))), daysSorted.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
       colSpan: 9,
       style: {
         ...tdSt,
         color: "var(--c-text4)"
       }
-    }, period === "__allhist__" ? "No overtime records yet." : period === "__range__" ? "No overtime in the selected date range." : "No records in this cutoff period.")))));
+    }, days.length > 0 ? "No overtime for this selection \u2014 all duties were within regular hours (only days with excess/OT hours are listed)." : period === "__allhist__" ? "No overtime records yet." : period === "__range__" ? "No overtime in the selected date range." : "No records in this cutoff period.")))));
   }
   if (otView === "rules") {
     const schMon = otSettings.schedule && otSettings.schedule.mon || {};
