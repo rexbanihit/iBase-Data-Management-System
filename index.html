@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v179";
+  window.__IBASE_BUILD = "v180";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3154,7 +3154,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v179"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v180"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -11200,7 +11200,7 @@ function SmerTab({ profile, labs, notify }) {
         if (!mine) return;
         const ds = String(v.dtWorkStarted || "").slice(0, 10) || String(v.date || "").slice(0, 10);
         if (!ds || ds < lo || ds > hi) return;
-        rows.push({ _key: v.id || (l.id + m.id + ds), ds: ds, date: ds, travel: l.name || "", instrument: (m.instrument || "") + (l.name ? " @ " + l.name : ""), isr: v.isrNo || "", kmFrom: "", kmTo: "", totalKm: "", dcr: dcrOf(v), meals: "", parking: "" });
+        rows.push({ _key: v.id || (l.id + m.id + ds), ds: ds, date: ds, travel: l.name || "", instrument: m.instrument || "", isr: v.isrNo || "", kmFrom: "", kmTo: "", totalKm: "", dcr: dcrOf(v), meals: "", parking: "" });
       })));
       rows.sort((a, b) => a.ds.localeCompare(b.ds) || String(a.instrument).localeCompare(String(b.instrument)));
       return rows;
@@ -11310,7 +11310,22 @@ function SmerTab({ profile, labs, notify }) {
   function delSheet() {
     if (!curId) return;
     if (!confirm("Delete this saved SMER sheet? This cannot be undone.")) return;
-    db.collection("smer").doc(curId).delete().then(() => { setCurId(""); setF(blank()); notify("Sheet deleted.", "ok"); }).catch(e => notify("Delete failed: " + (e && e.message || e), "error"));
+    const pid = f.periodId || "";
+    db.collection("smer").doc(curId).delete().then(() => {
+      setCurId("");
+      if (pid) { applyPeriod(pid); notify("Sheet deleted — restarted from your service visits for this period.", "ok"); }
+      else { setF(blank()); notify("Sheet deleted.", "ok"); }
+    }).catch(e => notify("Delete failed: " + (e && e.message || e), "error"));
+  }
+  // Delete the saved copy AND reset the on-screen sheet to its period defaults,
+  // even if no sheet was ever saved (just re-pull the visits for the period).
+  function restartSheet() {
+    const pid = f.periodId || "";
+    if (!pid) { notify("Pick a period first — there is nothing to restart to.", "error"); return; }
+    if (!confirm("Discard the current sheet and rebuild it from your service visits for this period? Any manual edits will be lost.")) return;
+    const finish = () => { setCurId(""); applyPeriod(pid); notify("Sheet restarted from your service visits.", "ok"); };
+    if (curId) db.collection("smer").doc(curId).delete().then(finish).catch(e => notify("Delete failed: " + (e && e.message || e), "error"));
+    else finish();
   }
   function upLogo(file) {
     if (!file) return;
@@ -11414,7 +11429,11 @@ function SmerTab({ profile, labs, notify }) {
   }, "⬇ Excel"), curId ? /*#__PURE__*/React.createElement("button", {
     style: btnSt("#3a1d1d", "#fca5a5"),
     onClick: delSheet
-  }, "🗑 Delete sheet") : null, /*#__PURE__*/React.createElement("span", {
+  }, "🗑 Delete sheet") : null, f.periodId ? /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    title: "Delete the saved copy (if any) and rebuild this sheet from your service visits for the selected period",
+    onClick: restartSheet
+  }, "\u21bb Restart from visits") : null, /*#__PURE__*/React.createElement("span", {
     style: { fontSize: 11, color: "var(--c-text5)" }
   }, "Private to YOUR account — nobody else's SMERs are touched, and every save keeps its own named copy. Totals compute automatically, like Excel.")), profile && profile.isAdmin ? /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8, fontSize: 11.5, color: "var(--c-text3)" }
