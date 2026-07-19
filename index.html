@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v175";
+  window.__IBASE_BUILD = "v176";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3154,7 +3154,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v175"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v176"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -9617,7 +9617,7 @@ function VisitsTab({
   const [sort, setSort] = useState({
     col: "date",
     dir: -1
-  });
+  }); // DEFAULT for every user, every session: newest "Date & time work started" on top
   const [selected, setSelected] = useState({});
   const [rowHeights, setRowHeights] = useState({});
   const [delMode, setDelMode] = useState(false); // admins arm deletion FIRST, then pick rows
@@ -11153,6 +11153,25 @@ function SmerTab({ profile, labs, notify }) {
     return out;
   }, []);
   const isoOf = (y, mo, d) => y + "-" + String(mo + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+  // Format a datetime-local value as MM/DD/YYYY hh:mmAP (blank if empty/invalid).
+  const fmtDcr = v => {
+    const t = Date.parse(String(v || ""));
+    if (isNaN(t) || String(v).indexOf("T") === -1) return "";
+    const d2 = new Date(t), p2 = n => String(n).padStart(2, "0");
+    let h = d2.getHours();
+    const ap = h >= 12 ? "PM" : "AM";
+    h = h % 12 || 12;
+    return p2(d2.getMonth() + 1) + "/" + p2(d2.getDate()) + "/" + d2.getFullYear() + " " + p2(h) + ":" + p2(d2.getMinutes()) + ap;
+  };
+  // DCR (TIME & OUT): earliest available start — end.  Start priority: reported →
+  // departure → arrival-to-account → work-started.  End priority: work-ended →
+  // arrival-home.  Joined as "START - END" (space, dash, space).
+  const dcrOf = v => {
+    const start = fmtDcr(v.dtReported) || fmtDcr(v.dtDeparture) || fmtDcr(v.dtArrivalAccount) || fmtDcr(v.dtWorkStarted);
+    const end = fmtDcr(v.dtWorkEnded) || fmtDcr(v.dtArrivalHome);
+    if (!start && !end) return "";
+    return start + " - " + end;
+  };
   // Collect THIS user's visits whose Work-Started date falls inside a period.
   const visitsForPeriod = React.useMemo(() => {
     return per => {
@@ -11164,7 +11183,7 @@ function SmerTab({ profile, labs, notify }) {
         if (!mine) return;
         const ds = String(v.dtWorkStarted || "").slice(0, 10) || String(v.date || "").slice(0, 10);
         if (!ds || ds < lo || ds > hi) return;
-        rows.push({ _key: v.id || (l.id + m.id + ds), ds: ds, date: ds, travel: l.name || "", instrument: (m.instrument || "") + (l.name ? " @ " + l.name : ""), isr: v.isrNo || "", kmFrom: "", kmTo: "", totalKm: "", dcr: "", meals: "", parking: "" });
+        rows.push({ _key: v.id || (l.id + m.id + ds), ds: ds, date: ds, travel: l.name || "", instrument: (m.instrument || "") + (l.name ? " @ " + l.name : ""), isr: v.isrNo || "", kmFrom: "", kmTo: "", totalKm: "", dcr: dcrOf(v), meals: "", parking: "" });
       })));
       rows.sort((a, b) => a.ds.localeCompare(b.ds) || String(a.instrument).localeCompare(String(b.instrument)));
       return rows;
