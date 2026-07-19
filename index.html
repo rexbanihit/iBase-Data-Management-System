@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v181";
+  window.__IBASE_BUILD = "v182";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3154,7 +3154,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v181"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v182"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -11607,16 +11607,32 @@ function OvertimeTab({
     });
     return any ? (Math.round(sum * 100) / 100).toFixed(2) : "";
   }
+  const [otFocus, setOtFocus] = useState(false);
+  // Parse a user-typed total back to decimal hours: accepts "11 hr. & 12 min.",
+  // "11h 12m", "11:12", or a plain decimal like "11.2". Returns null if unclear.
+  function otParseHM(str) {
+    const raw = String(str == null ? "" : str).trim();
+    if (!raw) return "";
+    let m2 = raw.match(/(\d+(?:\.\d+)?)\s*(?:hrs?|hours?|h)\.?\s*(?:&|and)?\s*(?:(\d+)\s*(?:mins?|minutes?|m)\.?)?/i);
+    if (m2 && (raw.toLowerCase().indexOf("h") !== -1 || raw.toLowerCase().indexOf("min") !== -1)) {
+      const h = parseFloat(m2[1]) || 0, mi = m2[2] ? parseInt(m2[2], 10) : 0;
+      return (Math.round((h + mi / 60) * 100) / 100).toFixed(2);
+    }
+    const only = raw.match(/^\s*(\d+)\s*(?:mins?|minutes?|m)\.?\s*$/i);
+    if (only) return (Math.round((parseInt(only[1], 10) / 60) * 100) / 100).toFixed(2);
+    const colon = raw.match(/^(\d+):(\d{1,2})$/);
+    if (colon) return (Math.round((parseInt(colon[1], 10) + parseInt(colon[2], 10) / 60) * 100) / 100).toFixed(2);
+    const dec = parseFloat(raw);
+    return isNaN(dec) ? "" : (Math.round(dec * 100) / 100).toFixed(2);
+  }
   function otHM(dec) {
     const n = parseFloat(dec);
     if (isNaN(n) || n < 0) return "";
     const total = Math.round(n * 60); // whole minutes — every minute counted
     const h = Math.floor(total / 60), m = total % 60;
-    const hp = h + " hour" + (h === 1 ? "" : "s");
-    const mp = m + " minute" + (m === 1 ? "" : "s");
-    if (h && m) return hp + " & " + mp;
-    if (h) return hp;
-    return mp;
+    if (h && m) return h + " hr. & " + m + " min.";
+    if (h) return h + " hr.";
+    return m + " min.";
   }
   function otFmtHM(hm) {
     const m = String(hm || "").match(/^(\d{1,2}):(\d{2})/);
@@ -12569,7 +12585,7 @@ function OvertimeTab({
         fontWeight: 800,
         color: d.otHours > 0 ? "#fbbf24" : "var(--c-text5)"
       }
-    }, d.otHours > 0 ? d.otHours.toFixed(2) : "—"), /*#__PURE__*/React.createElement("td", {
+    }, d.otHours > 0 ? otHM(d.otHours) : "—"), /*#__PURE__*/React.createElement("td", {
       style: tdSt
     }, d.otHours > 0 ? /*#__PURE__*/React.createElement(OtAppCell, {
       engName: engName,
@@ -12782,18 +12798,14 @@ function OvertimeTab({
       style: { display: "flex", alignItems: "center", justifyContent: "space-between", margin: "12px 0 6px" }
     }, /*#__PURE__*/React.createElement("span", {
       style: { fontStyle: "italic", fontWeight: 800, fontSize: 12.5 }
-    }, "TOTAL OT Hours Rendered"), /*#__PURE__*/React.createElement("div", {
-      style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: { minWidth: 190, border: "2px solid #000", minHeight: 40, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 12px", fontSize: 14, fontWeight: 800, color: "#000", textAlign: "center" }
-    }, otHM(fm.totalOt) || "\u2014"), /*#__PURE__*/React.createElement("label", {
-      style: { fontSize: 10.5, color: "var(--c-text4)", display: "inline-flex", alignItems: "center", gap: 5 }
-    }, "adjust:", /*#__PURE__*/React.createElement("input", {
-      title: "Decimal hours used for payroll (e.g. 11.20 = 11 hours & 12 minutes). Edit only if needed.",
-      style: { border: "1px solid var(--c-border)", width: 70, height: 26, textAlign: "center", fontSize: 12, background: "transparent", color: "var(--c-text)", outline: "none" },
-      value: fm.totalOt,
+    }, "TOTAL OT Hours Rendered"), /*#__PURE__*/React.createElement("input", {
+      title: "Type hours & minutes (e.g. \"11 hr. & 12 min.\") or a decimal (11.20) — the form understands both.",
+      style: { border: "2px solid #000", width: 210, height: 40, textAlign: "center", fontSize: 14, fontWeight: 800, background: "transparent", color: "#000", outline: "none" },
+      value: otFocus ? fm.totalOt : (otHM(fm.totalOt) || ""),
+      onFocus: () => setOtFocus(true),
+      onBlur: e => { setOtFocus(false); const d = otParseHM(e.target.value); if (d != null) uf("totalOt", d); },
       onChange: e => uf("totalOt", e.target.value)
-    })))), /*#__PURE__*/React.createElement("div", {
+    })), /*#__PURE__*/React.createElement("div", {
       style: { display: "flex", justifyContent: "space-between", gap: 16, margin: "4px 0 2px", fontSize: 12, flexWrap: "wrap" }
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: { fontWeight: 700, marginBottom: 2 }
