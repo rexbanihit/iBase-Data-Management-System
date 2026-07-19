@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v157";
+  window.__IBASE_BUILD = "v161";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3118,7 +3118,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v157"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v161"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -10632,11 +10632,263 @@ class TabBoundary extends React.Component {
     return this.props.children;
   }
 }
+// ─── WPOA: Weekly Plan of Activities (Excel-like team board · LIVE-SYNCED · A4) ──
+function WpoaTab({ profile, notify }) {
+  const holidaysDoc = useDoc("config/holidays", true);
+  const holidayMap = useMemo(() => otHolidayMapFromList(holidaysDoc && holidaysDoc.list || []), [holidaysDoc]);
+  const DAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
+  const MO_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  function mondaysBetween(a, b) {
+    const out = [];
+    const d = new Date(a + "T00:00:00");
+    while (d.getDay() !== 1) d.setDate(d.getDate() + 1);
+    while (d.toISOString().slice(0, 10) <= b) {
+      out.push(d.toISOString().slice(0, 10));
+      d.setDate(d.getDate() + 7);
+    }
+    return out;
+  }
+  const PERIODS = [
+    { id: "2026", label: "Aug – Dec 2026", weeks: mondaysBetween("2026-08-01", "2026-12-31") },
+    { id: "2027", label: "Year 2027", weeks: mondaysBetween("2027-01-01", "2027-12-31") }
+  ];
+  const [periodId, setPeriodId] = useState(PERIODS[0].id);
+  const period = PERIODS.find(p => p.id === periodId) || PERIODS[0];
+  const defWeek = () => {
+    const t2 = today();
+    return period.weeks.find(w => { const end = new Date(w + "T00:00:00"); end.setDate(end.getDate() + 6); return t2 <= end.toISOString().slice(0, 10); }) || period.weeks[0];
+  };
+  const [week, setWeek] = useState(defWeek);
+  useEffect(() => { setWeek(defWeek()); }, [periodId]);
+  const weekDates = useMemo(() => {
+    const out = [];
+    const d = new Date(week + "T00:00:00");
+    for (let i = 0; i < 7; i++) { out.push(d.toISOString().slice(0, 10)); d.setDate(d.getDate() + 1); }
+    return out;
+  }, [week]);
+  const isHol = di => !!holidayMap[weekDates[di]];
+  const holName = di => (holidayMap[weekDates[di]] || {}).name || "Holiday";
+  const rangeLabel = useMemo(() => {
+    const a = new Date(weekDates[0] + "T00:00:00"), b = new Date(weekDates[6] + "T00:00:00");
+    const same = a.getMonth() === b.getMonth();
+    return MO_FULL[a.getMonth()] + " " + a.getDate() + " - " + (same ? "" : MO_FULL[b.getMonth()] + " ") + b.getDate() + ", " + b.getFullYear();
+  }, [weekDates]);
+  const DEFAULT_IDS = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9", "p10"];
+  // ── LIVE COLLABORATION ──────────────────────────────────────────────
+  // Every keystroke saves that ONE cell (debounced 450 ms) with a Firestore
+  // merge write, and every teammate's screen applies the change through the
+  // live snapshot — 5, 10, 20 people can edit the same sheet at once with no
+  // refresh, and edits to DIFFERENT cells never collide. While you are
+  // typing, your own pending cells are shielded from incoming snapshots.
+  const [remote, setRemote] = useState(null);
+  const [localOv, setLocalOv] = useState({});
+  const [focusCell, setFocusCell] = useState(null); // {sec, pid, di, li}
+  const timersRef = React.useRef({});
+  const push = payload => db.collection("wpoa").doc("w_" + week).set({ ...payload, week: week, savedBy: meEmail(profile) || "", savedAt: new Date().toISOString() }, { merge: true }).catch(e => notify("Live sync failed: " + (e && e.message || e), "error"));
+  const flushAll = () => {
+    const tm = timersRef.current;
+    Object.keys(tm).forEach(k => {
+      clearTimeout(tm[k].t);
+      const p = tm[k].payload;
+      delete tm[k];
+      push(p);
+    });
+  };
+  const stage = (key, val, payload) => {
+    setLocalOv(ov => ({ ...ov, [key]: val }));
+    const tm = timersRef.current;
+    if (tm[key]) clearTimeout(tm[key].t);
+    tm[key] = { payload: payload, t: setTimeout(() => { delete tm[key]; push(payload); }, 450) };
+  };
+  useEffect(() => {
+    setRemote(null);
+    setLocalOv({});
+    setFocusCell(null);
+    const un = db.collection("wpoa").doc("w_" + week).onSnapshot(sn => {
+      setRemote(sn.exists ? sn.data() || {} : {});
+      // drop local overlays that are no longer pending — the confirmed (or
+      // newer, from a teammate) remote value takes over
+      setLocalOv(ov => {
+        const tm = timersRef.current;
+        const nx = {};
+        Object.keys(ov).forEach(k => { if (tm[k]) nx[k] = ov[k]; });
+        return nx;
+      });
+    }, () => setRemote({}));
+    return () => { flushAll(); un(); };
+  }, [week]);
+  const rd = remote || {};
+  const und = v => v === undefined;
+  const orderOf = sec => !und(localOv["o:" + sec]) ? localOv["o:" + sec] : Array.isArray(rd["order_" + sec]) && rd["order_" + sec].length ? rd["order_" + sec] : DEFAULT_IDS;
+  const nameOf = (sec, pid) => {
+    const k = "n:" + sec + "_" + pid;
+    if (!und(localOv[k])) return localOv[k];
+    const r = (rd.names || {})[sec + "_" + pid];
+    return r === undefined ? "" : r;
+  };
+  const cellDefault = (di, li) => li === 0 && holidayMap[weekDates[di]] ? { t: "Holiday", bg: "#f2ceef", fc: "", al: "center" } : { t: "", bg: "", fc: "", al: "" };
+  const cellOf = (sec, pid, di, li) => {
+    const fk = sec + "_" + pid + "_" + di + "_" + li;
+    const k = "c:" + fk;
+    if (!und(localOv[k])) return localOv[k];
+    const r = (rd.cells || {})[fk];
+    return r !== undefined ? { t: "", bg: "", fc: "", al: "", ...r } : cellDefault(di, li);
+  };
+  const writeCell = (sec, pid, di, li, patch) => {
+    const fk = sec + "_" + pid + "_" + di + "_" + li;
+    const merged = { ...cellOf(sec, pid, di, li), ...patch };
+    stage("c:" + fk, merged, { cells: { [fk]: merged } });
+  };
+  const writeName = (sec, pid, v) => {
+    const fk = sec + "_" + pid;
+    stage("n:" + fk, v, { names: { [fk]: v } });
+  };
+  const preparedBy = !und(localOv["prep"]) ? localOv["prep"] : rd.preparedBy !== undefined ? rd.preparedBy : profile && profile.name || "";
+  const writePrepared = v => stage("prep", v, { preparedBy: v });
+  const addPerson = sec => {
+    const id = "p" + Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36);
+    const nxt = [...orderOf(sec), id];
+    setLocalOv(ov => ({ ...ov, ["o:" + sec]: nxt }));
+    push({ ["order_" + sec]: nxt });
+  };
+  const delPerson = (sec, pid) => {
+    if (!confirm("Remove this name row for the whole team?")) return;
+    const nxt = orderOf(sec).filter(x => x !== pid);
+    setLocalOv(ov => ({ ...ov, ["o:" + sec]: nxt }));
+    push({ ["order_" + sec]: nxt });
+  };
+  const applyFmt = patch => { if (!focusCell) return; writeCell(focusCell.sec, focusCell.pid, focusCell.di, focusCell.li, patch); };
+  function printSheet() {
+    const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const grid2 = (title, sec) => {
+      const head = '<tr><td class="corner" rowspan="2">' + esc(title) + '</td>' + DAYS.map((d, di) => '<th class="day' + (isHol(di) ? ' hol' : '') + '">' + d + '</th>').join('') + '</tr>' +
+        '<tr>' + weekDates.map((dt, di) => '<th class="day num' + (isHol(di) ? ' hol' : '') + '">' + new Date(dt + "T00:00:00").getDate() + '</th>').join('') + '</tr>';
+      const body = orderOf(sec).map(pid => [0, 1, 2].map(li => '<tr>' + (li === 0 ? '<td class="nm" rowspan="3">' + esc(nameOf(sec, pid) || "[Name]") + '</td>' : '') + weekDates.map((dt, di) => {
+        const c = cellOf(sec, pid, di, li);
+        return '<td class="c" style="' + (c.bg ? 'background:' + c.bg + ';' : '') + (c.fc ? 'color:' + c.fc + ';' : '') + 'text-align:' + (c.al || 'left') + '">' + esc(c.t) + '&nbsp;</td>';
+      }).join('') + '</tr>').join('')).join('');
+      return '<table><colgroup><col style="width:9%">' + '<col style="width:13%">'.repeat(7) + '</colgroup>' +
+        '<tr><td class="blank"></td><td class="wk" colspan="7">' + esc(rangeLabel) + '</td></tr>' + head + body + '</table>';
+    };
+    const html = '<!doctype html><html><head><title>WPOA</title><style>@page{size:A4 landscape;margin:6mm}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0}table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:8px}td,th{border:1px solid #000;font-size:8.5px;height:13px;overflow:hidden;white-space:nowrap;padding:0 2px}.blank{border:none}.wk{background:#ffff00;font-weight:800;text-align:center;font-size:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact}.day{background:#92d4ec;font-weight:800;text-align:center;-webkit-print-color-adjust:exact;print-color-adjust:exact}.day.hol{background:#f2ceef}.corner{border:1.6px solid #000;font-weight:900;font-size:15px;text-align:center;vertical-align:middle}.nm{font-weight:700;text-align:center;vertical-align:middle}.c{-webkit-print-color-adjust:exact;print-color-adjust:exact}.foot{display:flex;gap:60px;justify-content:center;font-size:10px;margin-top:4px}.foot b{margin-right:8px}</style></head><body>' +
+      grid2("MANILA", "main") + grid2("APPS", "apps") +
+      '<div class="foot"><span><b>Prepared by:</b>' + esc(preparedBy) + '</span><span><b>Approved by:</b>Ma. Leelyn Arellano</span></div></body></html>';
+    const w2 = window.open("", "_blank", "width=1200,height=800");
+    if (!w2) { notify("Allow pop-ups to print the WPOA sheet.", "error"); return; }
+    w2.document.write(html);
+    w2.document.close();
+    w2.focus();
+    setTimeout(() => { try { w2.print(); } catch (e) {} }, 300);
+  }
+  if (remote === null) return /*#__PURE__*/React.createElement("div", { style: { color: "var(--c-text4)", fontSize: 13 } }, "Loading the week…");
+  const cellIn = (sec, pid, di, li) => {
+    const c = cellOf(sec, pid, di, li);
+    return /*#__PURE__*/React.createElement("input", {
+      value: c.t,
+      onChange: e => writeCell(sec, pid, di, li, { t: e.target.value }),
+      onFocus: () => setFocusCell({ sec: sec, pid: pid, di: di, li: li }),
+      style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: c.bg || "transparent", color: c.fc || "#000", textAlign: c.al || "left", fontSize: 11, fontFamily: "Arial, Helvetica, sans-serif", padding: "1px 3px", height: 19 }
+    });
+  };
+  const grid = (title, sec) => /*#__PURE__*/React.createElement("table", {
+    style: { width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: 1000, marginBottom: 14 }
+  }, /*#__PURE__*/React.createElement("colgroup", null, /*#__PURE__*/React.createElement("col", { style: { width: "9%" } }), DAYS.map((_, i) => /*#__PURE__*/React.createElement("col", { key: i, style: { width: "13%" } }))), /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    style: { border: "none" }
+  }), /*#__PURE__*/React.createElement("td", {
+    colSpan: 7,
+    style: { border: "1px solid #000", background: "#ffff00", color: "#000", fontWeight: 800, textAlign: "center", fontSize: 12.5, height: 22 }
+  }, rangeLabel)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    rowSpan: 2,
+    style: { border: "2px solid #000", fontWeight: 900, fontSize: 20, textAlign: "center", background: "#fff", color: "#000" }
+  }, title), DAYS.map((d, di) => /*#__PURE__*/React.createElement("th", {
+    key: d,
+    style: { border: "1px solid #000", background: isHol(di) ? "#f2ceef" : "#92d4ec", color: "#000", fontWeight: 800, fontSize: 11.5, height: 20 }
+  }, d))), /*#__PURE__*/React.createElement("tr", null, weekDates.map((dt, di) => /*#__PURE__*/React.createElement("th", {
+    key: dt,
+    title: isHol(di) ? holName(di) : dt,
+    style: { border: "1px solid #000", background: isHol(di) ? "#f2ceef" : "#92d4ec", color: "#000", fontWeight: 800, fontSize: 11.5, height: 18 }
+  }, new Date(dt + "T00:00:00").getDate()))), orderOf(sec).map((pid, pi) => [0, 1, 2].map(li => /*#__PURE__*/React.createElement("tr", {
+    key: pid + "-" + li
+  }, li === 0 ? /*#__PURE__*/React.createElement("td", {
+    rowSpan: 3,
+    style: { border: "1px solid #000", background: "#fff", verticalAlign: "middle", padding: 0, position: "relative" }
+  }, /*#__PURE__*/React.createElement("input", {
+    value: nameOf(sec, pid),
+    placeholder: "[Name]",
+    onChange: e => writeName(sec, pid, e.target.value),
+    style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", background: "transparent", color: "#000", fontWeight: 700, textAlign: "center", fontSize: 11.5, fontFamily: "inherit" }
+  }), /*#__PURE__*/React.createElement("button", {
+    title: "Remove this name row",
+    onClick: () => delPerson(sec, pid),
+    style: { position: "absolute", top: 1, right: 1, background: "none", border: "none", cursor: "pointer", fontSize: 9, color: "#a00" }
+  }, "✕")) : null, weekDates.map((dt, di) => /*#__PURE__*/React.createElement("td", {
+    key: di,
+    style: { border: "1px solid #000", padding: 0, background: "#fff" }
+  }, cellIn(sec, pid, di, li))))))));
+  const alBtn = (al, sym, tt) => /*#__PURE__*/React.createElement("button", {
+    title: tt,
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: () => applyFmt({ al: al })
+  }, sym);
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }
+  }, PERIODS.map(p => /*#__PURE__*/React.createElement("button", {
+    key: p.id,
+    style: btnSt(periodId === p.id ? "var(--c-key)" : "var(--c-border)", periodId === p.id ? "var(--c-bg)" : "var(--c-text2)"),
+    onClick: () => setPeriodId(p.id)
+  }, p.label)), /*#__PURE__*/React.createElement("select", {
+    style: { ...inputSt(), maxWidth: 240 },
+    value: week,
+    onChange: e => setWeek(e.target.value)
+  }, period.weeks.map(w2 => {
+    const b2 = new Date(w2 + "T00:00:00");
+    b2.setDate(b2.getDate() + 6);
+    return /*#__PURE__*/React.createElement("option", { key: w2, value: w2 }, w2 + " → " + b2.toISOString().slice(0, 10));
+  })), /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    title: "Everything already saves as you type — this just pushes any pending keystrokes immediately",
+    onClick: () => { flushAll(); notify("Synced.", "ok"); }
+  }, "💾 Save now"), /*#__PURE__*/React.createElement("button", { style: btnSt("var(--c-border)", "var(--c-text2)"), onClick: printSheet, title: "A4 landscape" }, "🖨 Print (A4)"), /*#__PURE__*/React.createElement("span", {
+    style: { fontSize: 11, color: "#22c55e", fontWeight: 700 }
+  }, "🟢 Live"), /*#__PURE__*/React.createElement("span", {
+    style: { fontSize: 11, color: "var(--c-text5)" }
+  }, "changes save automatically and appear on every teammate's screen instantly", rd.savedAt ? " · last activity " + String(rd.savedAt).slice(0, 16).replace("T", " ") + (scrubOwner(rd.savedBy) ? " by " + scrubOwner(rd.savedBy) : "") : "")), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, fontSize: 11.5 }
+  }, /*#__PURE__*/React.createElement("span", { style: { color: "var(--c-text4)" } }, "Selected cell:"), /*#__PURE__*/React.createElement("label", { style: { display: "inline-flex", alignItems: "center", gap: 4, color: "var(--c-text3)" } }, "🎨 Fill", /*#__PURE__*/React.createElement("input", {
+    type: "color",
+    title: "Cell background color",
+    onChange: e => applyFmt({ bg: e.target.value }),
+    style: { width: 30, height: 22, border: "1px solid var(--c-border)", background: "none", cursor: "pointer", padding: 0 }
+  })), /*#__PURE__*/React.createElement("label", { style: { display: "inline-flex", alignItems: "center", gap: 4, color: "var(--c-text3)" } }, "🅰 Font", /*#__PURE__*/React.createElement("input", {
+    type: "color",
+    title: "Font color",
+    onChange: e => applyFmt({ fc: e.target.value }),
+    style: { width: 30, height: 22, border: "1px solid var(--c-border)", background: "none", cursor: "pointer", padding: 0 }
+  })), alBtn("left", "⯇ Left", "Align left"), alBtn("center", "≡ Center", "Align center"), alBtn("right", "⯈ Right", "Align right"), /*#__PURE__*/React.createElement("button", {
+    title: "Clear this cell's colors",
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    onClick: () => applyFmt({ bg: "", fc: "" })
+  }, "⌫ Clear color"), /*#__PURE__*/React.createElement("span", { style: { color: "var(--c-text5)" } }, focusCell ? "editing " + (focusCell.sec === "main" ? "MANILA" : "APPS") + " · row " + (orderOf(focusCell.sec).indexOf(focusCell.pid) + 1) + " · " + DAYS[focusCell.di] : "click a cell first")), /*#__PURE__*/React.createElement("div", {
+    style: { background: "#fff", color: "#000", border: "1px solid var(--c-border)", borderRadius: 6, padding: "12px 14px", overflowX: "auto", boxShadow: "0 6px 24px rgba(0,0,0,.25)" }
+  }, grid("MANILA", "main"), /*#__PURE__*/React.createElement("button", {
+    style: { background: "none", border: "1px dashed #666", borderRadius: 8, cursor: "pointer", fontSize: 11, padding: "3px 10px", color: "#000", marginBottom: 14 },
+    onClick: () => addPerson("main")
+  }, "➕ Add name (MANILA)"), grid("APPS", "apps"), /*#__PURE__*/React.createElement("button", {
+    style: { background: "none", border: "1px dashed #666", borderRadius: 8, cursor: "pointer", fontSize: 11, padding: "3px 10px", color: "#000" },
+    onClick: () => addPerson("apps")
+  }, "➕ Add name (APPS)"), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 60, justifyContent: "center", fontSize: 12, marginTop: 12 }
+  }, /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", { style: { marginRight: 8 } }, "Prepared by:"), /*#__PURE__*/React.createElement("input", {
+    value: preparedBy,
+    onChange: e => writePrepared(e.target.value),
+    style: { border: "none", borderBottom: "1px solid #000", outline: "none", background: "transparent", color: "#000", fontSize: 12, width: 160 }
+  })), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", { style: { marginRight: 8 } }, "Approved by:"), "Ma. Leelyn Arellano"))));
+}
 // ─── SMER: Semi-Monthly Expense Report (replica of the company form; A4) ────
 function SmerTab({ profile, notify }) {
   const uid = auth.currentUser && auth.currentUser.uid || "";
   const emptyRow = () => ({ date: "", travel: "", kmFrom: "", kmTo: "", totalKm: "", instrument: "", isr: "", dcr: "", meals: "", parking: "" });
-  const blank = () => ({ name: profile && profile.name || "", position: "Field Service Engineer", rows: Array.from({ length: 23 }, emptyRow), parkingS: "", tollS: "", loadS: "" });
+  const blank = () => ({ title: "", name: profile && profile.name || "", position: "Field Service Engineer", rows: Array.from({ length: 23 }, emptyRow), parkingS: "", tollS: "", loadS: "" });
   const [sheets, setSheets] = useState(null);
   const [curId, setCurId] = useState("");
   const [f, setF] = useState(blank);
@@ -10664,18 +10916,20 @@ function SmerTab({ profile, notify }) {
   const tMeals = f.rows.reduce((a, r) => a + num(r.meals), 0);
   const tPark = f.rows.reduce((a, r) => a + num(r.parking), 0);
   const grand = tKm + tMeals + num(f.parkingS) + num(f.tollS) + num(f.loadS);
-  function saveSheet() {
-    const id = curId || uid + "_" + Date.now();
-    db.collection("smer").doc(id).set({ uid: uid, by: meEmail(profile) || "", name: f.name, position: f.position, rows: f.rows, parkingS: f.parkingS, tollS: f.tollS, loadS: f.loadS, savedAt: new Date().toISOString() }).then(() => {
+  function saveSheet(forceNew) {
+    const id = !forceNew && curId ? curId : uid + "_" + Date.now();
+    const title = String(f.title || "").trim() || "SMER " + today();
+    db.collection("smer").doc(id).set({ uid: uid, by: meEmail(profile) || "", title: title, name: f.name, position: f.position, rows: f.rows, parkingS: f.parkingS, tollS: f.tollS, loadS: f.loadS, savedAt: new Date().toISOString() }).then(() => {
       setCurId(id);
-      notify("SMER sheet saved.", "ok");
+      setF(x => ({ ...x, title: title }));
+      notify(forceNew ? "Saved as a NEW copy — the previous sheet stays untouched." : "SMER sheet \u201C" + title + "\u201D saved.", "ok");
     }).catch(e => notify("Save failed: " + (e && e.message || e), "error"));
   }
   function loadSheet(id) {
     const sh = (sheets || []).find(x => x.id === id);
     if (!sh) { setCurId(""); setF(blank()); return; }
     setCurId(id);
-    setF({ name: sh.name || "", position: sh.position || "Field Service Engineer", rows: Array.isArray(sh.rows) && sh.rows.length === 23 ? sh.rows.map(r => ({ ...emptyRow(), ...r })) : Array.from({ length: 23 }, emptyRow), parkingS: sh.parkingS || "", tollS: sh.tollS || "", loadS: sh.loadS || "" });
+    setF({ title: sh.title || "", name: sh.name || "", position: sh.position || "Field Service Engineer", rows: Array.isArray(sh.rows) && sh.rows.length ? sh.rows.map(r => ({ ...emptyRow(), ...r })) : Array.from({ length: 23 }, emptyRow), parkingS: sh.parkingS || "", tollS: sh.tollS || "", loadS: sh.loadS || "" });
   }
   function delSheet() {
     if (!curId) return;
@@ -10725,10 +10979,27 @@ function SmerTab({ profile, notify }) {
   }, /*#__PURE__*/React.createElement("option", { value: "" }, "➕ New sheet (unsaved)"), (sheets || []).filter(sh => !sh.kind).map(sh => /*#__PURE__*/React.createElement("option", {
     key: sh.id,
     value: sh.id
-  }, String(sh.savedAt || "").slice(0, 16).replace("T", " ") + " · " + (sh.name || "unnamed")))), /*#__PURE__*/React.createElement("button", {
+  }, (sh.title || "Untitled") + " · " + String(sh.savedAt || "").slice(0, 10)))), /*#__PURE__*/React.createElement("input", {
+    style: { ...inputSt(), maxWidth: 210 },
+    placeholder: "Sheet name (e.g. Aug 1-15)",
+    value: f.title,
+    onChange: e => setF(x => ({ ...x, title: e.target.value }))
+  }), /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-key)", "var(--c-bg)"),
-    onClick: saveSheet
-  }, "💾 Save"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => saveSheet(false)
+  }, curId ? "💾 Save changes" : "💾 Save"), curId ? /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    title: "Keeps the loaded sheet exactly as it is and saves the screen as a separate named copy",
+    onClick: () => saveSheet(true)
+  }, "📑 Save as new copy") : null, /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    title: "Append one more expense row — totals, print and Excel include it automatically",
+    onClick: () => setF(x => ({ ...x, rows: [...x.rows, emptyRow()] }))
+  }, "➕ Add row"), f.rows.length > 23 ? /*#__PURE__*/React.createElement("button", {
+    style: btnSt("var(--c-border)", "var(--c-text2)"),
+    title: "Remove the last row (only rows beyond the standard 23 can be removed)",
+    onClick: () => setF(x => x.rows.length > 23 ? { ...x, rows: x.rows.slice(0, -1) } : x)
+  }, "➖ Remove last row") : null, /*#__PURE__*/React.createElement("button", {
     style: btnSt("var(--c-border)", "var(--c-text2)"),
     onClick: printSheet,
     title: "Opens a print view sized for A4 landscape"
@@ -10740,7 +11011,7 @@ function SmerTab({ profile, notify }) {
     onClick: delSheet
   }, "🗑 Delete sheet") : null, /*#__PURE__*/React.createElement("span", {
     style: { fontSize: 11, color: "var(--c-text5)" }
-  }, "Sheets save to your account only. Totals compute automatically, like Excel.")), /*#__PURE__*/React.createElement("div", {
+  }, "Private to YOUR account — nobody else's SMERs are touched, and every save keeps its own named copy. Totals compute automatically, like Excel.")), /*#__PURE__*/React.createElement("div", {
     style: { background: "#ffffff", color: "#000", border: "1px solid var(--c-border)", borderRadius: 6, padding: "14px 16px", maxWidth: 1150, overflowX: "auto", boxShadow: "0 6px 24px rgba(0,0,0,.25)" }
   }, /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", alignItems: "center", gap: 10 }
@@ -10812,6 +11083,8 @@ function OvertimeTab({
   const isMgr = pIsOtManager(profile);
   const editable = pCanTab(profile, "overtime", "edit");
   const [isrView, setIsrView] = useState(null); // ISR → full visit details (movable popup)
+  const [otView, setOtView] = useState("main"); // "main" | "rules" — the General Rules sub-tab
+  const [otSort, setOtSort] = useState({ col: "Date", dir: -1 }); // headers sortable; default = LATEST date first
   const [otForm, setOtForm] = useState(null); // the OVERTIME FORM (standalone or pre-filing)
   const [otFormsList, setOtFormsList] = useState(null); // this user's saved standalone forms
   useEffect(() => {
@@ -10825,8 +11098,44 @@ function OvertimeTab({
     }, () => setOtFormsList([]));
     return un;
   }, []);
+  function blankOtEntry() {
+    return { reqFrom: "", reqTo: "", isr: "", task: "" };
+  }
   function blankOtF() {
-    return { name: myName || profile && profile.name || "", department: profile && profile.department || "", dateFiled: today(), dateOfOt: "", reqFrom: "", reqTo: "", officeFrom: "", officeTo: "", totalOt: "", tasks: "", requestedBy: myName || profile && profile.name || "", notedBy: "", approvedBy: "" };
+    return { name: myName || profile && profile.name || "", department: profile && profile.department || "", dateFiled: today(), dateOfOt: "", entries: [blankOtEntry()], officeFrom: "", officeTo: "", totalOt: "", tasks: "", requestedBy: myName || profile && profile.name || "", notedBy: "", approvedBy: "" };
+  }
+  function otRecompute(ents) {
+    let sum = 0, any = false;
+    (ents || []).forEach(e2 => {
+      const sp = otSpanHours(e2.reqFrom, e2.reqTo);
+      if (sp != null) { sum += sp; any = true; }
+    });
+    return any ? (Math.round(sum * 100) / 100).toFixed(2) : "";
+  }
+  function otFmtHM(hm) {
+    const m = String(hm || "").match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return "";
+    let h = +m[1];
+    const mi = m[2];
+    const ap = h === 12 && mi === "00" ? "NN" : h >= 12 ? "PM" : "AM";
+    h = h % 12 || 12;
+    return h + ":" + mi + " " + ap;
+  }
+  // OFFICE Time on the Overtime Form fills itself from the working schedule:
+  // weekdays 8:00 AM – 5:30 PM, Saturdays 8:00 AM – 12:00 NN by default
+  // (whatever managers set in ⚙ applies); Sundays and holidays stay blank.
+  function otOfficeFor(ds) {
+    const s2 = String(ds || "").trim();
+    if (!s2) return null;
+    let t2 = Date.parse(s2 + "T00:00:00");
+    if (isNaN(t2)) t2 = Date.parse(s2);
+    if (isNaN(t2)) return null;
+    const d2 = new Date(t2);
+    const iso = d2.getFullYear() + "-" + String(d2.getMonth() + 1).padStart(2, "0") + "-" + String(d2.getDate()).padStart(2, "0");
+    if (holidayMap[iso]) return { from: "", to: "" };
+    const sch = otSettings.schedule && otSettings.schedule[OT_DAY_KEYS[d2.getDay()]];
+    if (!sch || sch.off || !sch.start || !sch.end) return { from: "", to: "" };
+    return { from: otFmtHM(sch.start), to: otFmtHM(sch.end) };
   }
   // Excel-like: the TOTAL box computes itself from the Requested From/To span.
   // From/To carry the DATE AND TIME (datetime), so overnight and multi-day
@@ -10874,17 +11183,18 @@ function OvertimeTab({
   }
   function printOtForm(fm) {
     const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
-    const lines = String(fm.tasks || "").split(/\n/).slice(0, 5);
+    const ents = Array.isArray(fm.entries) && fm.entries.length ? fm.entries : [{ reqFrom: fm.reqFrom, reqTo: fm.reqTo, isr: "", task: fm.tasks || "" }];
+    const lines = ents.map(e2 => (e2.isr ? "ISR " + e2.isr + " — " : "") + (e2.task || ""));
     while (lines.length < 5) lines.push("");
-    const html = "<!doctype html><html><head><title>Overtime Form</title><style>@page{size:105mm 148mm;margin:5mm}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0}.frame{border:1.6px solid #000;padding:8px 9px;min-height:135mm;box-sizing:border-box}h1{font-size:12.5px;text-align:center;margin:0 0 8px;font-weight:800}.row{display:flex;align-items:flex-end;gap:6px;margin:5px 0;font-size:9.5px;font-weight:700}.row span{font-weight:400;border-bottom:1px solid #000;flex:1;min-height:12px;padding:0 3px}.colh{font-size:9.5px;font-weight:700;margin-bottom:2px}.tl{display:flex;align-items:flex-end;gap:4px;margin:4px 0;font-size:9.5px}.tl i{font-style:italic;font-weight:700}.tl span{border-bottom:1px solid #000;min-height:12px;padding:0 3px}.lft span{width:118px}.rgt span{width:64px}.tot{display:flex;align-items:center;justify-content:space-between;margin:10px 0 8px}.tot i{font-style:italic;font-weight:800;font-size:10px}.box{border:1.6px solid #000;width:30mm;height:11mm;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}.tsk{font-size:9.5px;font-weight:700;margin-top:6px}.ln{border-bottom:1.2px solid #000;height:14px;font-size:9px;padding:0 2px;overflow:hidden;white-space:nowrap}.sig{margin-top:10px}.sig .row span{max-width:56mm}</style></head><body><div class=\"frame\"><h1>OVERTIME FORM</h1>" +
-      '<div class="row">Name:<span>' + esc(fm.name) + '</span></div>' +
-      '<div class="row">Department:<span>' + esc(fm.department) + '</span></div>' +
-      '<div class="row">Date Filed:<span>' + esc(fm.dateFiled) + '</span></div>' +
-      '<div class="row">Date of OT:<span>' + esc(fm.dateOfOt) + '</span></div>' +
-      '<div style="display:flex;justify-content:space-between;margin-top:8px"><div class="lft"><div class="colh">Requested Time</div><div class="tl"><i>From:</i><span>' + esc(otFmtDT(fm.reqFrom)) + '</span></div><div class="tl"><i>To:</i><span>' + esc(otFmtDT(fm.reqTo)) + '</span></div></div><div class="rgt"><div class="colh">OFFICE Time</div><div class="tl"><i>From:</i><span>' + esc(fm.officeFrom) + '</span></div><div class="tl"><i>To:</i><span>' + esc(fm.officeTo) + '</span></div></div></div>' +
+    const html = "<!doctype html><html><head><title>Overtime Form</title><style>@page{size:105mm 148mm;margin:5mm}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0}.frame{border:1.6px solid #000;padding:8px 9px;min-height:135mm;box-sizing:border-box}h1{font-size:12.5px;text-align:center;margin:0 0 8px;font-weight:800}.row{display:flex;align-items:flex-end;gap:6px;margin:5px 0;font-size:9.5px}.row b{display:inline-block;width:21mm;font-weight:700}.row span{font-weight:400;border-bottom:1px solid #000;flex:1;min-height:12px;padding:0 3px}.otn{font-size:8.5px;font-weight:800;margin-top:3px}.colh{font-size:9.5px;font-weight:700;margin-bottom:2px}.tl{display:flex;align-items:flex-end;gap:4px;margin:4px 0;font-size:9.5px}.tl i{font-style:italic;font-weight:700}.tl span{border-bottom:1px solid #000;min-height:12px;padding:0 3px}.lft span{width:118px}.rgt span{width:64px}.tot{display:flex;align-items:center;justify-content:space-between;margin:10px 0 8px}.tot i{font-style:italic;font-weight:800;font-size:10px}.box{border:1.6px solid #000;width:30mm;height:11mm;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}.tsk{font-size:9.5px;font-weight:700;margin-top:6px}.ln{border-bottom:1.2px solid #000;height:14px;font-size:9px;padding:0 2px;overflow:hidden;white-space:nowrap}.sig{margin-top:10px}.sig .row span{max-width:56mm}</style></head><body><div class=\"frame\"><h1>OVERTIME FORM</h1>" +
+      '<div class="row"><b>Name:</b><span>' + esc(fm.name) + '</span></div>' +
+      '<div class="row"><b>Department:</b><span>' + esc(fm.department) + '</span></div>' +
+      '<div class="row"><b>Date Filed:</b><span>' + esc(fm.dateFiled) + '</span></div>' +
+      '<div class="row"><b>Date of OT:</b><span>' + esc(fm.dateOfOt) + '</span></div>' +
+      '<div style="display:flex;justify-content:space-between;margin-top:8px"><div class="lft"><div class="colh">Requested Time</div>' + ents.map((e2, i2) => (ents.length > 1 ? '<div class="otn">OT ' + (i2 + 1) + '</div>' : '') + '<div class="tl"><i>From:</i><span>' + esc(otFmtDT(e2.reqFrom)) + '</span></div><div class="tl"><i>To:</i><span>' + esc(otFmtDT(e2.reqTo)) + '</span></div>').join('') + '</div><div class="rgt"><div class="colh">OFFICE Time</div><div class="tl"><i>From:</i><span>' + esc(fm.officeFrom) + '</span></div><div class="tl"><i>To:</i><span>' + esc(fm.officeTo) + '</span></div></div></div>' +
       '<div class="tot"><i>TOTAL OT Hours Rendered</i><div class="box">' + esc(fm.totalOt) + '</div></div>' +
       '<div class="tsk">Tasks to be DONE:</div>' + lines.map(l => '<div class="ln">' + esc(l) + '</div>').join('') +
-      '<div class="sig"><div class="row">Requested By:<span>' + esc(fm.requestedBy) + '</span></div><div class="row">Noted By:<span>' + esc(fm.notedBy) + '</span></div><div class="row">Approved By:<span>' + esc(fm.approvedBy) + '</span></div></div>' +
+      '<div class="sig"><div class="row"><b>Requested By:</b><span>' + esc(fm.requestedBy) + '</span></div><div class="row"><b>Noted By:</b><span>' + esc(fm.notedBy) + '</span></div><div class="row"><b>Approved By:</b><span>' + esc(fm.approvedBy) + '</span></div></div>' +
       "</div></body></html>";
     const w = window.open("", "_blank", "width=460,height=680");
     if (!w) { notify("Allow pop-ups to print the Overtime Form.", "error"); return; }
@@ -11203,6 +11513,7 @@ function OvertimeTab({
         rf = dl(st2);
         rt = dl(end2);
       }
+      const off2 = otOfficeFor(d.date) || { from: "", to: "" };
       setOtForm({
         engName: engName,
         date: d.date,
@@ -11213,12 +11524,11 @@ function OvertimeTab({
           department: profile && profile.department || "",
           dateFiled: today(),
           dateOfOt: d.date,
-          reqFrom: rf,
-          reqTo: rt,
-          officeFrom: "",
-          officeTo: "",
+          entries: [{ reqFrom: rf, reqTo: rt, isr: (d.isrNos || []).join(", "), task: (d.sources || []).join("; ") }],
+          officeFrom: off2.from,
+          officeTo: off2.to,
           totalOt: d.otHours.toFixed(2),
-          tasks: (d.sources || []).join("\n"),
+          tasks: "",
           requestedBy: engName,
           notedBy: "",
           approvedBy: ""
@@ -11588,6 +11898,28 @@ function OvertimeTab({
   }) {
     const days = daysInPeriod(engName);
     const totals = totalsFor(engName);
+    const otSortKey = (d2, col) => {
+      switch (col) {
+        case "Visits": return d2.visitCount || 0;
+        case "ISR No.": return String((d2.isrNos || []).join(", "));
+        case "Total Hrs": return d2.totalHours || 0;
+        case "Regular": return d2.regularHours || 0;
+        case "OT Hrs": return d2.otHours || 0;
+        case "OT Time": return d2.dayEnd ? new Date(d2.dayEnd).getTime() - (d2.otHours || 0) * 3600000 : 0;
+        case "OT Application (Cash / Offset)": {
+          const a2 = appMap[engName + "|" + d2.date];
+          return a2 ? String(a2.status || "") + " " + (Number(a2.cashHours) || 0) + "/" + (Number(a2.offsetHours) || 0) : "";
+        }
+        case "Notes": return String([d2.holidayName, (d2.sources || []).join("; ")].filter(Boolean).join(" · "));
+        default: return String(d2.date || "");
+      }
+    };
+    // Headers are interchangeable sort keys; the DEFAULT order is the latest date first.
+    const daysSorted = useMemo(() => [...days].sort((a2, b2) => {
+      const ka = otSortKey(a2, otSort.col), kb = otSortKey(b2, otSort.col);
+      const c2 = typeof ka === "number" && typeof kb === "number" ? ka - kb : String(ka).localeCompare(String(kb), undefined, { numeric: true });
+      return c2 !== 0 ? otSort.dir * c2 : String(b2.date || "").localeCompare(String(a2.date || ""));
+    }), [days, otSort, appMap]);
     const [openDays, setOpenDays] = useState({});
     // the exact visits the engine used for one day — same involvement + same
     // time fields (departure||work-started → arrival-home||work-ended)
@@ -11638,8 +11970,10 @@ function OvertimeTab({
       }
     }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["Date", "Visits", "ISR No.", "Total Hrs", "Regular", "OT Hrs", "OT Time", "OT Application (Cash / Offset)", "Notes"].map(h => /*#__PURE__*/React.createElement("th", {
       key: h,
-      style: thSt
-    }, h)))), /*#__PURE__*/React.createElement("tbody", null, days.map(d => /*#__PURE__*/React.createElement(React.Fragment, {
+      title: "Click to sort by " + h + " (click again to flip)",
+      style: { ...thSt, cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" },
+      onClick: () => setOtSort(s2 => ({ col: h, dir: s2.col === h ? -s2.dir : h === "Date" ? -1 : 1 }))
+    }, h, otSort.col === h ? otSort.dir < 0 ? " ▼" : " ▲" : "")))), /*#__PURE__*/React.createElement("tbody", null, daysSorted.map(d => /*#__PURE__*/React.createElement(React.Fragment, {
       key: d.date
     }, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
       style: {
@@ -11789,6 +12123,33 @@ function OvertimeTab({
       }
     }, period === "__allhist__" ? "No overtime records yet." : period === "__range__" ? "No overtime in the selected date range." : "No records in this cutoff period.")))));
   }
+  if (otView === "rules") {
+    const schMon = otSettings.schedule && otSettings.schedule.mon || {};
+    const schSat = otSettings.schedule && otSettings.schedule.sat || {};
+    const otStartMin = (() => {
+      const m = String(schMon.end || "17:30").match(/^(\d{1,2}):(\d{2})/);
+      const base = m ? +m[1] * 60 + +m[2] : 1050;
+      return base + (Number(otSettings.graceMinutes) || 0);
+    })();
+    const otStartTxt = otFmtHM(String(Math.floor(otStartMin / 60)).padStart(2, "0") + ":" + String(otStartMin % 60).padStart(2, "0"));
+    const S = (icon, title, body) => /*#__PURE__*/React.createElement("div", {
+      style: { marginBottom: 14 }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { fontWeight: 800, fontSize: 13.5, marginBottom: 4 }
+    }, icon + " " + title), /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 12.5, color: "var(--c-text3)", lineHeight: 1.55 }
+    }, body));
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { fontWeight: 800, fontSize: 16 }
+    }, "🕒 Overtime — 📖 General Rules"), /*#__PURE__*/React.createElement("button", {
+      style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "7px 12px" },
+      onClick: () => setOtView("main")
+    }, "🕒 Back to Overtime")), /*#__PURE__*/React.createElement("div", {
+      style: { background: "var(--c-card)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 18px", maxWidth: 920 }
+    }, S("🕘", "Office hours", "Weekdays (Monday–Friday): " + otFmtHM(schMon.start || "08:00") + " – " + otFmtHM(schMon.end || "17:30") + ". Saturday: " + otFmtHM(schSat.start || "08:00") + " – " + otFmtHM(schSat.end || "12:00") + ". Sunday is a rest day. The Overtime Form fills OFFICE Time From/To automatically from this schedule — and leaves it blank on Sundays and holidays."), S("🧮", "How overtime is computed", "Overtime is computed automatically from your logged service visits — departure and arrival-home times, or work start/end when those are missing. On ordinary working days only the tail of the worked span counts: overtime begins after that day's office end plus the " + (Number(otSettings.graceMinutes) || 0) + "-minute grace period (on weekdays that means from " + otStartTxt + " onward). On Sundays and on listed holidays the ENTIRE worked span counts as overtime."), S("🎌", "Holiday rules", "Holidays are maintained in ⚙ Office Hours, Holidays & Cutoff — the Philippine holidays come preloaded and managers can add or remove dates. Work on a listed holiday earns overtime for the whole worked span; the WPOA calendar tints those dates pink and auto-fills “Holiday”; and the Overtime Form leaves OFFICE Time blank on them."), S("🚫", "Exceptions — when NO overtime is credited", "Time finished within office hours plus the grace period; days without any logged service visit under your name; visits that do not list you as one of the engineers; and zero-hour days (shown as “—”), which cannot be filed. Filing is also capped: the Cash + Offset split can never exceed the overtime actually rendered on that day."), S("📄", "Filing", "Every overtime must be documented on the OVERTIME FORM (the 📄 button above): the exact date and time of each OT — one form can hold several OTs and the TOTAL box sums them automatically — with the ISR number on every task line. OFFICE Time fills itself from the schedule. Filing sends the completed form together with your Cash / Offset request into the application."), S("✅", "Approval & payroll", "Only OT managers can approve or reject applications, deciding between Cash and Offset. The semi-monthly payroll cutoffs fall on the " + otSettings.cutoff1 + "th and the " + otSettings.cutoff2 + "th (adjustable in ⚙). Approved hours flow into the ledgers, and the 🖨 Form reprint stays available on every filed application.")));
+  }
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -11817,7 +12178,11 @@ function OvertimeTab({
     title: "Open a blank OVERTIME FORM — fill it out like Excel, save it, print at ¼ A4",
     style: { ...btnSt("var(--c-key)", "var(--c-bg)"), padding: "7px 12px" },
     onClick: () => setOtForm({ standalone: true, id: "", f: blankOtF() })
-  }, "📄 Overtime Form")), otForm ? /*#__PURE__*/React.createElement(Modal, {
+  }, "📄 Overtime Form"), /*#__PURE__*/React.createElement("button", {
+    title: "How overtime is computed, holiday rules, exceptions, filing and approval",
+    style: { ...btnSt(otView === "rules" ? "var(--c-key)" : "var(--c-border)", otView === "rules" ? "var(--c-bg)" : "var(--c-text2)"), padding: "7px 12px" },
+    onClick: () => setOtView(v2 => v2 === "rules" ? "main" : "rules")
+  }, otView === "rules" ? "🕒 Back to Overtime" : "📖 General Rules")), otForm ? /*#__PURE__*/React.createElement(Modal, {
     title: "📄 Overtime Form — fill out to file",
     onClose: () => setOtForm(null)
   }, (() => {
@@ -11828,11 +12193,20 @@ function OvertimeTab({
         const sp = otSpanHours(nf.reqFrom, nf.reqTo);
         if (sp != null) nf.totalOt = sp.toFixed(2);
       }
+      if (k2 === "dateOfOt") {
+        const of2 = otOfficeFor(v2);
+        if (of2) {
+          nf.officeFrom = of2.from;
+          nf.officeTo = of2.to;
+        }
+      }
       return { ...x, f: nf };
     });
     const pRow = (label, k2, ro) => /*#__PURE__*/React.createElement("div", {
-      style: { display: "flex", alignItems: "flex-end", gap: 6, margin: "6px 0", fontSize: 12, fontWeight: 700 }
-    }, label, /*#__PURE__*/React.createElement("input", {
+      style: { display: "flex", alignItems: "flex-end", gap: 6, margin: "6px 0", fontSize: 12 }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: { display: "inline-block", width: 112, fontWeight: 700 }
+    }, label), /*#__PURE__*/React.createElement("input", {
       style: { flex: 1, border: "none", borderBottom: "1px solid #000", outline: "none", background: "transparent", color: "#000", fontSize: 12, fontWeight: 400, padding: "0 3px" },
       value: fm[k2],
       readOnly: !!ro,
@@ -11867,6 +12241,33 @@ function OvertimeTab({
     const lbl = t2 => /*#__PURE__*/React.createElement("span", {
       style: { display: "inline-block", width: 46, fontStyle: "italic", fontWeight: 700 }
     }, t2);
+    const ue = (i2, k2, v2) => setOtForm(x => {
+      const ents = x.f.entries.map((e2, j2) => j2 === i2 ? { ...e2, [k2]: v2 } : e2);
+      const nf = { ...x.f, entries: ents };
+      if (k2 === "reqFrom" || k2 === "reqTo") {
+        const tot = otRecompute(ents);
+        if (tot) nf.totalOt = tot;
+      }
+      return { ...x, f: nf };
+    });
+    const dtFieldE = (i2, k2) => /*#__PURE__*/React.createElement("span", {
+      style: { position: "relative", display: "inline-block" }
+    }, /*#__PURE__*/React.createElement("input", {
+      readOnly: true,
+      value: otFmtDT(fm.entries[i2][k2]),
+      placeholder: "MM/DD/YYYY (hh:mmPM)",
+      style: { width: 172, border: "none", borderBottom: "1px solid #000", outline: "none", background: "transparent", color: "#000", fontSize: 12, padding: "0 22px 0 3px", fontFamily: "inherit", cursor: "pointer", fontWeight: 400 }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: { position: "absolute", right: 2, top: 0, fontSize: 12, pointerEvents: "none" }
+    }, "📅"), /*#__PURE__*/React.createElement("input", {
+      type: "datetime-local",
+      value: fm.entries[i2][k2] || "",
+      onChange: e => ue(i2, k2, e.target.value),
+      onClick: e => { try { e.target.showPicker && e.target.showPicker(); } catch (er) {} },
+      onFocus: e => { try { e.target.showPicker && e.target.showPicker(); } catch (er) {} },
+      title: "Pick the date and time",
+      style: { position: "absolute", left: 0, top: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }
+    }));
     return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: { background: "#fff", color: "#000", border: "2px solid #000", padding: "12px 14px", fontFamily: "Arial, Helvetica, sans-serif" }
     }, /*#__PURE__*/React.createElement("div", {
@@ -11875,7 +12276,22 @@ function OvertimeTab({
       style: { display: "flex", justifyContent: "space-between", gap: 16, margin: "12px 0 2px", fontSize: 12, flexWrap: "wrap" }
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: { fontWeight: 700, marginBottom: 2 }
-    }, "Requested Time"), /*#__PURE__*/React.createElement("div", { style: { margin: "4px 0" } }, lbl("From:"), dtField("reqFrom")), /*#__PURE__*/React.createElement("div", { style: { margin: "4px 0" } }, lbl("To:"), dtField("reqTo"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, "Requested Time"), fm.entries.map((e2, i2) => /*#__PURE__*/React.createElement("div", {
+      key: i2,
+      style: { marginBottom: 6 }
+    }, fm.entries.length > 1 ? /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 10.5, fontWeight: 800, color: "#444", display: "flex", alignItems: "center", gap: 6 }
+    }, "OT " + (i2 + 1), /*#__PURE__*/React.createElement("button", {
+      title: "Remove this OT entry",
+      style: { background: "none", border: "1px solid #999", borderRadius: 6, cursor: "pointer", fontSize: 9.5, padding: "0 5px", color: "#a00" },
+      onClick: () => setOtForm(x => {
+        const ents = x.f.entries.filter((_, j2) => j2 !== i2);
+        return { ...x, f: { ...x.f, entries: ents, totalOt: otRecompute(ents) || "" } };
+      })
+    }, "🗑")) : null, /*#__PURE__*/React.createElement("div", { style: { margin: "3px 0" } }, lbl("From:"), dtFieldE(i2, "reqFrom")), /*#__PURE__*/React.createElement("div", { style: { margin: "3px 0" } }, lbl("To:"), dtFieldE(i2, "reqTo")))), /*#__PURE__*/React.createElement("button", {
+      style: { background: "none", border: "1px dashed #666", borderRadius: 8, cursor: "pointer", fontSize: 11, padding: "3px 10px", color: "#000", marginTop: 2 },
+      onClick: () => setOtForm(x => ({ ...x, f: { ...x.f, entries: [...x.f.entries, blankOtEntry()] } }))
+    }, "➕ Add another OT")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: { fontWeight: 700, marginBottom: 2 }
     }, "OFFICE Time"), /*#__PURE__*/React.createElement("div", { style: { margin: "4px 0" } }, lbl("From:"), tIn("officeFrom", 90)), /*#__PURE__*/React.createElement("div", { style: { margin: "4px 0" } }, lbl("To:"), tIn("officeTo", 90)))), /*#__PURE__*/React.createElement("div", {
       style: { display: "flex", alignItems: "center", justifyContent: "space-between", margin: "14px 0 10px" }
@@ -11887,12 +12303,24 @@ function OvertimeTab({
       onChange: e => uf("totalOt", e.target.value)
     })), /*#__PURE__*/React.createElement("div", {
       style: { fontSize: 12, fontWeight: 700, marginBottom: 4 }
-    }, "Tasks to be DONE:"), /*#__PURE__*/React.createElement("textarea", {
-      rows: 5,
-      style: { width: "100%", boxSizing: "border-box", border: "none", outline: "none", resize: "vertical", background: "repeating-linear-gradient(transparent, transparent 20px, #000 20px, #000 21px)", lineHeight: "21px", fontSize: 12, color: "#000", fontFamily: "inherit", padding: "0 2px" },
-      value: fm.tasks,
-      onChange: e => uf("tasks", e.target.value)
-    }), /*#__PURE__*/React.createElement("div", { style: { marginTop: 12 } }, pRow("Requested By:", "requestedBy"), pRow("Noted By:", "notedBy"), pRow("Approved By:", "approvedBy"))), /*#__PURE__*/React.createElement("div", {
+    }, "Tasks to be DONE:"), fm.entries.map((e2, i2) => /*#__PURE__*/React.createElement("div", {
+      key: i2,
+      style: { display: "flex", alignItems: "flex-end", gap: 6, margin: "5px 0", fontSize: 12 }
+    }, fm.entries.length > 1 ? /*#__PURE__*/React.createElement("span", {
+      style: { fontSize: 10.5, fontWeight: 800, width: 34 }
+    }, "OT " + (i2 + 1)) : null, /*#__PURE__*/React.createElement("span", {
+      style: { fontWeight: 700, fontSize: 11.5 }
+    }, "ISR:"), /*#__PURE__*/React.createElement("input", {
+      style: { width: 95, border: "none", borderBottom: "1px solid #000", outline: "none", background: "transparent", color: "#000", fontSize: 12, padding: "0 3px" },
+      value: e2.isr,
+      placeholder: "ISR no.",
+      onChange: ev => ue(i2, "isr", ev.target.value)
+    }), /*#__PURE__*/React.createElement("input", {
+      style: { flex: 1, border: "none", borderBottom: "1px solid #000", outline: "none", background: "transparent", color: "#000", fontSize: 12, padding: "0 3px" },
+      value: e2.task,
+      placeholder: "task / work details",
+      onChange: ev => ue(i2, "task", ev.target.value)
+    }))), /*#__PURE__*/React.createElement("div", { style: { marginTop: 12 } }, pRow("Requested By:", "requestedBy"), pRow("Noted By:", "notedBy"), pRow("Approved By:", "approvedBy"))), /*#__PURE__*/React.createElement("div", {
       style: { display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }
     }, otForm.standalone ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("select", {
       style: { ...inputSt(), maxWidth: 250 },
@@ -11901,8 +12329,7 @@ function OvertimeTab({
         const sel = (otFormsList || []).find(x => x.id === e.target.value);
         if (!sel) { setOtForm(x => ({ ...x, id: "", f: blankOtF() })); return; }
         const lf = { ...blankOtF(), ...sel.f };
-        lf.reqFrom = otLegacyDT(lf.dateOfOt, lf.reqFrom);
-        lf.reqTo = otLegacyDT(lf.dateOfOt, lf.reqTo);
+        if (!Array.isArray(lf.entries) || !lf.entries.length) lf.entries = [{ reqFrom: otLegacyDT(lf.dateOfOt, lf.reqFrom), reqTo: otLegacyDT(lf.dateOfOt, lf.reqTo), isr: "", task: lf.tasks || "" }];
         setOtForm(x => ({ ...x, id: sel.id, f: lf }));
       }
     }, /*#__PURE__*/React.createElement("option", { value: "" }, "➕ New form (unsaved)"), (otFormsList || []).map(sh => /*#__PURE__*/React.createElement("option", {
@@ -17691,6 +18118,9 @@ function App() {
   }, (signedProfile.isAdmin || pCanTab(signedProfile, "overtime", "view")) && !tabHidden(tabsCfg, "overtime") && {
     id: "overtime",
     label: tabLabel(tabsCfg, "overtime", "🕒 Overtime")
+  }, !tabHidden(tabsCfg, "wpoa") && {
+    id: "wpoa",
+    label: tabLabel(tabsCfg, "wpoa", "🗓 WPOA")
   }, !tabHidden(tabsCfg, "smer") && {
     id: "smer",
     label: tabLabel(tabsCfg, "smer", "🧾 SMER")
@@ -17985,6 +18415,9 @@ function App() {
     profile: signedProfile,
     labs: labs,
     catalog: catalog,
+    notify: notify
+  }), tab === "wpoa" && /*#__PURE__*/React.createElement(WpoaTab, {
+    profile: signedProfile,
     notify: notify
   }), tab === "smer" && /*#__PURE__*/React.createElement(SmerTab, {
     profile: signedProfile,
