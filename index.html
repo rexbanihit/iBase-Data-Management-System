@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v231";
+  window.__IBASE_BUILD = "v232";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -569,6 +569,7 @@ function computeEngineerOt(engineerName, allVisits, otSettings, holidayMap) {
   var settings = otSettings || DEFAULT_OT_SETTINGS;
   var byDate = {};
   var incompleteCount = 0;
+  var seqFlags = [];
   (allVisits || []).forEach(function (v) {
     var involved = v.engineer === engineerName || v.engineer2 === engineerName || v.engineer3 === engineerName;
     if (!involved) return;
@@ -577,6 +578,30 @@ function computeEngineerOt(engineerName, allVisits, otSettings, holidayMap) {
     // not add to the day's hours and the day won't appear unless other valid visits exist).
     // A blank ISR is not "letters" and still counts, as before.
     if (/[A-Za-z]/.test(String(v.isrNo == null ? "" : v.isrNo))) return;
+    // REQUIRED TIME SEQUENCE (rules doc): Reported =< Departure =< Arrival to
+    // account =< Work started =< Work ended =< Arrival to home. EQUAL times are
+    // valid; blank fields are skipped. Only a STRICTLY-EARLIER later field breaks
+    // the order — the visit is flagged for review (visible to the engineer and the
+    // OT managers) but still computes from its recorded times until corrected.
+    var seqList = [
+      ["Reported", otParseDT(v.dtReported)],
+      ["Departure", otParseDT(v.dtDeparture)],
+      ["Arrival to account", otParseDT(v.dtArrivalAccount)],
+      ["Work started", otParseDT(v.dtWorkStarted)],
+      ["Work ended", otParseDT(v.dtWorkEnded)],
+      ["Arrival to home", otParseDT(v.dtArrivalHome)]
+    ].filter(function (p) { return p[1]; });
+    for (var i2 = 1; i2 < seqList.length; i2++) {
+      if (seqList[i2][1].getTime() < seqList[i2 - 1][1].getTime()) {
+        var fT2 = function (d) { return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+        seqFlags.push({
+          id: v.id, isr: v.isrNo || "", src: v._src || "",
+          date: otLocalDate(seqList[0][1]),
+          msg: seqList[i2 - 1][0] + " (" + fT2(seqList[i2 - 1][1]) + ") is later than " + seqList[i2][0] + " (" + fT2(seqList[i2][1]) + ")"
+        });
+        break;
+      }
+    }
     // START of OT: the EARLIEST (oldest) of the four time fields —
     //   Time & Date reported · Date & time of departure ·
     //   Date & time of arrival to account · Date & time work started.
@@ -692,7 +717,7 @@ function computeEngineerOt(engineerName, allVisits, otSettings, holidayMap) {
       dayStart: dayStart, dayEnd: dayEnd,
     };
   });
-  return { days: days, incompleteCount: incompleteCount };
+  return { days: days, incompleteCount: incompleteCount, seqFlags: seqFlags };
 }
 
 function isOtManagerRoleName(role) {
@@ -3326,7 +3351,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v231"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v232"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -12133,6 +12158,8 @@ function OvertimeTab({
   }
   const periodLabel = period === "__allhist__" ? "All history" : period === "__range__" ? otFrom || otTo ? (otFrom ? fmtDate(otFrom) : "start") + " → " + (otTo ? fmtDate(otTo) : "today") : "All history" : (periodOptions.find(p => p.key === effKey) || {}).label || "Current period";
   const hasAnyData = visibleEngineers.length > 0 && (visibleEngineers.some(n => ledgers[n] && ledgers[n].days.length > 0) || apps.some(a => visibleEngineers.indexOf(a.engineerName) !== -1));
+  // Visits whose times break the required sequence — shown to the engineer AND the OT managers.
+  const seqIssues = visibleEngineers.flatMap(n => ((ledgers[n] || {}).seqFlags || []).map(f => ({ ...f, eng: n })));
 
   // application map + mutations (server rules enforce owner/manager)
   const appMap = useMemo(() => {
@@ -12976,7 +13003,7 @@ function OvertimeTab({
       onClick: () => setOtView("main")
     }, "🕒 Back to Overtime")), /*#__PURE__*/React.createElement("div", {
       style: { background: "var(--c-card)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 18px", maxWidth: 920 }
-    }, S("🕘", "Office hours", "Weekdays (Monday–Friday): " + otFmtHM(schMon.start || "08:00") + " – " + otFmtHM(schMon.end || "17:30") + ". Saturday: " + otFmtHM(schSat.start || "08:00") + " – " + otFmtHM(schSat.end || "12:00") + ". Sunday is a rest day. The Overtime Form fills OFFICE Time From/To automatically from this schedule — and leaves it blank on Sundays and holidays."), S("🧮", "How overtime is computed", "Overtime is computed automatically from your logged service visits — departure and arrival-home times, or work start/end when those are missing. On ordinary working days only the tail of the worked span counts: overtime begins after that day's office end plus the " + (Number(otSettings.graceMinutes) || 0) + "-minute grace period (on weekdays that means from " + otStartTxt + " onward). On Sundays and on listed holidays the ENTIRE worked span counts as overtime."), S("🎌", "Holiday rules", "Holidays are maintained in ⚙ Office Hours, Holidays & Cutoff — the Philippine holidays come preloaded and managers can add or remove dates. Work on a listed holiday earns overtime for the whole worked span; the WPOA calendar tints those dates pink and auto-fills “Holiday”; and the Overtime Form leaves OFFICE Time blank on them."), S("🚫", "Exceptions — when NO overtime is credited", "Time finished within office hours plus the grace period; days without any logged service visit under your name; visits that do not list you as one of the engineers; and zero-hour days (shown as “—”), which cannot be filed. Filing is also capped: the Cash + Offset split can never exceed the overtime actually rendered on that day."), S("📄", "Filing", "Every overtime must be documented on the OVERTIME FORM (the 📄 button above): the exact date and time of each OT — one form can hold several OTs and the TOTAL box sums them automatically — with the ISR number on every task line. OFFICE Time fills itself from the schedule. Filing sends the completed form together with your Cash / Offset request into the application."), S("✅", "Approval & payroll", "Only OT managers can approve or reject applications, deciding between Cash and Offset. The semi-monthly payroll cutoffs fall on the " + otSettings.cutoff1 + "th and the " + otSettings.cutoff2 + "th (adjustable in ⚙). Approved hours flow into the ledgers, and the 🖨 Form reprint stays available on every filed application.")));
+    }, S("🕘", "Office hours", "Weekdays (Monday–Friday): " + otFmtHM(schMon.start || "08:00") + " – " + otFmtHM(schMon.end || "17:30") + ". Saturday: " + otFmtHM(schSat.start || "08:00") + " – " + otFmtHM(schSat.end || "12:00") + ". Sunday is a rest day. The Overtime Form fills OFFICE Time From/To automatically from this schedule — and leaves it blank on Sundays and holidays."), S("🧮", "How overtime is computed", "Overtime is computed automatically from your logged service visits, per laboratory per day. START: the later of 6:30 PM and the earliest recorded of Time & Date reported / Departure / Arrival to account / Work started \u2014 gaps between those fields are ignored (work between 5:30 and 6:30 PM is the grace period, never OT). MORNING exception: when the Report AND the Departure are BOTH before office start, the pre-office time (Report \u2192 8:00 AM) also counts as overtime; if the Departure is at/after 8:00 AM the early Report is disregarded. END: the latest of Work ended / Arrival to home. All ISRs at one laboratory on the same Work-Started date merge into ONE span; DIFFERENT laboratories each count their own span and the totals ADD \u2014 the travel gap between laboratories is never overtime (Lab 1 6:30\u20139:30 PM + Lab 2 10:30 PM\u20132:30 AM = 3h + 4h = 7h). A session that runs past midnight counts under the day it started; the same laboratory on different days is always a separate filing. On Sundays and listed holidays the ENTIRE rendered time counts as overtime. The Timestamp column is never used."), S("\u23f1", "Required time sequence", "Every visit's times must follow this order, each equal to or later than (=<) the one before it: Time & Date Reported =< Date & Time of Departure =< Date & Time of Arrival to Account =< Date & Time Work Started =< Date & Time Work Ended =< Date & Time of Arrival to Home. Equal times are valid; blank fields are simply skipped. A visit that breaks the order is flagged in the \u26a0 Time-sequence review panel on the Overtime screen \u2014 visible to the engineer and to the OT managers \u2014 so the service visit can be reviewed and corrected in LOGS. Flagged visits still compute from their recorded times until corrected."), S("🎌", "Holiday rules", "Holidays are maintained in ⚙ Office Hours, Holidays & Cutoff — the Philippine holidays come preloaded and managers can add or remove dates. Work on a listed holiday earns overtime for the whole worked span; the WPOA calendar tints those dates pink and auto-fills “Holiday”; and the Overtime Form leaves OFFICE Time blank on them."), S("🚫", "Exceptions — when NO overtime is credited", "Time finished within office hours plus the grace period; days without any logged service visit under your name; visits that do not list you as one of the engineers; and zero-hour days (shown as “—”), which cannot be filed. Also excluded: visits whose ISR number contains letters, and any single record spanning more than 20 hours (a data error to fix in LOGS). Filing is also capped: the Cash + Offset split can never exceed the overtime actually rendered on that day."), S("📄", "Filing", "Every overtime must be documented on the OVERTIME FORM (the 📄 button above): the exact date and time of each OT — one form can hold several OTs and the TOTAL box sums them automatically — with the ISR number on every task line. OFFICE Time fills itself from the schedule. Filing sends the completed form together with your Cash / Offset request into the application."), S("✅", "Approval & payroll", "Only OT managers can approve or reject applications, deciding between Cash and Offset. The semi-monthly payroll cutoffs fall on the " + otSettings.cutoff1 + "th and the " + otSettings.cutoff2 + "th (adjustable in ⚙). Approved hours flow into the ledgers, and the 🖨 Form reprint stays available on every filed application.")));
   }
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -13010,7 +13037,12 @@ function OvertimeTab({
     title: "How overtime is computed, holiday rules, exceptions, filing and approval",
     style: { ...btnSt(otView === "rules" ? "var(--c-key)" : "var(--c-border)", otView === "rules" ? "var(--c-bg)" : "var(--c-text2)"), padding: "7px 12px" },
     onClick: () => setOtView(v2 => v2 === "rules" ? "main" : "rules")
-  }, otView === "rules" ? "🕒 Back to Overtime" : "📖 General Rules")), otForm ? /*#__PURE__*/React.createElement(Modal, {
+  }, otView === "rules" ? "🕒 Back to Overtime" : "📖 General Rules")), seqIssues.length > 0 ? /*#__PURE__*/React.createElement("div", {
+    style: { background: "#3a2a1d", border: "1px solid #b45309", borderRadius: 10, padding: "10px 12px", margin: "10px 0", fontSize: 12.5 }
+  }, /*#__PURE__*/React.createElement("div", { style: { fontWeight: 800, color: "#fbbf24", marginBottom: 4 } }, "\u26a0 Time-sequence review needed \u2014 " + seqIssues.length + " visit(s)"),
+  /*#__PURE__*/React.createElement("div", { style: { color: "var(--c-text3)", marginBottom: 6 } }, "The required order is Reported =< Departure =< Arrival to account =< Work started =< Work ended =< Arrival to home (equal times are fine). These visits break that order \u2014 please review and correct them in LOGS. Their overtime still computes from the recorded times until corrected."),
+  seqIssues.slice(0, 30).map((f, i) => /*#__PURE__*/React.createElement("div", { key: "sq" + i, style: { color: "var(--c-text2)" } }, "\u2022 " + f.eng + " \u00b7 " + (f.date || "?") + " \u00b7 ISR " + (f.isr || "\u2014") + " \u00b7 " + (f.src || "") + " \u2014 " + f.msg)),
+  seqIssues.length > 30 ? /*#__PURE__*/React.createElement("div", { style: { color: "var(--c-text4)" } }, "\u2026and " + (seqIssues.length - 30) + " more") : null) : null, otForm ? /*#__PURE__*/React.createElement(Modal, {
     title: "📄 Overtime Form — fill out to file",
     onClose: () => setOtForm(null)
   }, (() => {
