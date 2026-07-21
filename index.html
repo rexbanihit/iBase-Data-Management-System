@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v225";
+  window.__IBASE_BUILD = "v231";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -587,22 +587,67 @@ function computeEngineerOt(engineerName, allVisits, otSettings, holidayMap) {
     var eHome = otParseDT(v.dtArrivalHome), eWork = otParseDT(v.dtWorkEnded);
     var end   = (eHome && eWork) ? (eHome.getTime() >= eWork.getTime() ? eHome : eWork) : (eHome || eWork);
     if (!start || !end || end.getTime() <= start.getTime()) { if (v.date) incompleteCount++; return; }
-    // The visit's OT day comes from the START datetime itself. The Timestamp column
-    // (and any v.date derived from it at import) is NEVER used — a form submitted the
-    // next day can no longer drag a visit onto the wrong day and inflate the span.
-    var dateKey = otLocalDate(start);
-    if (!byDate[dateKey]) byDate[dateKey] = { starts: [], ends: [], visitIds: [], isrNos: [], sources: [] };
+    // BUSINESS RULES:
+    // (a) A session that runs past midnight (e.g. 10:30 PM → 3:00 AM) is ONE valid
+    //     continuous filing — it counts under the day it STARTED (grouping below is
+    //     by the start's date). Lab 1 6:30–9:30 PM then Lab 2 10:30 PM–3:00 AM is
+    //     one evening of overtime on the first day.
+    // (b) The same laboratory on DIFFERENT days is always a DIFFERENT filing —
+    //     records never combine across days (each start-date computes on its own),
+    //     so a Jan 4 visit and a Jan 6 visit can never add into one overtime.
+    // (c) No single service visit spans more than 20 hours. Longer gaps (e.g. the
+    //     stored 04-20 00:59 → 04-21 14:29 = 37.5h) are data errors from bad rows
+    //     or old-import corruption. Excluded and flagged.
+    if (otHoursBetween(start, end) > 20) { incompleteCount++; return; }
+    // The visit's OT day = the DATE of "Date & Time Work Started" (per the OT rules
+    // document: ISRs of one laboratory compare by the Work-Started date, time
+    // disregarded). When Work Started is blank, the earliest recorded field's date
+    // is used. The Timestamp column (and any v.date derived from it at import) is
+    // NEVER used — a form submitted the next day cannot drag a visit onto the
+    // wrong day.
+    var wsDT = otParseDT(v.dtWorkStarted);
+    var dateKey = otLocalDate(wsDT || start);
+    if (!byDate[dateKey]) byDate[dateKey] = { starts: [], ends: [], visitIds: [], isrNos: [], sources: [], labs: {}, morn: [] };
+    // Morning-OT qualification (rules doc): a pre-office Report counts ONLY when the
+    // Departure is ALSO before office start — collect the pair, judged at finalize.
+    var mRep = otParseDT(v.dtReported), mDep = otParseDT(v.dtDeparture);
+    if (mRep && mDep) byDate[dateKey].morn.push({ r: mRep.getTime(), d: mDep.getTime() });
     byDate[dateKey].starts.push(start);
     byDate[dateKey].ends.push(end);
     byDate[dateKey].visitIds.push(v.id);
     if (v.isrNo) byDate[dateKey].isrNos.push(v.isrNo);
     if (v._src) byDate[dateKey].sources.push(v._src);
+    // Per-LABORATORY grouping: all ISRs at one laboratory in the day merge into that
+    // lab's single earliest→latest span; different laboratories keep separate spans.
+    var srcStr = String(v._src || "");
+    var atIdx = srcStr.lastIndexOf(" @ ");
+    var labKey = atIdx >= 0 ? srcStr.slice(atIdx + 3) : (srcStr || "v_" + (v.id || byDate[dateKey].visitIds.length));
+    if (!byDate[dateKey].labs[labKey]) byDate[dateKey].labs[labKey] = { s: start.getTime(), e: end.getTime() };
+    else {
+      var L = byDate[dateKey].labs[labKey];
+      if (start.getTime() < L.s) L.s = start.getTime();
+      if (end.getTime() > L.e) L.e = end.getTime();
+    }
   });
   var days = Object.keys(byDate).sort().map(function (dateKey) {
     var rec = byDate[dateKey];
     var dayStart = new Date(Math.min.apply(null, rec.starts.map(function (d) { return d.getTime(); })));
     var dayEnd   = new Date(Math.max.apply(null, rec.ends.map(function (d) { return d.getTime(); })));
-    var totalHours = otHoursBetween(dayStart, dayEnd);
+    // The day's worked time = the SUM of each laboratory's own span. One laboratory's
+    // ISRs merge into a single earliest→latest span (paperwork gaps inside a lab
+    // combine), but the TRAVEL GAP BETWEEN LABORATORIES is not worked time:
+    // Lab 1 6:30–9:30 PM then Lab 2 10:30 PM–2:30 AM = 3h + 4h = 7 HOURS rendered,
+    // not the 8-hour stretch. Overlapping lab spans (data noise) merge, never
+    // double-count.
+    var intervals = Object.keys(rec.labs).map(function (k2) { return rec.labs[k2]; })
+      .sort(function (a2, b2) { return a2.s - b2.s; });
+    var merged = [];
+    intervals.forEach(function (iv) {
+      var last = merged[merged.length - 1];
+      if (last && iv.s <= last.e) { if (iv.e > last.e) last.e = iv.e; }
+      else merged.push({ s: iv.s, e: iv.e });
+    });
+    var totalHours = merged.reduce(function (a2, iv) { return a2 + (iv.e - iv.s); }, 0) / 3600000;
     var holidayName = holidayMap && holidayMap[dateKey] ? holidayMap[dateKey] : "";
     var isHoliday = !!holidayName;
     var norm = otNormSchedule(settings);
@@ -610,24 +655,35 @@ function computeEngineerOt(engineerName, allVisits, otSettings, holidayMap) {
     var isRestDay = !!(sch && sch.off);
     var regularHours, otHours;
     if (isHoliday || isRestDay) {
-      // Holiday or scheduled rest day (e.g. Sunday): the whole worked span is OT.
+      // Holiday or scheduled rest day (e.g. Sunday): every rendered hour is OT.
       regularHours = 0; otHours = totalHours;
     } else {
       var offStart = new Date(dateKey + "T" + (sch.start || "08:00") + ":00");
       var offEnd   = new Date(dateKey + "T" + (sch.end   || "17:30") + ":00");
-      var overlapStartMs = Math.max(dayStart.getTime(), offStart.getTime());
-      var overlapEndMs   = Math.min(dayEnd.getTime(), offEnd.getTime());
-      regularHours = overlapEndMs > overlapStartMs ? (overlapEndMs - overlapStartMs) / 3600000 : 0;
+      // Regular = the rendered time that falls inside office hours (per interval).
+      regularHours = merged.reduce(function (a2, iv) {
+        var o1 = Math.max(iv.s, offStart.getTime()), o2 = Math.min(iv.e, offEnd.getTime());
+        return a2 + Math.max(0, o2 - o1);
+      }, 0) / 3600000;
       // OT begins at 6:30 PM on every working day — weekdays AND Saturdays.
       // The threshold is office-end + grace, but never earlier than 18:30, so a
       // short Saturday schedule (e.g. 08:00–12:00) still starts OT at 6:30 PM,
       // not at lunchtime. Hours before the threshold are regular, never OT
-      // (no "morning OT"). Sundays and holidays are handled above (whole span).
+      // (no "morning OT"). Sundays and holidays are handled above.
       var graceMs = norm.graceMinutes * 60000;
       var floor630 = new Date(dateKey + "T18:30:00").getTime();
       var otFromMs = Math.max(offEnd.getTime() + graceMs, floor630);
-      var eveningOtMs = Math.max(0, dayEnd.getTime() - Math.max(dayStart.getTime(), otFromMs));
-      otHours = eveningOtMs / 3600000;
+      // MORNING OT (rules doc): if the Date & Time of Report is before office start
+      // AND the Date & Time of Departure is also before office start, the pre-office
+      // engaged time (Report → office start, clipped to what was actually rendered)
+      // is overtime too. If the Departure is at/after office start, the early Report
+      // is disregarded — no morning OT (Example 13).
+      var mornQualified = (rec.morn || []).some(function (p) { return p.r < offStart.getTime() && p.d < offStart.getTime(); });
+      otHours = merged.reduce(function (a2, iv) {
+        var evening = Math.max(0, iv.e - Math.max(iv.s, otFromMs));
+        var morning = mornQualified && iv.s < offStart.getTime() ? Math.max(0, Math.min(iv.e, offStart.getTime()) - iv.s) : 0;
+        return a2 + evening + morning;
+      }, 0) / 3600000;
     }
     return {
       date: dateKey, totalHours: otRound2(totalHours), regularHours: otRound2(regularHours), otHours: otRound2(otHours),
@@ -3270,7 +3326,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v225"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v231"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -11311,14 +11367,13 @@ function SmerTab({ profile, labs, notify }) {
     const cands = [profile.name, profile.displayName, String(profile.email || "").split("@")[0].replace(/[._]/g, " ")].map(x => String(x || "").trim().toLowerCase()).filter(Boolean);
     return engNames.find(n => cands.includes(n.toLowerCase())) || "";
   }, [profile, engNames]);
-  // Semi-monthly period options: 1-15 and 16-end for each month, rolling from Jul 2026.
+  // Semi-monthly period options: 1-15 and 16-end for each month, from January 2026 through 2030.
   const MO_ABBR = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const daysInMonth = (y, mo) => new Date(y, mo + 1, 0).getDate();
   const PERIODS = React.useMemo(() => {
     const out = [];
     for (let y = 2026; y <= 2030; y++) {
       for (let mo = 0; mo < 12; mo++) {
-        if (y === 2026 && mo < 6) continue; // start July 2026
         const last = daysInMonth(y, mo);
         out.push({ id: y + "-" + String(mo + 1).padStart(2, "0") + "-A", label: MO_ABBR[mo] + " 1-15, " + y, y: y, mo: mo, d1: 1, d2: 15 });
         out.push({ id: y + "-" + String(mo + 1).padStart(2, "0") + "-B", label: MO_ABBR[mo] + " 16-" + last + ", " + y, y: y, mo: mo, d1: 16, d2: last });
@@ -12700,7 +12755,9 @@ function OvertimeTab({
       const eh = otParseDT(v.dtArrivalHome), ew = otParseDT(v.dtWorkEnded);
       const e = (eh && ew) ? (eh.getTime() >= ew.getTime() ? eh : ew) : (eh || ew);
       if (!s || !e || e.getTime() <= s.getTime()) return false;
-      return otLocalDate(s) === dateKey;
+      if (otHoursBetween(s, e) > 20) return false; // same data-error guard as the engine
+      const wsD = otParseDT(v.dtWorkStarted);
+      return otLocalDate(wsD || s) === dateKey;
     });
     const h12 = t => {
       let h = t.getHours(),
@@ -12886,7 +12943,7 @@ function OvertimeTab({
         color: "var(--c-text5)",
         marginTop: 6
       }
-    }, "Day span = earliest start → latest end across the visits above.", " ", d.isHoliday || d.restDay ? (d.isHoliday ? "Holiday (" + d.holidayName + ")" : "Scheduled rest day") + ": the ENTIRE span counts as overtime." : "Working day (weekdays AND Saturdays): overtime counts from 6:30 PM onwards; hours before that are regular \u2014 there is no morning OT. Start = the EARLIEST of Time & Date reported / Departure / Arrival to account / Work started; End = the LATEST of Work ended / Arrival to home. The Timestamp column is never used. Several ISR numbers at one laboratory in a day combine into one earliest-start \u2192 latest-end span."))))), daysSorted.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    }, "Day span = earliest start → latest end across the visits above. Overtime is the SUM of each laboratory\u2019s own span \u2014 the travel gap between laboratories does not count.", " ", d.isHoliday || d.restDay ? (d.isHoliday ? "Holiday (" + d.holidayName + ")" : "Scheduled rest day") + ": the ENTIRE span counts as overtime." : "Working day (weekdays AND Saturdays): overtime counts from 6:30 PM onwards; the OT start is the LATER of 6:30 PM and the earliest recorded field (Time & Date reported / Departure / Arrival to account / Work started) \u2014 gaps between those fields are ignored. MORNING exception: when the Report AND the Departure are BOTH before office start, the pre-office time (Report \u2192 8:00 AM) also counts as overtime; if the Departure is at/after 8:00 AM the early Report is disregarded. End = the LATEST of Work ended / Arrival to home. Days are grouped by the Work-Started DATE (time disregarded; the earliest field\u2019s date when Work Started is blank). The Timestamp column is never used. Several ISR numbers at one laboratory in a day combine into one earliest-start \u2192 latest-end span; DIFFERENT laboratories the same evening each count their own span and the totals ADD \u2014 the travel gap between laboratories is not overtime (Lab 1 6:30\u20139:30 PM + Lab 2 10:30 PM\u20132:30 AM = 3h + 4h = 7h). A session that runs past midnight (e.g. 10:30 PM \u2192 3:00 AM) is valid and counts under the day it STARTED \u2014 log it as one record. The same laboratory on DIFFERENT days is always a separate filing: days never combine (a Jan 4 visit and a Jan 6 visit can never add into one overtime). A record spanning more than 20 hours is impossible for one visit \u2014 data error, excluded."))))), daysSorted.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
       colSpan: 9,
       style: {
         ...tdSt,
