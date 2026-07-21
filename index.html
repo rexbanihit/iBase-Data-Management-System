@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v232";
+  window.__IBASE_BUILD = "v233";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -3351,7 +3351,7 @@ function Login({
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v232"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Installed Base Management \u00b7 build v233"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -12950,8 +12950,10 @@ function OvertimeTab({
         marginBottom: 6
       }
     }, "How these hours were computed"), dayVisits(d.date).map((v, i) => {
-      const s = otParseDT(v.dtReported) || otParseDT(v.dtDeparture) || otParseDT(v.dtArrivalAccount) || otParseDT(v.dtWorkStarted);
-      const e = otParseDT(v.dtArrivalHome) || otParseDT(v.dtWorkEnded);
+      const sc2 = [otParseDT(v.dtReported), otParseDT(v.dtDeparture), otParseDT(v.dtArrivalAccount), otParseDT(v.dtWorkStarted)].filter(Boolean);
+      const s = sc2.length ? new Date(Math.min.apply(null, sc2.map(d2 => d2.getTime()))) : null;
+      const eh2 = otParseDT(v.dtArrivalHome), ew2 = otParseDT(v.dtWorkEnded);
+      const e = (eh2 && ew2) ? (eh2.getTime() >= ew2.getTime() ? eh2 : ew2) : (eh2 || ew2);
       return /*#__PURE__*/React.createElement("div", {
         key: v.id || i,
         style: {
