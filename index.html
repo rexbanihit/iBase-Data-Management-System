@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v255";
+  window.__IBASE_BUILD = "v264";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -2292,9 +2292,12 @@ async function binIt(kind, label, payload, byEmail) {
   });
   logAudit(null, "delete." + kind, String(label || "").slice(0, 200));
 }
-async function vaultMirror(e, byEmail) {
+// Bin purge lands in the ADMIN recycle (adminBin) — admins can still recover it.
+// Only when a purge happens from adminBin does it fall to ownerBin (owner-only,
+// the final net). Tier chain: Bin \u2192 adminBin \u2192 ownerBin.
+async function binMirror(dest, e, byEmail, origin) {
   try {
-    await db.collection("ownerBin").add({
+    await db.collection(dest).add({
       kind: e.kind || "unknown",
       label: String(e.label || "").slice(0, 120),
       payload: e.payload != null ? JSON.parse(JSON.stringify(e.payload)) : null,
@@ -2302,9 +2305,12 @@ async function vaultMirror(e, byEmail) {
       deletedAt: e.deletedAt || "",
       purgedBy: scrubOwner(byEmail),
       purgedAt: auditNow(),
-      origin: "bin"
+      origin: origin || "bin"
     });
   } catch (err) {}
+}
+async function vaultMirror(e, byEmail) {
+  await binMirror("adminBin", e, byEmail, "bin");
 }
 
 // PM flag derived LIVE from the latest PM evidence — the later of the machine's
@@ -2571,7 +2577,7 @@ function readThemeDefaults(id) {
       const m = body.match(new RegExp("--c-" + n + ":\\s*([^;]+);"));
       return m ? m[1].trim() : "";
     };
-    return { key: pick("key"), card: pick("card"), bg: pick("bg") };
+    return { key: pick("key"), card: pick("card"), bg: pick("bg"), text: pick("text") };
   } catch (e) {
     return {};
   }
@@ -3400,7 +3406,7 @@ function Login({
       letterSpacing: 2,
       textTransform: "uppercase"
     }
-  }, "version: v255"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "version: v264"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -3515,7 +3521,7 @@ function Login({
     style: {
       fontSize: 9,
       color: "var(--c-text)",
-      opacity: authorOp != null ? authorOp : 1,
+      opacity: authorOp != null ? authorOp : 0,
       letterSpacing: 2,
       textTransform: "uppercase",
       marginTop: 6
@@ -3598,6 +3604,8 @@ function ITable({
   maxH,
   filter,
   filterPlaceholder,
+  headerNode,
+  colsAlign,
   empty
 }) {
   const KEY = "ibase_tbl_" + id;
@@ -3661,14 +3669,19 @@ function ITable({
   const visOrder = order.filter(cid => !hidden[cid]);
   const [colsOpen, setColsOpen] = useState(false);
   const laidOut = st.order && st.order.length || st.w && Object.keys(st.w).length || st.sort || Object.keys(hidden).some(k => hidden[k]);
-  return /*#__PURE__*/React.createElement("div", null, (filter !== false || laidOut || cols.length > 1) && /*#__PURE__*/React.createElement("div", {
+  return /*#__PURE__*/React.createElement("div", null, (filter !== false || laidOut || cols.length > 1 || headerNode) && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
       alignItems: "center",
       marginBottom: 8,
-      flexWrap: "wrap"
+      flexWrap: "nowrap",
+      overflowX: "auto"
     }
+  }, headerNode ? /*#__PURE__*/React.createElement("div", {
+    style: { flexShrink: 0, whiteSpace: "nowrap" }
+  }, headerNode) : null, /*#__PURE__*/React.createElement("div", {
+    style: { flex: 1, minWidth: 0, display: "flex", gap: 8, alignItems: "center", justifyContent: colsAlign === "right" ? "flex-start" : "center" }
   }, filter !== false && /*#__PURE__*/React.createElement("input", {
     style: {
       ...inputSt(),
@@ -3683,16 +3696,25 @@ function ITable({
     title: "Show / hide columns (your view only)",
     style: {
       ...btnSt(colsOpen ? "var(--c-key)" : "var(--c-border)", colsOpen ? "var(--c-bg)" : "var(--c-text2)"),
-      padding: "6px 10px",
-      fontSize: 11.5
+      marginLeft: colsAlign === "right" ? "auto" : 0,
+      padding: "5px 6px",
+      fontSize: 10.5,
+      width: 162,
+      whiteSpace: "nowrap",
+      textAlign: "center",
+      boxSizing: "border-box"
     },
     onClick: () => setColsOpen(o => !o)
-  }, "🧩 Columns", Object.keys(hidden).filter(k => hidden[k]).length ? " (" + visOrder.length + "/" + order.length + ")" : ""), laidOut ? /*#__PURE__*/React.createElement("button", {
+  }, "🧩 Show/Hide Columns", Object.keys(hidden).filter(k => hidden[k]).length ? " (" + visOrder.length + "/" + order.length + ")" : ""), laidOut ? /*#__PURE__*/React.createElement("button", {
     title: "Restore default column order, widths, visibility and sorting (your view only)",
     style: {
       ...btnSt("var(--c-border)", "var(--c-text2)"),
-      padding: "6px 10px",
-      fontSize: 11.5
+      padding: "5px 6px",
+      fontSize: 10.5,
+      width: 162,
+      whiteSpace: "nowrap",
+      textAlign: "center",
+      boxSizing: "border-box"
     },
     onClick: () => {
       try {
@@ -3700,7 +3722,7 @@ function ITable({
       } catch (e) {}
       setSt({});
     }
-  }, "↺ Reset") : null), colsOpen && /*#__PURE__*/React.createElement("div", {
+  }, "↺ Reset") : null)), colsOpen && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 12,
@@ -4188,15 +4210,15 @@ function DashboardTab({
     pct: compliance
   }))), /*#__PURE__*/React.createElement("div", {
     style: cardSt
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      fontWeight: 800,
-      color: "#f87171",
-      textTransform: "uppercase",
-      marginBottom: 10
-    }
-  }, "🚨 Maintenance Alerts — ", urgent.length, " unit(s) requiring attention"), /*#__PURE__*/React.createElement(ITable, {
+  }, /*#__PURE__*/React.createElement(ITable, {
+    headerNode: /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        fontWeight: 800,
+        color: "#f87171",
+        textTransform: "uppercase"
+      }
+    }, "🚨 Maintenance Alerts — ", urgent.length, " unit(s) requiring attention"),
     id: "dash-alerts",
     maxH: 400,
     initSort: {
@@ -4713,13 +4735,13 @@ function LabsTab({
       overflow: "auto",
       maxHeight: "calc(100vh - 300px)"
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      color: "var(--c-text4)",
-      marginBottom: 8
-    }
-  }, tableRows.length, " instrument record(s) across ", labs.length, " institution(s) — click a row to open its laboratory · click a header to sort"), /*#__PURE__*/React.createElement(ITable, {
+  }, /*#__PURE__*/React.createElement(ITable, {
+    headerNode: /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11.5,
+        color: "var(--c-text4)"
+      }
+    }, tableRows.length, " instrument record(s) across ", labs.length, " institution(s) — click a row to open its laboratory · click a header to sort"),
     id: "institutions",
     cols: TCOLS,
     rows: tableRows,
@@ -7149,6 +7171,7 @@ function MachineInv({
     onClick: () => setEditing("new")
   }, "+ New Record")), /*#__PURE__*/React.createElement(ITable, {
     id: "inv-machines",
+    colsAlign: "right",
     maxH: "calc(100vh - 340px)",
     filter: false,
     initSort: {
@@ -8060,25 +8083,41 @@ function BinTab({
   notify
 }) {
   const iOwn = isOwnerAcct(profile) || isOwnerAcct(auth.currentUser);
+  const iAdmin = !!(profile && profile.isAdmin) || iOwn;
   const [vaultOpen, setVaultOpen] = useState(false);
+  // Which recovery tier is on screen. Admins recover from the admin recycle
+  // (adminBin); the owner can additionally reach the deeper owner-only net
+  // (ownerBin). Chain: Bin \u2192 adminBin \u2192 ownerBin.
+  const [vaultTier, setVaultTier] = useState("adminBin");
+  const tier = iOwn ? vaultTier : "adminBin";
+  const deeperTier = tier === "adminBin" ? "ownerBin" : null;
   const [vault, setVault] = useState([]);
   const [vSel, setVSel] = useState({});
   const [vBusy, setVBusy] = useState(false);
   useEffect(() => {
-    if (!iOwn || !vaultOpen) return;
-    const un = db.collection("ownerBin").onSnapshot(sn => { setVault(sn.docs.map(d => ({ id: d.id, ...d.data() }))); }, () => {});
+    if (!iAdmin || !vaultOpen) return;
+    setVSel({});
+    const un = db.collection(tier).onSnapshot(sn => { setVault(sn.docs.map(d => ({ id: d.id, ...d.data() }))); }, () => {});
     return () => un();
-  }, [iOwn, vaultOpen]);
+  }, [iAdmin, vaultOpen, tier]);
   async function vaultRestore(v) {
     try {
       await db.collection("bin").add({ kind: v.kind, label: v.label, payload: v.payload, deletedBy: v.deletedBy || "", deletedAt: v.deletedAt || "" });
-      await db.collection("ownerBin").doc(v.id).delete();
+      await db.collection(tier).doc(v.id).delete();
       notify("Returned to the Bin: " + (v.label || v.kind) + " — restore it from there.", "ok");
-    } catch (err) { notify("Vault restore refused: " + err.message, "error"); }
+    } catch (err) { notify("Recovery restore refused: " + err.message, "error"); }
   }
   async function vaultDrop(v) {
-    if (!confirm("Permanently delete \"" + (v.label || v.kind) + "\" from the vault? This is the final copy.")) return;
-    try { await db.collection("ownerBin").doc(v.id).delete(); notify("Vault entry deleted.", "ok"); }
+    // Deleting from adminBin drops one tier deeper (ownerBin) — never truly gone
+    // until the owner purges it. Deleting from ownerBin is final.
+    if (deeperTier) {
+      if (!confirm("Remove \"" + (v.label || v.kind) + "\" from the admin recycle?")) return;
+      try { await binMirror(deeperTier, v, meEmail(profile), "adminBin"); await db.collection(tier).doc(v.id).delete(); notify("Removed from the admin recycle.", "ok"); }
+      catch (err) { notify("Refused: " + err.message, "error"); }
+      return;
+    }
+    if (!confirm("Permanently delete \"" + (v.label || v.kind) + "\" from the owner vault? This is the final copy.")) return;
+    try { await db.collection(tier).doc(v.id).delete(); notify("Vault entry deleted.", "ok"); }
     catch (err) { notify("Refused: " + err.message, "error"); }
   }
   // Bulk delete: works on the ticked items, or on the whole vault via "Delete ALL".
@@ -8086,11 +8125,24 @@ function BinTab({
   async function vaultDropMany(items, isAll) {
     if (!items.length) return;
     if (!confirm("\u26a0 Permanently delete " + items.length + " item(s) from the vault" + (isAll ? " \u2014 the ENTIRE vault" : "") + "?\n\nThese are the FINAL copies. Nothing can bring them back afterwards.")) return;
+    if (deeperTier) {
+      setVBusy(true);
+      let d2 = 0, f2 = 0;
+      for (const v of items) {
+        try { await binMirror(deeperTier, v, meEmail(profile), "adminBin"); await db.collection(tier).doc(v.id).delete(); d2++; }
+        catch (err) { f2++; }
+      }
+      setVSel({});
+      if (!iOwn) logAudit(profile, "adminBin.bulkDrop", d2 + " item(s) sent to the owner net" + (f2 ? ", " + f2 + " failed" : ""));
+      notify("\ud83d\uddd1 " + d2 + " item(s) removed from the admin recycle" + (f2 ? " \u2014 " + f2 + " failed" : "") + ".", f2 ? "error" : "ok");
+      setVBusy(false);
+      return;
+    }
     if (!confirm("FINAL confirmation \u2014 delete " + (isAll ? "ALL " : "") + items.length + " vault item(s) forever?")) return;
     setVBusy(true);
     let done = 0, failed = 0;
     for (const v of items) {
-      try { await db.collection("ownerBin").doc(v.id).delete(); done++; }
+      try { await db.collection(tier).doc(v.id).delete(); done++; }
       catch (err) { failed++; }
     }
     setVSel({});
@@ -8106,12 +8158,13 @@ function BinTab({
     for (const v of items) {
       try {
         await db.collection("bin").add({ kind: v.kind, label: v.label, payload: v.payload, deletedBy: v.deletedBy || "", deletedAt: v.deletedAt || "" });
-        await db.collection("ownerBin").doc(v.id).delete();
+        await db.collection(tier).doc(v.id).delete();
         done++;
       } catch (err) { failed++; }
     }
     setVSel({});
-    logAudit(profile, "vault.bulkRestore", done + " item(s) returned to the Bin" + (failed ? ", " + failed + " failed" : ""));
+    if (!iOwn) logAudit(profile, "adminBin.bulkRestore", done + " item(s) returned to the Bin" + (failed ? ", " + failed + " failed" : ""));
+    else logAudit(profile, "vault.bulkRestore", done + " item(s) returned to the Bin" + (failed ? ", " + failed + " failed" : ""));
     notify("\u21a9 Vault: " + done + " item(s) returned to the Bin" + (failed ? " \u2014 " + failed + " failed" : "") + ".", failed ? "error" : "ok");
     setVBusy(false);
   }
@@ -8174,10 +8227,13 @@ function BinTab({
           /*#__PURE__*/React.createElement("tbody", null, [...vault].sort((a, b) => String(b.purgedAt || "").localeCompare(String(a.purgedAt || ""))).map(vaultRow))
         )
       );
-  const vaultPanel = (iOwn && vaultOpen)
+  const vaultPanel = (iAdmin && vaultOpen)
     ? /*#__PURE__*/React.createElement("div", { style: { marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--c-border2)" } },
-        /*#__PURE__*/React.createElement("div", { style: { fontWeight: 800, fontSize: 13, marginBottom: 2 } }, "\ud83d\udd12 Recovery vault"),
-        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, color: "var(--c-text4)", marginBottom: 10 } }, "Items permanently purged from the Bin are kept here as a last resort \u2014 only you can see this. Each keeps who originally deleted it and who purged it. Restore returns an item to the Bin, where it can be recovered normally."),
+        /*#__PURE__*/React.createElement("div", { style: { fontWeight: 800, fontSize: 13, marginBottom: 2 } }, tier === "ownerBin" ? "\ud83d\udd12 Owner vault \u2014 final safety net" : "\u267b Admin recycle"),
+        iOwn ? /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 6, marginBottom: 8 } },
+          /*#__PURE__*/React.createElement("button", { onClick: () => setVaultTier("adminBin"), style: { ...btnSt(tier === "adminBin" ? "var(--c-key)" : "var(--c-border)", tier === "adminBin" ? "var(--c-bg)" : "var(--c-text2)"), padding: "4px 10px", fontSize: 11 } }, "\u267b Admin recycle"),
+          /*#__PURE__*/React.createElement("button", { onClick: () => setVaultTier("ownerBin"), style: { ...btnSt(tier === "ownerBin" ? "var(--c-key)" : "var(--c-border)", tier === "ownerBin" ? "var(--c-bg)" : "var(--c-text2)"), padding: "4px 10px", fontSize: 11 } }, "\ud83d\udd12 Owner vault")) : null,
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, color: "var(--c-text4)", marginBottom: 10 } }, tier === "ownerBin" ? "The deepest net \u2014 items removed even from the admin recycle land here. Restore returns an item to the Bin." : "Items purged from the Bin are kept here so administrators can still recover them. Restore returns an item to the Bin; deleting here moves it one step deeper, where it can still be recovered."),
         vault.length > 0 ? /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 } },
           /*#__PURE__*/React.createElement("button", { disabled: vBusy || !Object.values(vSel).filter(Boolean).length, style: btnSt("#10b981", "#fff"), onClick: () => vaultRestoreMany(vault.filter(x => vSel[x.id])) }, vBusy ? "Working\u2026" : "\u21a9 Return selected to Bin (" + Object.values(vSel).filter(Boolean).length + ")"),
           /*#__PURE__*/React.createElement("button", { disabled: vBusy || !Object.values(vSel).filter(Boolean).length, style: btnSt("#3a1d1d", "#fca5a5"), onClick: () => vaultDropMany(vault.filter(x => vSel[x.id]), false) }, "\ud83d\uddd1 Delete selected (" + Object.values(vSel).filter(Boolean).length + ")"),
@@ -8515,7 +8571,7 @@ function BinTab({
       notify(failed ? done + " deleted, " + failed + " refused." : "🗑 Bin emptied — " + done + " item(s) permanently deleted.", failed ? "error" : "bin");
       setEmptying(false);
     }
-  }, emptying ? "Emptying…" : "🗑 Delete ALL forever (" + entries.length + ")"), iOwn ? /*#__PURE__*/React.createElement("span", { onClick: () => setVaultOpen(o => !o), title: "Owner recovery vault", style: { marginLeft: "auto", cursor: "pointer", color: "var(--c-text5)", fontSize: 12, userSelect: "none", opacity: 0.55 } }, vaultOpen ? "\u25be" : "\u25b8") : null), /*#__PURE__*/React.createElement("div", {
+  }, emptying ? "Emptying…" : "🗑 Delete ALL forever (" + entries.length + ")"), iAdmin ? /*#__PURE__*/React.createElement("span", { onClick: () => setVaultOpen(o => !o), title: "Recover items purged from the Bin", style: { marginLeft: "auto", cursor: "pointer", color: "var(--c-text4)", fontSize: 11.5, userSelect: "none", fontWeight: 700 } }, (vaultOpen ? "\u25be " : "\u25b8 ") + "\u267b Recover deleted") : null), /*#__PURE__*/React.createElement("div", {
     style: {
       maxHeight: "56vh",
       overflow: "auto"
@@ -10354,144 +10410,11 @@ function VisitsTab({
       alignItems: "center",
       justifyContent: "center",
       gap: 8,
-      flexWrap: "wrap",
+      flexWrap: "nowrap",
+      overflowX: "auto",
       marginBottom: 8
     }
-  }, canDL(profile, "logs", dl) && /*#__PURE__*/React.createElement("button", {
-    title: "Export the CURRENT view — the rows and columns you see, after filters",
-    style: {
-      ...btnSt("var(--c-border)", "var(--c-text2)"),
-      padding: "5px 8px",
-      fontSize: 11,
-      width: 150,
-      textAlign: "center",
-      boxSizing: "border-box"
-    },
-    onClick: () => {
-      try {
-        const cols = VGRID_COLS.filter(c => !hiddenCols.includes(c.id) && c.id !== "sel" && c.id !== "act" && c.id !== "sig");
-        const header = cols.map(c => c.label);
-        const rows2 = shown.map(v => cols.map(c => {
-          const x = c.sv ? c.sv(v) : "";
-          return x == null ? "" : String(x);
-        }));
-        const ws = XLSX.utils.aoa_to_sheet([header, ...rows2]);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "LOGS");
-        XLSX.writeFile(wb, "iBase_LOGS_" + today() + ".xlsx");
-        logAudit(profile, "download.logs", shown.length + " row(s), " + cols.length + " column(s)");
-      } catch (e) {
-        notify("Export failed: " + e.message, "error");
-      }
-    }
-  }, "⬇ Export"), /*#__PURE__*/React.createElement("button", {
-    title: "Show / hide columns (your view only)",
-    style: {
-      ...btnSt(colMenu ? "var(--c-key)" : "var(--c-border)", colMenu ? "var(--c-bg)" : "var(--c-text2)"),
-      padding: "5px 8px",
-      fontSize: 11,
-      width: 150,
-      textAlign: "center",
-      boxSizing: "border-box"
-    },
-    onClick: () => setColMenu(m => !m)
-  }, "🧩 Columns", hiddenCols.length ? " (" + (VGRID_COLS.length - hiddenCols.length) + "/" + VGRID_COLS.length + ")" : ""), " ", /*#__PURE__*/React.createElement("button", {
-    title: "Restore the default view \u2014 column order, widths, visibility, sorting, row height, and clear every filter: search, laboratory, brand, machine, type, engineer, date range (your view only)",
-    style: {
-      ...btnSt("var(--c-border)", "var(--c-text2)"),
-      padding: "5px 8px",
-      fontSize: 11,
-      width: 150,
-      textAlign: "center",
-      boxSizing: "border-box"
-    },
-    onClick: () => {
-      ["ibase_v_cols", "ibase_v_colw", "ibase_v_hidden", "ibase_v_rowh"].forEach(k => {
-        try {
-          localStorage.removeItem(k);
-        } catch (e) {}
-      });
-      setColOrder(defOrder);
-      setColW({});
-      setHiddenCols([]);
-      setRowH(40);
-      setRowHeights({});
-      setSort({ col: "date", dir: -1 }); // sorting back to the default display order
-      // …and the entire filtering section back to blank
-      setQ("");
-      setLabF("");
-      setBrandF("");
-      setMachineF("");
-      setTypeF("");
-      setEngF("");
-      setFrom("");
-      setTo("");
-      setColMenu(false);
-    }
-  }, "↺ Reset"), " ", canDeleteLogs ? (() => {
-    const nSel = Object.values(selected).filter(Boolean).length;
-    if (!delMode) return /*#__PURE__*/React.createElement("button", {
-      title: "Start deleting: press this FIRST, then select the visit row(s) to delete — administrators only",
-      style: { ...btnSt("var(--c-border)", "#fca5a5"), padding: "5px 8px", fontSize: 11, width: 150, textAlign: "center", boxSizing: "border-box" },
-      onClick: () => { setSelected({}); setDelMode(true); }
-    }, "🗑 Delete service visit");
-    return /*#__PURE__*/React.createElement("div", { style: { display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid #ef4444", background: "rgba(239,68,68,.10)", borderRadius: 10, padding: "4px 8px" } },
-      /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 800, color: "#f87171" } }, "Delete mode — click the row(s) to remove", nSel ? " (" + nSel + " selected)" : ""),
-      /*#__PURE__*/React.createElement("button", {
-        title: nSel ? "Move the selected visit(s) to the 🗑 Bin — asks to confirm first" : "Select at least one row",
-        disabled: !nSel,
-        style: { ...btnSt(nSel ? "#3a1d1d" : "var(--c-border)", nSel ? "#fca5a5" : "var(--c-text5)"), padding: "6px 10px", fontSize: 11.5, cursor: nSel ? "pointer" : "not-allowed" },
-        onClick: delSelectedVisits
-      }, "✓ Delete selected", nSel ? " (" + nSel + ")" : ""),
-      /*#__PURE__*/React.createElement("button", {
-        style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "6px 10px", fontSize: 11.5 },
-        onClick: () => { setDelMode(false); setSelected({}); }
-      }, "✕ Cancel"));
-  })() : null, colMenu && /*#__PURE__*/React.createElement("div", {
-    style: {
-      flexBasis: "100%",
-      minWidth: "100%",
-      order: 99,
-      display: "flex",
-      gap: 12,
-      flexWrap: "wrap",
-      alignItems: "center",
-      padding: "8px 12px",
-      border: "1px dashed var(--c-border)",
-      borderRadius: 8
-    }
-  }, VGRID_COLS.map(c => {
-    const on = !hiddenCols.includes(c.id);
-    const lastOne = on && VGRID_COLS.length - hiddenCols.length === 1;
-    return /*#__PURE__*/React.createElement("label", {
-      key: c.id,
-      title: lastOne ? "At least one column must stay visible" : on ? "Hide this column" : "Show this column",
-      style: {
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 5,
-        fontSize: 11.5,
-        color: on ? "var(--c-text2)" : "var(--c-text5)",
-        cursor: lastOne ? "not-allowed" : "pointer",
-        userSelect: "none"
-      }
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "checkbox",
-      checked: on,
-      disabled: lastOne,
-      style: {
-        cursor: lastOne ? "not-allowed" : "pointer"
-      },
-      onChange: () => setHiddenCols(h => on ? [...h, c.id] : h.filter(x => x !== c.id))
-    }), c.label);
-  }), hiddenCols.length ? /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...btnSt("var(--c-border)", "var(--c-text2)"),
-      padding: "3px 9px",
-      fontSize: 11
-    },
-    onClick: () => setHiddenCols([])
-  }, "↺ Show all") : null)), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "inline-flex",
       alignItems: "center",
@@ -10550,7 +10473,88 @@ function VisitsTab({
       color: "var(--c-text5)",
       paddingRight: 4
     }
-  }, "px"))), /*#__PURE__*/React.createElement("div", {
+  }, "px")), canDL(profile, "logs", dl) && /*#__PURE__*/React.createElement("button", {
+    title: "Export the CURRENT view — the rows and columns you see, after filters",
+    style: {
+      ...btnSt("var(--c-border)", "var(--c-text2)"),
+      padding: "5px 6px",
+      fontSize: 10.5,
+      width: 162,
+      whiteSpace: "nowrap",
+      textAlign: "center",
+      boxSizing: "border-box"
+    },
+    onClick: () => {
+      try {
+        const cols = VGRID_COLS.filter(c => !hiddenCols.includes(c.id) && c.id !== "sel" && c.id !== "act" && c.id !== "sig");
+        const header = cols.map(c => c.label);
+        const rows2 = shown.map(v => cols.map(c => {
+          const x = c.sv ? c.sv(v) : "";
+          return x == null ? "" : String(x);
+        }));
+        const ws = XLSX.utils.aoa_to_sheet([header, ...rows2]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "LOGS");
+        XLSX.writeFile(wb, "iBase_LOGS_" + today() + ".xlsx");
+        logAudit(profile, "download.logs", shown.length + " row(s), " + cols.length + " column(s)");
+      } catch (e) {
+        notify("Export failed: " + e.message, "error");
+      }
+    }
+  }, "⬇ Export"), /*#__PURE__*/React.createElement("button", {
+    title: "Restore the default view \u2014 column order, widths, visibility, sorting, row height, and clear every filter: search, laboratory, brand, machine, type, engineer, date range (your view only)",
+    style: {
+      ...btnSt("var(--c-border)", "var(--c-text2)"),
+      padding: "5px 6px",
+      fontSize: 10.5,
+      width: 162,
+      whiteSpace: "nowrap",
+      textAlign: "center",
+      boxSizing: "border-box"
+    },
+    onClick: () => {
+      ["ibase_v_cols", "ibase_v_colw", "ibase_v_hidden", "ibase_v_rowh"].forEach(k => {
+        try {
+          localStorage.removeItem(k);
+        } catch (e) {}
+      });
+      setColOrder(defOrder);
+      setColW({});
+      setHiddenCols([]);
+      setRowH(40);
+      setRowHeights({});
+      setSort({ col: "date", dir: -1 }); // sorting back to the default display order
+      // …and the entire filtering section back to blank
+      setQ("");
+      setLabF("");
+      setBrandF("");
+      setMachineF("");
+      setTypeF("");
+      setEngF("");
+      setFrom("");
+      setTo("");
+      setColMenu(false);
+    }
+  }, "↺ Reset"), " ", canDeleteLogs ? (() => {
+    const nSel = Object.values(selected).filter(Boolean).length;
+    if (!delMode) return /*#__PURE__*/React.createElement("button", {
+      title: "Start deleting: press this FIRST, then select the visit row(s) to delete — administrators only",
+      style: { ...btnSt("var(--c-border)", "#fca5a5"), padding: "5px 6px", fontSize: 10.5, width: 162, whiteSpace: "nowrap", textAlign: "center", boxSizing: "border-box" },
+      onClick: () => { setSelected({}); setDelMode(true); }
+    }, "🗑 Delete service visit");
+    return /*#__PURE__*/React.createElement("div", { style: { display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid #ef4444", background: "rgba(239,68,68,.10)", borderRadius: 10, padding: "4px 8px" } },
+      /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, fontWeight: 800, color: "#f87171" } }, "Delete mode — click the row(s) to remove", nSel ? " (" + nSel + " selected)" : ""),
+      /*#__PURE__*/React.createElement("button", {
+        title: nSel ? "Move the selected visit(s) to the 🗑 Bin — asks to confirm first" : "Select at least one row",
+        disabled: !nSel,
+        style: { ...btnSt(nSel ? "#3a1d1d" : "var(--c-border)", nSel ? "#fca5a5" : "var(--c-text5)"), padding: "6px 10px", fontSize: 11.5, cursor: nSel ? "pointer" : "not-allowed" },
+        onClick: delSelectedVisits
+      }, "✓ Delete selected", nSel ? " (" + nSel + ")" : ""),
+      /*#__PURE__*/React.createElement("button", {
+        style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "6px 10px", fontSize: 11.5 },
+        onClick: () => { setDelMode(false); setSelected({}); }
+      }, "✕ Cancel"));
+  })() : null), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
@@ -10563,7 +10567,65 @@ function VisitsTab({
       fontSize: 11.5,
       color: "var(--c-text4)"
     }
-  }, shown.length, " of ", all.length, " visit(s) · ", labs.reduce((s, l) => s + (l.machines || []).length, 0), " machine(s) across ", labs.length, " laborator", labs.length === 1 ? "y" : "ies", selCount ? " · " + selCount + " highlighted" : "")), /*#__PURE__*/React.createElement("div", {
+  }, shown.length, " of ", all.length, " visit(s) · ", labs.reduce((s, l) => s + (l.machines || []).length, 0), " machine(s) across ", labs.length, " laborator", labs.length === 1 ? "y" : "ies", selCount ? " · " + selCount + " highlighted" : ""), /*#__PURE__*/React.createElement("div", {
+    style: { flex: 1, display: "flex", justifyContent: "center" }
+  }, /*#__PURE__*/React.createElement("button", {
+    title: "Show / hide columns (your view only)",
+    style: {
+      ...btnSt(colMenu ? "var(--c-key)" : "var(--c-border)", colMenu ? "var(--c-bg)" : "var(--c-text2)"),
+      padding: "5px 6px",
+      fontSize: 10.5,
+      width: 162,
+      whiteSpace: "nowrap",
+      textAlign: "center",
+      boxSizing: "border-box"
+    },
+    onClick: () => setColMenu(m => !m)
+  }, "🧩 Show/Hide Columns", hiddenCols.length ? " (" + (VGRID_COLS.length - hiddenCols.length) + "/" + VGRID_COLS.length + ")" : "")), colMenu && /*#__PURE__*/React.createElement("div", {
+    style: {
+      flexBasis: "100%",
+      minWidth: "100%",
+      order: 99,
+      display: "flex",
+      gap: 12,
+      flexWrap: "wrap",
+      alignItems: "center",
+      padding: "8px 12px",
+      border: "1px dashed var(--c-border)",
+      borderRadius: 8
+    }
+  }, VGRID_COLS.map(c => {
+    const on = !hiddenCols.includes(c.id);
+    const lastOne = on && VGRID_COLS.length - hiddenCols.length === 1;
+    return /*#__PURE__*/React.createElement("label", {
+      key: c.id,
+      title: lastOne ? "At least one column must stay visible" : on ? "Hide this column" : "Show this column",
+      style: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        fontSize: 11.5,
+        color: on ? "var(--c-text2)" : "var(--c-text5)",
+        cursor: lastOne ? "not-allowed" : "pointer",
+        userSelect: "none"
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: on,
+      disabled: lastOne,
+      style: {
+        cursor: lastOne ? "not-allowed" : "pointer"
+      },
+      onChange: () => setHiddenCols(h => on ? [...h, c.id] : h.filter(x => x !== c.id))
+    }), c.label);
+  }), hiddenCols.length ? /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnSt("var(--c-border)", "var(--c-text2)"),
+      padding: "3px 9px",
+      fontSize: 11
+    },
+    onClick: () => setHiddenCols([])
+  }, "↺ Show all") : null))), /*#__PURE__*/React.createElement("div", {
     style: {
       overflow: "auto",
       maxHeight: "calc(100vh - 330px)"
@@ -10600,7 +10662,7 @@ function VisitsTab({
       onDragOver: e => e.preventDefault(),
       onDrop: () => dropCol(id),
       onClick: () => clickSort(id),
-      title: "Click: sort · Drag: move column · Drag right edge: resize · 🧩 Columns manages visibility (your view only)"
+      title: "Click: sort · Drag: move column · Drag right edge: resize · 🧩 Show/Hide Columns manages visibility (your view only)"
     }, c.label, sort.col === id ? sort.dir === 1 ? " ▲" : " ▼" : "", /*#__PURE__*/React.createElement("span", {
       className: "ibzv-grip",
       onMouseDown: e => startResize(e, id),
@@ -11764,7 +11826,7 @@ function SmerTab({ profile, labs, notify }) {
     db.collection("config").doc("branding").set({ logoW: v2 }, { merge: true }).catch(e => notify("Resize failed: " + (e && e.message || e), "error"));
   }
   function rmLogo() {
-    if (!confirm("Remove the uploaded logo for ALL users? The default FAS mark will show instead.")) return;
+    if (!confirm("Remove the sheet logo for ALL users? The sheet will then print with no logo at all. This can be undone by uploading it agtead.")) return;
     db.collection("config").doc("branding").set({ logo: "" }, { merge: true }).then(() => notify("Logo removed \u2014 default mark restored for everyone.", "ok")).catch(e => notify("Remove failed: " + (e && e.message || e), "error"));
   }
   // Excel sizes a row to the image's REAL pixel height, ignoring the width/height
@@ -11805,7 +11867,7 @@ function SmerTab({ profile, labs, notify }) {
     const cells = r => [r.date, r.travel, r.kmFrom, r.kmTo, r.totalKm, r.instrument, r.isr, r.dcr, r.meals, r.parking];
     const body = f.rows.map(r => "<tr>" + cells(r).map((c, ci) => '<td style="text-align:' + alignOf(SMER_COLS[ci]) + '">' + esc(c) + "&nbsp;</td>").join("") + "</tr>").join("");
     const html = "<!doctype html><html><head><title>SMER</title><style>@page{size:A4 landscape;margin:8mm}@media print{html,body{width:297mm}}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:4px 6px}.logo{display:flex;align-items:center;gap:10px}.sq{display:grid;grid-template-columns:repeat(3,11px);grid-auto-rows:11px}.sq i{display:block}.sq i.b{background:#1a1a1a}.brand{border-left:1pt solid #000;padding-left:10px}.fas{font-weight:900;font-size:24px;letter-spacing:2px;line-height:1}.sub{font-size:9.5px;line-height:1.1}h1{font-size:13px;text-align:center;margin:-18px 0 8px;font-weight:800}.meta{font-size:11.5px;font-weight:700;margin:1px 0;display:flex}.meta em{font-style:normal;width:64px;flex-shrink:0}.meta span{font-weight:400;border-bottom:.5pt solid #000;display:inline-block;min-width:420px;padding:0 4px}.note{font-size:9.5px;font-style:italic;margin:2px 0 4px}table{width:100%;border-collapse:collapse;table-layout:fixed}table.main th,table.main td{border:.5pt solid #000;mso-border-alt:solid #000 .5pt;font-size:9.8px;padding:1px 3px;height:15.5px;overflow:hidden;white-space:nowrap}table.main th{font-weight:700;text-align:center}.y{background:#ffff00 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tot td{font-weight:700}.foot{width:100%;margin-top:10px;border-collapse:collapse}.foot td{border:none}.foot>tr>td{vertical-align:bottom}.sums{font-size:11px;border-collapse:collapse}.sums td{padding:1px 6px 1px 0;border:none}.sums .lbl{text-align:left;white-space:nowrap}.sums .u{border-bottom:.5pt solid #000;text-align:right;min-width:80px;padding-left:16px}.sums .n{text-align:right;min-width:80px;padding-left:16px}.sums .g td{font-weight:800;padding-top:2px}.sums .g .u{border-top:.5pt solid #000}.sums .g .lbl{border-top:none}.foot td.sigspace{height:26pt;mso-height-source:userset;text-align:center;vertical-align:bottom;border:none;overflow:hidden}.foot td.siggap{height:30pt;mso-height-source:userset;border:none}.foot td.sigline{border-top:.5pt solid #000;border-left:none;border-right:none;border-bottom:none;text-align:center;padding-top:2px;font-size:10.5px}</style></head><body>" +
-      '<div class="logo">' + (logo ? '<img src="' + logo + '" width="' + logoW + '" style="width:' + logoW + 'px;height:auto">' : '<div class="sq"><i class="b"></i><i></i><i class="b"></i><i></i><i class="b"></i><i></i><i class="b"></i><i class="b"></i><i></i></div><div class="brand"><div class="fas">FAS</div><div class="sub">Diagnostic<br>Group<br>Inc.</div></div>') + '</div>' +
+      '<div class="logo">' + (logo ? '<img src="' + logo + '" width="' + logoW + '" style="width:' + logoW + 'px;height:auto">' : '') + '</div>' +
       "<h1>SEMI-MONTHLY EXPENSE REPORT(SMER)</h1>" +
       '<div class="meta"><em>Name:</em><span>' + esc(f.name) + '</span></div><div class="meta"><em>Position:</em><span>' + esc(f.position) + '</span></div>' +
       '<div class="note">One hospital/laboratory per box. Pls use separate sheet if necessary.</div>' +
@@ -11846,7 +11908,7 @@ function SmerTab({ profile, labs, notify }) {
     const cells = r => [r.date, r.travel, r.kmFrom, r.kmTo, r.totalKm, r.instrument, r.isr, r.dcr, r.meals, r.parking];
     const body = f.rows.map(r => "<tr>" + cells(r).map((c, ci) => '<td style="text-align:' + alignOf(SMER_COLS[ci]) + '">' + esc(c) + "&nbsp;</td>").join("") + "</tr>").join("");
     const html = "<!doctype html><html><head><title></title><style>@page{size:A4 landscape;margin:0}@media print{html,body{width:297mm}}body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:8mm 8mm 6mm}.logo{display:flex;align-items:center;gap:10px}.sq{display:grid;grid-template-columns:repeat(3,11px);grid-auto-rows:11px}.sq i{display:block}.sq i.b{background:#1a1a1a}.brand{border-left:2px solid #000;padding-left:10px}.fas{font-weight:900;font-size:24px;letter-spacing:2px;line-height:1}.sub{font-size:9.5px;line-height:1.1}h1{font-size:13px;text-align:center;margin:-18px 0 8px;font-weight:800}.meta{font-size:11.5px;font-weight:700;margin:1px 0;display:flex}.meta em{font-style:normal;width:64px;flex-shrink:0}.meta span{font-weight:400;border-bottom:1px solid #000;display:inline-block;min-width:420px;padding:0 4px}.note{font-size:9.5px;font-style:italic;margin:2px 0 4px}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #000;font-size:9.8px;padding:1.5px 3px;height:15.5px;overflow:hidden;white-space:nowrap}th{font-weight:700;text-align:center}.y{background:#ffff00 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.tot td{font-weight:700}.foot{display:flex;justify-content:space-between;margin-top:10px}.sums{font-size:11px;width:300px}.sums div{display:flex;justify-content:space-between;padding:1px 0}.sums .u{border-bottom:1px solid #000;min-width:90px;text-align:right}.sums .n{min-width:90px;text-align:right}.sums .g{font-weight:800;border-top:1px solid #000;margin-top:3px;padding-top:3px}.sig{width:280px;text-align:center;font-size:10.5px}.sig .l{border-top:1px solid #000;margin-top:30px;padding-top:2px}</style></head><body>" +
-      '<div class="logo">' + (logo ? '<img src="' + logo + '" style="width:' + logoW + 'px;height:auto">' : '<div class="sq"><i class="b"></i><i></i><i class="b"></i><i></i><i class="b"></i><i></i><i class="b"></i><i class="b"></i><i></i></div><div class="brand"><div class="fas">FAS</div><div class="sub">Diagnostic<br>Group<br>Inc.</div></div>') + '</div>' +
+      '<div class="logo">' + (logo ? '<img src="' + logo + '" style="width:' + logoW + 'px;height:auto">' : '') + '</div>' +
       "<h1>SEMI-MONTHLY EXPENSE REPORT(SMER)</h1>" +
       '<div class="meta"><em>Name:</em><span>' + esc(f.name) + '</span></div><div class="meta"><em>Position:</em><span>' + esc(f.position) + '</span></div>' +
       '<div class="note">One hospital/laboratory per box. Pls use separate sheet if necessary.</div>' +
@@ -11943,18 +12005,7 @@ function SmerTab({ profile, labs, notify }) {
     style: { background: "#ffffff", color: "#000", border: "1px solid var(--c-border)", borderRadius: 6, padding: "14px 16px", width: "100%", boxSizing: "border-box", overflowX: "auto", boxShadow: "0 6px 24px rgba(0,0,0,.25)" }
   }, /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", alignItems: "center", gap: 10 }
-  }, logo ? /*#__PURE__*/React.createElement("img", { src: logo, alt: "company logo", style: { width: logoW, height: "auto", display: "block" } }) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-    style: { display: "grid", gridTemplateColumns: "repeat(3, 11px)", gridAutoRows: "11px" }
-  }, [1, 0, 1, 0, 1, 0, 1, 1, 0].map((b, i) => /*#__PURE__*/React.createElement("i", {
-    key: i,
-    style: { display: "block", background: b ? "#1a1a1a" : "transparent" }
-  }))), /*#__PURE__*/React.createElement("div", {
-    style: { borderLeft: "2px solid #000", paddingLeft: 10 }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: { fontWeight: 900, fontSize: 24, letterSpacing: 2, lineHeight: 1 }
-  }, "FAS"), /*#__PURE__*/React.createElement("div", {
-    style: { fontSize: 9.5, lineHeight: 1.1 }
-  }, "Diagnostic", /*#__PURE__*/React.createElement("br", null), "Group", /*#__PURE__*/React.createElement("br", null), "Inc."))), /*#__PURE__*/React.createElement("div", {
+  }, logo ? /*#__PURE__*/React.createElement("img", { src: logo, alt: "company logo", style: { width: logoW, height: "auto", display: "block" } }) : null, /*#__PURE__*/React.createElement("div", {
     style: { flex: 1, textAlign: "center", fontWeight: 800, fontSize: 14, alignSelf: "center" }
   }, "SEMI-MONTHLY EXPENSE REPORT(SMER)")), /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 12, fontWeight: 700, margin: "6px 0 1px", display: "flex", gap: 6 }
@@ -13248,7 +13299,7 @@ function OvertimeTab({
       fontSize: 11.5,
       color: "var(--c-text4)"
     }
-  }, "Computed automatically from service-visit departure/arrival (or work start/end) times.")), isMgr && /*#__PURE__*/React.createElement("button", {
+  }, "Computed automatically from service-visit departure/arrival (or work start/end) times.")), (isMgr || isOwnerAcct(profile)) && /*#__PURE__*/React.createElement("button", {
     style: {
       ...btnSt("var(--c-border)", "var(--c-text2)"),
       marginLeft: "auto"
@@ -13713,7 +13764,7 @@ function OvertimeTab({
     }
   }, "Employees with no logged days in this period are hidden from this summary.")), selectedEng !== "__all__" && /*#__PURE__*/React.createElement(DayTable, {
     engName: selectedEng
-  })), showSettings && /*#__PURE__*/React.createElement(OtSettingsModal, {
+  })), showSettings && (isMgr || isOwnerAcct(profile)) && /*#__PURE__*/React.createElement(OtSettingsModal, {
     otSettings: otSettings,
     holidays: holidays,
     notify: notify,
@@ -16739,15 +16790,32 @@ function DangerZone({
     }
   }, "Inventory, spare parts and overtime land in the Bin as one restorable entry each. The audit trail is different: security rules make audit entries immutable, so deleting them is ", /*#__PURE__*/React.createElement("b", null, "permanent"), " — and the deletion itself is recorded as a fresh audit entry.")));
 }
-const TAB_ANIMS = [["default", "Default", "the system default (Bounce)"], ["none", "None", "no animation at all"], ["bounce", "Bounce", "springs up with a playful overshoot"], ["bubble", "Bubble", "inflates softly like a bubble"], ["zoom", "Zoom", "zooms in and settles"], ["slide", "Slide", "glides in from the left"], ["fade", "Fade", "a clean, calm cross-fade"], ["flip", "Flip", "flips forward in 3-D"], ["drop", "Drop", "falls from above and lands with a bounce"], ["swing", "Swing", "swings in from the top corner"], ["blur", "Blur", "sharpens into focus"], ["wipe", "Wipe", "reveals left-to-right like a curtain"], ["spin", "Spin", "twists in with a quick quarter-turn"], ["elastic", "Elastic", "stretches like jelly and snaps into shape"], ["rise", "Rise", "rises smoothly from below"], ["skew", "Skew", "slants in and straightens up"], ["glow", "Glow", "fades in with a bright flash"], ["curtain", "Curtain", "unrolls from the top like a curtain"], ["sweep", "Sweep", "sweeps in with a diagonal wipe"], ["spiral", "Spiral", "spins inward and settles"], ["newspaper", "Newspaper", "whirls in like a spinning headline"], ["stretch", "Stretch", "expands out from a horizontal line"], ["glitch", "Glitch", "snaps in with a digital jitter"], ["fold", "Fold", "folds down like a sheet of paper"], ["iris", "Iris", "opens from the center like a camera iris"], ["shutter", "Shutter", "opens like horizontal shutters"], ["tumble", "Tumble", "tumbles in with a rolling spin"], ["pop", "Pop", "pops in with a snappy overshoot"], ["drift", "Drift", "drifts in gently from the corner"], ["wave", "Wave", "sways in and settles like a wave"]];
+const TAB_ANIMS = [["default", "Default", "the system default (Drift for content, Elastic for tabs)"], ["none", "None", "no animation at all"], ["bounce", "Bounce", "springs up with a playful overshoot"], ["bubble", "Bubble", "inflates softly like a bubble"], ["zoom", "Zoom", "zooms in and settles"], ["slide", "Slide", "glides in from the left"], ["fade", "Fade", "a clean, calm cross-fade"], ["flip", "Flip", "flips forward in 3-D"], ["drop", "Drop", "falls from above and lands with a bounce"], ["swing", "Swing", "swings in from the top corner"], ["blur", "Blur", "sharpens into focus"], ["wipe", "Wipe", "reveals left-to-right like a curtain"], ["spin", "Spin", "twists in with a quick quarter-turn"], ["elastic", "Elastic", "stretches like jelly and snaps into shape"], ["rise", "Rise", "rises smoothly from below"], ["skew", "Skew", "slants in and straightens up"], ["glow", "Glow", "fades in with a bright flash"], ["curtain", "Curtain", "unrolls from the top like a curtain"], ["sweep", "Sweep", "sweeps in with a diagonal wipe"], ["spiral", "Spiral", "spins inward and settles"], ["newspaper", "Newspaper", "whirls in like a spinning headline"], ["stretch", "Stretch", "expands out from a horizontal line"], ["glitch", "Glitch", "snaps in with a digital jitter"], ["fold", "Fold", "folds down like a sheet of paper"], ["iris", "Iris", "opens from the center like a camera iris"], ["shutter", "Shutter", "opens like horizontal shutters"], ["tumble", "Tumble", "tumbles in with a rolling spin"], ["pop", "Pop", "pops in with a snappy overshoot"], ["drift", "Drift", "drifts in gently from the corner"], ["wave", "Wave", "sways in and settles like a wave"]];
 // "default" resolves to the system default style.
 // PER-USER: reads the local ui preference object — never the shared catalog.
-function tabAnimStyle(ui) {
-  const v = ui && ui.style || "default";
-  return v === "default" ? "bounce" : v;
+// PER-TARGET animations: the tab CONTENT and the tab BUTTONS each keep their
+// own style. System defaults: Drift for the content, Elastic for the buttons.
+// Older versions stored a single { style, scope } pair — migrated on read so a
+// user who already chose something keeps exactly what they had.
+function tabAnimPrefs(ui) {
+  var c = ui && ui.content || "";
+  var t = ui && ui.tabs || "";
+  if (!c || !t) {
+    // Only a REAL earlier style choice is carried over. An old "Default" + scope
+    // pair is NOT a choice, so those users get the current rule: Elastic on the
+    // tab buttons, Drift on the tab content.
+    var st = ui && ui.style && ui.style !== "default" ? ui.style : "";
+    var sc = ui && ui.scope || "";
+    if (st) {
+      if (!c) c = sc === "tabs" ? "none" : st;
+      if (!t) t = sc === "content" ? "none" : st;
+    }
+  }
+  return { content: c || "drift", tabs: t || "elastic" };
 }
-function tabAnimScope(ui) {
-  return ui && ui.scope || "content";
+function tabAnimStyle(ui, target) {
+  var p = tabAnimPrefs(ui);
+  return target === "tabs" ? p.tabs : p.content;
 }
 function AnimationsCard({
   uiAnim,
@@ -16755,57 +16823,237 @@ function AnimationsCard({
 }) {
   // PER-USER, DEVICE-LOCAL: saved in this browser only. Nothing is written to
   // the server, nothing is audited, and no account details are involved.
-  // Selecting a style only PREVIEWS it — nothing changes until ✔ Apply.
-  const cur = uiAnim && uiAnim.style || "default";
-  const scope = uiAnim && uiAnim.scope || "content";
-  const [pendStyle, setPendStyle] = useState(null);
-  const [pendScope, setPendScope] = useState(null);
+  // EACH TARGET KEEPS ITS OWN ANIMATION. Choose "Apply to" first: the ✓ on the
+  // style row always sits on the animation that target is actually using, so a
+  // glance tells you what is set (defaults: Drift content · Elastic buttons).
+  const applied = tabAnimPrefs(uiAnim);
+  const [target, setTarget] = useState("content");
+  const [pendC, setPendC] = useState(null);
+  const [pendT, setPendT] = useState(null);
   const [nonce, setNonce] = useState(0);
-  const selStyle = pendStyle === null ? cur : pendStyle;
-  const selScope = pendScope === null ? scope : pendScope;
-  const dirty = selStyle !== cur || selScope !== scope;
-  const selDef = TAB_ANIMS.find(a => a[0] === selStyle) || TAB_ANIMS[0];
-  const previewCls = "anim-" + (selStyle === "default" ? "bounce" : selStyle);
+  const selC = pendC === null ? applied.content : pendC;
+  const selT = pendT === null ? applied.tabs : pendT;
+  const dirty = selC !== applied.content || selT !== applied.tabs;
+  // Which style carries the ✓ right now: the one belonging to the chosen target
+  // ("Both" shows it only when the two targets share the same animation).
+  const shown = target === "tabs" ? selT : target === "content" ? selC : selC === selT ? selC : "";
+  const animLabel = id => (TAB_ANIMS.find(a => a[0] === id) || TAB_ANIMS[0])[1];
+  const animDesc = id => (TAB_ANIMS.find(a => a[0] === id) || TAB_ANIMS[0])[2];
+  const pair = (c, t) => "\ud83d\uddd4 Tab content: " + animLabel(c) + " \u00b7 \ud83d\udcd1 Tab buttons: " + animLabel(t);
+  const pick = id => {
+    const resolve = tt => id === "default" ? tt === "tabs" ? "elastic" : "drift" : id;
+    if (target !== "tabs") setPendC(resolve("content"));
+    if (target !== "content") setPendT(resolve("tabs"));
+    setNonce(n => n + 1);
+  };
+  const previewId = shown || selC;
+  const previewCls = "anim-" + previewId;
   return /*#__PURE__*/React.createElement("div", { style: cardSt },
-    /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 6 } }, "🎬 Animations"),
+    /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 6 } }, "\ud83c\udfac Animations"),
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, color: "var(--c-text5)", marginBottom: 12 } },
       "How the tabs animate when switching. Your choice applies ", /*#__PURE__*/React.createElement("b", null, "only to you, on this device"),
-      ". Pick a style to preview it — nothing changes until you press ", /*#__PURE__*/React.createElement("b", null, "✔ Apply"), "."),
+      ". Pick a style to preview it \u2014 nothing changes until you press ", /*#__PURE__*/React.createElement("b", null, "\u2714 Apply"), "."),
     /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 } },
       TAB_ANIMS.map(([id, label, desc]) => /*#__PURE__*/React.createElement("button", {
         key: id,
-        title: desc + (id === cur ? " (currently applied)" : ""),
-        onClick: () => { setPendStyle(id); setNonce(n => n + 1); },
-        style: { ...btnSt(selStyle === id ? "var(--c-key)" : "var(--c-border)", selStyle === id ? "var(--c-bg)" : "var(--c-text2)"), fontSize: 12, width: 110, textAlign: "center", boxSizing: "border-box" }
-      }, selStyle === id ? "✓ " : "", label, id === cur && selStyle !== id ? " ·" : ""))),
+        title: desc,
+        onClick: () => pick(id),
+        style: { ...btnSt(shown === id ? "var(--c-key)" : "var(--c-border)", shown === id ? "var(--c-bg)" : "var(--c-text2)"), fontSize: 12, width: 110, textAlign: "center", boxSizing: "border-box" }
+      }, shown === id ? "\u2713 " : "", label))),
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 6 } }, "Apply to"),
     /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 } },
-      [["content", "🗔 Tab content", "the page area animates in"], ["tabs", "📑 Tab buttons", "the sidebar tab itself animates"], ["both", "✨ Both", "content and tab button together"]].map(([id, label, desc]) => /*#__PURE__*/React.createElement("button", {
+      [["content", "\ud83d\uddd4 Tab content", "the page area animates in"], ["tabs", "\ud83d\udcd1 Tab buttons", "the sidebar tab itself animates"], ["both", "\u2728 Both", "set content and tab button together"]].map(([id, label, desc]) => /*#__PURE__*/React.createElement("button", {
         key: id,
         title: desc,
-        onClick: () => { setPendScope(id); setNonce(n => n + 1); },
-        style: { ...btnSt(selScope === id ? "var(--c-key)" : "var(--c-border)", selScope === id ? "var(--c-bg)" : "var(--c-text2)"), fontSize: 12 }
-      }, selScope === id ? "✓ " : "", label))),
+        onClick: () => { setTarget(id); setNonce(n => n + 1); },
+        style: { ...btnSt(target === id ? "var(--c-key)" : "var(--c-border)", target === id ? "var(--c-bg)" : "var(--c-text2)"), fontSize: 12 }
+      }, target === id ? "\u2713 " : "", label))),
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 6 } }, "Preview"),
     /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 12, alignItems: "center", marginBottom: 14, flexWrap: "wrap" } },
       /*#__PURE__*/React.createElement("div", {
         key: nonce,
-        className: selStyle === "none" ? "" : previewCls,
+        className: previewId === "none" ? "" : previewCls,
         style: { border: "1px solid var(--c-border)", borderRadius: 10, padding: "14px 22px", fontSize: 12.5, color: "var(--c-text2)", background: "var(--c-bg)" }
-      }, "🗔 ", selDef[1], " — ", selDef[2]),
-      /*#__PURE__*/React.createElement("button", { style: { ...btnSt("var(--c-border)", "var(--c-text2)"), fontSize: 11.5 }, onClick: () => setNonce(n => n + 1) }, "▶ Replay")),
+      }, "\ud83d\uddd4 ", animLabel(previewId), " \u2014 ", animDesc(previewId)),
+      /*#__PURE__*/React.createElement("button", { style: { ...btnSt("var(--c-border)", "var(--c-text2)"), fontSize: 11.5 }, onClick: () => setNonce(n => n + 1) }, "\u25b6 Replay")),
     dirty ? /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "9px 12px", border: "1px dashed var(--c-key)", borderRadius: 10 } },
-      /*#__PURE__*/React.createElement("span", { style: { fontSize: 12, color: "var(--c-text3)" } }, "Selected: ", /*#__PURE__*/React.createElement("b", { style: { color: "var(--c-text2)" } }, selDef[1]), " — not applied yet."),
+      /*#__PURE__*/React.createElement("span", { style: { fontSize: 12, color: "var(--c-text3)" } }, "Selected: ", /*#__PURE__*/React.createElement("b", { style: { color: "var(--c-text2)" } }, pair(selC, selT)), " \u2014 not applied yet."),
       /*#__PURE__*/React.createElement("button", {
         style: btnSt("var(--c-key)", "var(--c-bg)"),
         onClick: () => {
-          if (!confirm("Set \u201C" + selDef[1] + "\u201D as your tab animation on this device?")) return;
-          onUiAnim({ style: selStyle, scope: selScope });
-          setPendStyle(null); setPendScope(null);
+          if (!confirm("Set " + pair(selC, selT) + " on this device?")) return;
+          onUiAnim({ content: selC, tabs: selT });
+          setPendC(null); setPendT(null);
         }
-      }, "✔ Apply animation"),
-      /*#__PURE__*/React.createElement("button", { style: btnSt("var(--c-border)", "var(--c-text2)"), onClick: () => { setPendStyle(null); setPendScope(null); setNonce(n => n + 1); } }, "↺ Cancel")) :
-    /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, color: "var(--c-text5)" } }, "Currently applied: ", /*#__PURE__*/React.createElement("b", { style: { color: "var(--c-text3)" } }, (TAB_ANIMS.find(a => a[0] === cur) || TAB_ANIMS[0])[1])));
+      }, "\u2714 Apply animation")) :
+    /*#__PURE__*/React.createElement("div", { style: { fontSize: 11.5, color: "var(--c-text5)" } }, "Currently applied: ", /*#__PURE__*/React.createElement("b", { style: { color: "var(--c-text3)" } }, pair(applied.content, applied.tabs))));
+}
+// ═════════ 🛡 BACKUP & RESTORE — the administrators' danger zone ═════════
+// Whole-database backup to ONE JSON file and whole-database restore from it.
+// Separate from the owner's Vault. Re-authentication (Google-verified password)
+// is required; 3 consecutive wrong attempts lock this function for 24 hours
+// (recorded on the user's own doc + this device), and every failed attempt is
+// audited AND broadcast to all administrators. The sole owner is traceless.
+const BR_COLLECTIONS = ["labs", "inventory", "spareParts", "reagents", "sales", "otApplications", "wpoa", "smer", "bin", "audit", "attachments", "config", "users"];
+function BackupRestoreCard({ profile, notify }) {
+  const iAmOwner = isOwnerAcct(profile) || isOwnerAcct(auth.currentUser);
+  const [emailIn, setEmailIn] = useState("");
+  const [pw, setPw] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [unlocked, setUnlocked] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [plan, setPlan] = useState(null);
+  const [tick, setTick] = useState(0);
+  const GKEY = "ibase_brGuard";
+  const localGuard = () => { try { return JSON.parse(localStorage.getItem(GKEY)) || {}; } catch (e) { return {}; } };
+  const guard = (() => {
+    const g = localGuard();
+    const rF = Number(profile && profile.brFails) || 0, lF = Number(g.fails) || 0;
+    const rU = profile && profile.brLockedUntil ? Date.parse(profile.brLockedUntil) || 0 : 0;
+    const lU = g.lockedUntil ? Date.parse(g.lockedUntil) || 0 : 0;
+    return { fails: Math.max(rF, lF), lockedUntil: Math.max(rU, lU) };
+  })();
+  const lockLeft = guard.lockedUntil - Date.now();
+  const locked = lockLeft > 0 && !iAmOwner;
+  const leftTxt = ms => { const h = Math.floor(ms / 3600000), m = Math.ceil(ms % 3600000 / 60000); return h + " hr " + m + " min"; };
+  useEffect(() => { if (!locked) return; const t = setInterval(() => setTick(x => x + 1), 30000); return () => clearInterval(t); }, [locked]);
+  function recordFail() {
+    if (iAmOwner) return; // the owner is traceless and can never be locked out
+    const fails = (guard.fails || 0) + 1;
+    const lockedUntil = fails >= 3 ? new Date(Date.now() + 24 * 3600 * 1000).toISOString() : "";
+    try { localStorage.setItem(GKEY, JSON.stringify({ fails: fails, lockedUntil: lockedUntil })); } catch (e) {}
+    const uid = auth.currentUser && auth.currentUser.uid;
+    if (uid) db.collection("users").doc(uid).set({ brFails: fails, brLockedUntil: lockedUntil }, { merge: true }).catch(() => {});
+    const em = meEmail(profile) || auth.currentUser && auth.currentUser.email || "unknown";
+    logAudit(profile, "br.fail", em + " \u2014 wrong Backup & Restore password (attempt " + fails + " of 3)" + (lockedUntil ? " \u2014 LOCKED for 24 hours" : ""));
+    db.collection("adminAlerts").add({ type: "br.fail", email: scrubOwner(em), fails: fails, locked: !!lockedUntil, at: new Date().toISOString() }).catch(() => {});
+    setTick(x => x + 1);
+    notify(fails >= 3 ? "\u26d4 3 wrong attempts \u2014 Backup & Restore is LOCKED for you for 24 hours." : "Wrong credentials \u2014 attempt " + fails + " of 3.", "error");
+  }
+  function clearFails() {
+    try { localStorage.removeItem(GKEY); } catch (e) {}
+    const uid = auth.currentUser && auth.currentUser.uid;
+    if (uid) db.collection("users").doc(uid).set({ brFails: 0, brLockedUntil: "" }, { merge: true }).catch(() => {});
+  }
+  async function unlock() {
+    if (locked) { notify("\u26d4 Locked \u2014 try again in " + leftTxt(lockLeft) + ".", "error"); return; }
+    if (!emailIn || !pw) { notify("Enter your administrator email AND password.", "error"); return; }
+    setChecking(true);
+    try {
+      const u = auth.currentUser;
+      if (!u || !u.email) throw new Error("no-user");
+      if (String(emailIn).trim().toLowerCase() !== String(u.email).toLowerCase()) {
+        recordFail(); setChecking(false); setPw(""); return;
+      }
+      const cred = firebase.auth.EmailAuthProvider.credential(u.email, pw);
+      await u.reauthenticateWithCredential(cred); // verified by Google's servers
+      clearFails();
+      setUnlocked(true); setPw("");
+      if (!iAmOwner) logAudit(profile, "br.unlock", u.email);
+      notify("\ud83d\udee1 Backup & Restore unlocked for this session.", "ok");
+    } catch (e) {
+      recordFail(); setPw("");
+    }
+    setChecking(false);
+  }
+  async function runBackup() {
+    if (busy) return;
+    try {
+      const out = { app: "iBase", kind: "ibase-full-backup", at: new Date().toISOString(), by: scrubOwner(meEmail(profile) || ""), collections: {}, counts: {} };
+      for (const c of BR_COLLECTIONS) {
+        setBusy("Reading " + c + "\u2026");
+        const snap = await db.collection(c).get();
+        const m = {}; snap.forEach(d => { m[d.id] = d.data(); });
+        out.collections[c] = m; out.counts[c] = snap.size;
+      }
+      const total = Object.keys(out.counts).reduce((a, k) => a + out.counts[k], 0);
+      const blob = new Blob([JSON.stringify(out)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "ibase-backup-" + out.at.slice(0, 19).replace(/[T:]/g, "-") + ".json";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      if (!iAmOwner) logAudit(profile, "br.backup", total + " doc(s) across " + BR_COLLECTIONS.length + " collections");
+      notify("\u2705 Backup downloaded \u2014 " + total + " document(s) across " + BR_COLLECTIONS.length + " collections.", "ok");
+    } catch (e) {
+      notify("Backup failed: " + (e && e.message || e), "error");
+    }
+    setBusy("");
+  }
+  function pickFile(file) {
+    if (!file) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const data = JSON.parse(String(rd.result || ""));
+        if (!data || data.kind !== "ibase-full-backup" || !data.collections) throw new Error("Not an iBase full-backup file.");
+        let total = 0; const parts = [];
+        BR_COLLECTIONS.forEach(c => { const n = Object.keys(data.collections[c] || {}).length; total += n; if (n) parts.push(c + " " + n); });
+        setPlan({ data: data, total: total, parts: parts.join(" \u00b7 "), at: data.at || "?" });
+      } catch (e) {
+        setPlan(null);
+        notify("Could not read that file: " + (e && e.message || e), "error");
+      }
+    };
+    rd.readAsText(file);
+  }
+  async function runRestore() {
+    if (!plan || busy) return;
+    if (!confirm("\u26a0 RESTORE EVERYTHING?\\n\\nThis replaces the ENTIRE database with the backup from " + plan.at + " (" + plan.total + " documents). Current data that is not in the file will be DELETED. This cannot be undone.")) return;
+    try {
+      const myUid = auth.currentUser && auth.currentUser.uid;
+      const order = BR_COLLECTIONS.filter(c => c !== "users").concat(["users"]); // my own account last
+      for (const c of order) {
+        const want = plan.data.collections[c] || {};
+        const wantIds = new Set(Object.keys(want));
+        setBusy("Restoring " + c + " (" + wantIds.size + ")\u2026");
+        let batch = db.batch(), n = 0;
+        const flush = async () => { if (n) { await batch.commit(); batch = db.batch(); n = 0; } };
+        if (c !== "config") {
+          const snap = await db.collection(c).get();
+          for (const d of snap.docs) {
+            if (wantIds.has(d.id)) continue;
+            if (c === "users" && d.id === myUid) continue; // never delete the restoring admin mid-flight
+            batch.delete(d.ref); n++;
+            if (n >= 400) await flush();
+          }
+        }
+        for (const id of wantIds) {
+          batch.set(db.collection(c).doc(id), want[id]); n++;
+          if (n >= 400) await flush();
+        }
+        await flush();
+      }
+      if (!iAmOwner) logAudit(profile, "br.restore", plan.total + " doc(s) restored from backup of " + plan.at);
+      notify("\u2705 Restore complete \u2014 " + plan.total + " document(s) written. Everything is back.", "ok");
+      setPlan(null);
+    } catch (e) {
+      notify("Restore stopped: " + (e && e.message || e), "error");
+    }
+    setBusy("");
+  }
+  const inSt = { padding: "8px 10px", fontSize: 13, background: "var(--c-bg)", color: "var(--c-text)", border: "1px solid var(--c-border)", borderRadius: 8, minWidth: 230 };
+  return /*#__PURE__*/React.createElement("div", { style: cardSt },
+    /*#__PURE__*/React.createElement("div", { style: { fontWeight: 800, fontSize: 15, marginBottom: 4 } }, "\ud83d\udee1 Backup & Restore \u2014 administrators' danger zone"),
+    /*#__PURE__*/React.createElement("div", { style: { fontSize: 12, color: "var(--c-text4)", marginBottom: 14 } },
+      "One click backs up the ENTIRE system to a single file \u2014 LOGS & institutions, machine / spare-parts / reagents inventories, sales, overtime applications & settings & saved forms, WPOA, SMER, the Bin, attachments, every user's settings and all configuration. Restoring replaces everything with the file's contents. 3 wrong password attempts lock this page for 24 hours and every administrator is alerted."),
+    locked ? /*#__PURE__*/React.createElement("div", { style: { padding: "14px 16px", border: "1px solid #7f1d1d", background: "rgba(127,29,29,.15)", borderRadius: 10, fontSize: 13, color: "#fca5a5", fontWeight: 700 } },
+      "\u26d4 Locked after 3 wrong attempts. Try again in " + leftTxt(lockLeft) + ".") :
+    !unlocked ? /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" } },
+      /*#__PURE__*/React.createElement("input", { type: "email", placeholder: "administrator email", value: emailIn, onChange: e => setEmailIn(e.target.value), style: inSt, autoComplete: "username" }),
+      /*#__PURE__*/React.createElement("input", { type: "password", placeholder: "password", value: pw, onChange: e => setPw(e.target.value), onKeyDown: e => { if (e.key === "Enter") unlock(); }, style: inSt, autoComplete: "current-password" }),
+      /*#__PURE__*/React.createElement("button", { style: btnSt("var(--c-key)", "var(--c-bg)"), disabled: checking, onClick: unlock }, checking ? "\u23f3 Verifying\u2026" : "\ud83d\udd13 Verify & open"),
+      guard.fails > 0 ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, color: "#fca5a5", fontWeight: 700 } }, guard.fails + " of 3 wrong attempts") : null) :
+    /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "12px 14px", border: "1px solid var(--c-border)", borderRadius: 10 } },
+        /*#__PURE__*/React.createElement("button", { style: { ...btnSt("var(--c-key)", "var(--c-bg)"), fontSize: 13.5, padding: "10px 16px" }, disabled: !!busy, onClick: runBackup }, "\u2b07 Backup EVERYTHING now \u2014 one file"),
+        /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, color: "var(--c-text5)" } }, "Reads all " + BR_COLLECTIONS.length + " collections and downloads a single .json file.")),
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "12px 14px", border: "1px solid #7f1d1d", borderRadius: 10 } },
+        /*#__PURE__*/React.createElement("input", { type: "file", accept: "application/json,.json", id: "brRestoreFile", style: { display: "none" }, onChange: e => { pickFile(e.target.files && e.target.files[0]); e.target.value = ""; } }),
+        /*#__PURE__*/React.createElement("button", { style: btnSt("var(--c-border)", "var(--c-text2)"), disabled: !!busy, onClick: () => { const el = document.getElementById("brRestoreFile"); if (el) el.click(); } }, "\ud83d\udcc2 Choose backup file\u2026"),
+        plan ? /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, color: "var(--c-text3)" } }, "Backup of ", /*#__PURE__*/React.createElement("b", null, plan.at), " \u2014 ", plan.total, " doc(s): ", plan.parts) : /*#__PURE__*/React.createElement("span", { style: { fontSize: 11.5, color: "var(--c-text5)" } }, "No file chosen yet."),
+        plan ? /*#__PURE__*/React.createElement("button", { style: { ...btnSt("#7f1d1d", "#fca5a5"), fontSize: 13, padding: "9px 14px" }, disabled: !!busy, onClick: runRestore }, "\u267b Restore EVERYTHING") : null),
+      busy ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, fontWeight: 700, color: "var(--c-key)" } }, "\u23f3 " + busy) : null));
 }
 function SettingsTab({
   profile,
@@ -16834,7 +17082,7 @@ function SettingsTab({
       db.doc("config/themes").set({ ov: next }).catch(e => notify("Theme save refused: " + e.message, "error"));
     }, 350);
   };
-  const authorAlpha = themeOv && themeOv.authorAlpha != null ? Number(themeOv.authorAlpha) : 1;
+  const authorAlpha = themeOv && themeOv.authorAlpha != null ? Number(themeOv.authorAlpha) : 0;
   const aaTimer = React.useRef(null);
   const [aaLoc, setAaLoc] = useState(null);
   const writeAuthorAlpha = v => {
@@ -16866,7 +17114,7 @@ function SettingsTab({
     const d = readThemeDefaults(id);
     const color = l.color != null ? l.color : o.color != null ? o.color : d.key || "#38bdf8";
     const alpha = l.alpha != null ? l.alpha : o.alpha != null ? o.alpha : 255;
-    return { color: color, alpha: Number(alpha), defKey: d.key || "#38bdf8", card: d.card || "#111827", bg: d.bg || "#0a0f1e", overridden: o.color != null || o.alpha != null || l.color != null || l.alpha != null };
+    return { color: color, alpha: Number(alpha), defKey: d.key || "#38bdf8", card: d.card || "#111827", bg: d.bg || "#0a0f1e", text: d.text || "#e5e7eb", overridden: o.color != null || o.alpha != null || l.color != null || l.alpha != null };
   };
   const brands = sortAlpha(catalog && catalog.brands || []);
   const roleOptions = sortAlpha(Array.from(new Set([...ENGINEER_ROLES, ...(catalog && catalog.roles || []), ...users.map(u => String(u.role || "").trim()).filter(Boolean)])));
@@ -17194,13 +17442,16 @@ function SettingsTab({
       fontWeight: 800
     }
   }, s.label);
-  const setSubBar = iAmOwner ? /*#__PURE__*/React.createElement("div", {
-    style: { display: "flex", gap: 8, marginBottom: 14 }
-  }, ["general", "themes"].map(v2 => /*#__PURE__*/React.createElement("button", {
+  const canBR = !!(profile && profile.isAdmin) || iAmOwner;
+  const setTabs = ["general"].concat(iAmOwner ? ["themes"] : []).concat(canBR ? ["backup"] : []);
+  const setSubBar = setTabs.length > 1 ? /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }
+  }, setTabs.map(v2 => /*#__PURE__*/React.createElement("button", {
     key: v2,
     onClick: () => setSetView(v2),
     style: btnSt(setView === v2 ? "var(--c-key)" : "var(--c-border)", setView === v2 ? "var(--c-bg)" : "var(--c-text2)")
-  }, v2 === "general" ? "⚙ General" : "🎨 Theme Studio"))) : null;
+  }, v2 === "general" ? "⚙ General" : v2 === "themes" ? "🎨 Theme Studio" : "🛡 Backup & Restore"))) : null;
+  if (canBR && setView === "backup") return /*#__PURE__*/React.createElement("div", null, setSubBar, /*#__PURE__*/React.createElement(BackupRestoreCard, { profile: profile, notify: notify }));
   if (iAmOwner && setView === "themes") return /*#__PURE__*/React.createElement("div", null, setSubBar, /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
@@ -17220,10 +17471,18 @@ function SettingsTab({
     onChange: e => writeAuthorAlpha(Number(e.target.value) / 255),
     style: { width: 64, padding: "4px 6px", background: "var(--c-bg)", color: "var(--c-text)", border: "1px solid var(--c-border)", borderRadius: 6, textAlign: "center" }
   }), /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: "var(--c-text4)", minWidth: 118 } }, "/ 255 opacity \u00b7 all users"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => writeAuthorAlpha(1),
-    title: "Full visibility (255)",
+    onClick: () => writeAuthorAlpha(0),
+    title: "Invisible (0) \u2014 the default",
     style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "4px 10px", fontSize: 11 }
-  }, "\u21ba Default")), THEMES.map(t2 => {
+  }, "\u21ba Default"), /*#__PURE__*/React.createElement("div", {
+    style: { flexBasis: "100%", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { flex: 1, minWidth: 220, border: "1px dashed var(--c-border)", borderRadius: 8, background: "var(--c-bg)", padding: "10px 12px", textAlign: "center" }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 9, color: "var(--c-text)", opacity: aaLoc != null ? aaLoc : authorAlpha, letterSpacing: 2, textTransform: "uppercase" }
+  }, "Developed & Designed By: Rex Banihit")), /*#__PURE__*/React.createElement("span", {
+    style: { fontSize: 10.5, color: "var(--c-text5)" }
+  }, "\ud83d\udc41 live preview \u2014 the login credit at ", /*#__PURE__*/React.createElement("b", { style: { color: "var(--c-text3)" } }, Math.round((aaLoc != null ? aaLoc : authorAlpha) * 255) + "/255"), " on the current theme"))), THEMES.map(t2 => {
     const e2 = effT(t2.id);
     return /*#__PURE__*/React.createElement("div", {
       key: t2.id,
@@ -17238,7 +17497,12 @@ function SettingsTab({
       style: { minWidth: 170, fontWeight: 700, fontSize: 13 }
     }, t2.label, e2.overridden ? /*#__PURE__*/React.createElement("span", {
       style: { marginLeft: 8, fontSize: 10, color: "var(--c-key)", fontWeight: 800 }
-    }, "custom") : null), /*#__PURE__*/React.createElement("label", {
+    }, "custom") : null), /*#__PURE__*/React.createElement("div", {
+      title: "How the login credit looks on this theme at " + Math.round((aaLoc != null ? aaLoc : authorAlpha) * 255) + "/255",
+      style: { flex: 1, minWidth: 200, background: e2.bg, border: "1px solid var(--c-border)", borderRadius: 6, padding: "6px 10px", textAlign: "center", overflow: "hidden" }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 8.5, color: e2.text, opacity: aaLoc != null ? aaLoc : authorAlpha, letterSpacing: 1.5, textTransform: "uppercase", whiteSpace: "nowrap" }
+    }, "Developed & Designed By: Rex Banihit")), /*#__PURE__*/React.createElement("label", {
       style: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--c-text3)" }
     }, "Color", /*#__PURE__*/React.createElement("input", {
       type: "color",
@@ -17681,7 +17945,7 @@ function SettingsTab({
       color: "var(--c-text5)",
       marginBottom: 12
     }
-  }, "Who may ", /*#__PURE__*/React.createElement("b", null, "extract/download"), " from iBase. Default: ", /*#__PURE__*/React.createElement("b", null, "nobody"), " — only the owner can always download. Tick a box to grant that user the surface; untick to revoke. Applies to administrators too."), /*#__PURE__*/React.createElement("div", {
+  }, "Who may ", /*#__PURE__*/React.createElement("b", null, "extract/download"), " from iBase. Default: ", /*#__PURE__*/React.createElement("b", null, "nobody"), " by default. Tick a box to grant that user the surface; untick to revoke. Applies to administrators too."), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "minmax(180px,1.4fr) repeat(" + DL_SURFACES.length + ", 1fr)",
@@ -18542,7 +18806,7 @@ function AdminManager({
     const u = admins.find(x => x.id === pickDemote);
     if (!u) return;
     if (!iAmOwner && (!me || u.id !== me.id)) {
-      notify("Administrators can only step down THEMSELVES — only the owner can demote another administrator.", "error");
+      notify("Administrators can only step down THEMSELVES. Demoting another administrator needs system-level authorization.", "error");
       return;
     }
     if (!iAmOwner && !(await adminGuard(me, notify, "Step down as administrator"))) return;
@@ -18571,7 +18835,7 @@ function AdminManager({
   async function promote() {
     const u = regulars.find(x => x.id === pick);
     if (!u) return;
-    if (!confirm("Make " + u.email + " an ADMINISTRATOR? They gain full system access (all tabs, users, Bin, Audit) and can themselves promote or demote administrators. Only the owner is beyond their reach.")) return;
+    if (!confirm("Make " + u.email + " an ADMINISTRATOR? They gain full system access (all tabs, users, Bin, Audit) and can themselves promote or demote administrators.")) return;
     try {
       await db.collection("users").doc(u.id).update({
         isAdmin: true
@@ -18602,7 +18866,7 @@ function AdminManager({
       color: "var(--c-text5)",
       marginBottom: 12
     }
-  }, iAmOwner ? "Administrators are hidden from the Users section. You and every administrator can promote or demote; the owner (you) can never be touched by anyone and never appears anywhere." : "Fellow administrators. You can promote users to administrator, and you can step down yourself — but only the owner can demote another administrator. The system owner is beyond everyone's reach and is not listed."), admins.map(u => /*#__PURE__*/React.createElement(UserRow, {
+  }, iAmOwner ? "Administrators are hidden from the Users section. You and every administrator can promote or demote; your own account can never be touched by anyone and never appears anywhere." : "Fellow administrators. You can promote users to administrator, and you can step down yourself. Another administrator can only be demoted with system-level authorization."), admins.map(u => /*#__PURE__*/React.createElement(UserRow, {
     key: u.id,
     u: u,
     brands: brands,
@@ -19325,13 +19589,15 @@ function App() {
   const [uiAnim, setUiAnim] = useState(() => {
     try {
       return {
-        style: localStorage.getItem("ibaseTabAnim") || "default",
-        scope: localStorage.getItem("ibaseTabAnimScope") || "content"
+        content: localStorage.getItem("ibaseTabAnimContent") || "",
+        tabs: localStorage.getItem("ibaseTabAnimTabs") || "",
+        style: localStorage.getItem("ibaseTabAnim") || "",
+        scope: localStorage.getItem("ibaseTabAnimScope") || ""
       };
     } catch (e) {
       return {
-        style: "default",
-        scope: "content"
+        content: "",
+        tabs: ""
       };
     }
   });
@@ -19341,8 +19607,8 @@ function App() {
       ...patch
     };
     try {
-      localStorage.setItem("ibaseTabAnim", next.style);
-      localStorage.setItem("ibaseTabAnimScope", next.scope);
+      localStorage.setItem("ibaseTabAnimContent", next.content || "");
+      localStorage.setItem("ibaseTabAnimTabs", next.tabs || "");
     } catch (e) {}
     return next;
   });
@@ -19358,6 +19624,29 @@ function App() {
     msg,
     kind
   });
+  // 🛡 Backup & Restore intruder alarm: every administrator gets a popup when
+  // ANYONE fails the Backup & Restore password — whichever tab they are on.
+  const brAlertStart = React.useRef(Date.now());
+  useEffect(() => {
+    if (!profile || !(profile.isAdmin || isOwnerAcct(profile))) return;
+    let un = null;
+    try {
+      un = db.collection("adminAlerts").onSnapshot(snap => {
+        let newest = null;
+        snap.forEach(d => {
+          const a = d.data() || {};
+          const t = Date.parse(a.at || 0) || 0;
+          if (t > brAlertStart.current && (!newest || t > newest.t)) newest = { t: t, a: a };
+        });
+        if (newest) {
+          brAlertStart.current = newest.t;
+          const a = newest.a;
+          notify("🛡 SECURITY: " + (a.email || "someone") + " FAILED the Backup & Restore password (attempt " + (a.fails || "?") + " of 3)" + (a.locked ? " — now LOCKED for 24 hours." : "."), "error");
+        }
+      }, () => {});
+    } catch (e) {}
+    return () => { try { un && un(); } catch (e) {} };
+  }, [profile && profile.isAdmin, profile && profile.email]);
   const themeOvDoc = useDoc("config/themes", true);
   useEffect(() => {
     const ov = themeOvDoc && themeOvDoc.ov || {};
@@ -19705,7 +19994,7 @@ function App() {
         gap: 4
       }
     }, /*#__PURE__*/React.createElement("span", {
-      className: active ? tabAnimStyle(uiAnim) === "none" ? "" : tabAnimScope(uiAnim) !== "content" ? "ib-nav-fx anim-" + tabAnimStyle(uiAnim) : "ib-nav-on" : "",
+      className: active ? tabAnimStyle(uiAnim, "tabs") === "none" ? "" : "ib-nav-fx anim-" + tabAnimStyle(uiAnim, "tabs") : "",
       style: {
         fontSize: 19,
         position: "relative",
@@ -19880,7 +20169,7 @@ function App() {
     tabId: tab
   }, /*#__PURE__*/React.createElement("div", {
     key: tab,
-    className: "ibase-tab-panel" + (tabAnimStyle(uiAnim) !== "none" && tabAnimScope(uiAnim) !== "tabs" ? " anim-" + tabAnimStyle(uiAnim) : "")
+    className: "ibase-tab-panel" + (tabAnimStyle(uiAnim, "content") !== "none" ? " anim-" + tabAnimStyle(uiAnim, "content") : "")
   }, tab === "dashboard" && pCanTab(signedProfile, "dashboard", "view") && /*#__PURE__*/React.createElement(DashboardTab, {
     labs: labs
   }), tab === "labs" && pCanTab(signedProfile, "labs", "view") && /*#__PURE__*/React.createElement(LabsTab, {
