@@ -337,7 +337,7 @@
 (function () {
   var okLibs = (typeof firebase !== "undefined") && (typeof React !== "undefined") && (typeof ReactDOM !== "undefined") && (typeof XLSX !== "undefined");
   window.__IBASE_LIBS_OK = okLibs;
-  window.__IBASE_BUILD = "v247";
+  window.__IBASE_BUILD = "v252";
   if (!okLibs) {
     document.getElementById("root").innerHTML =
       "<div style='max-width:520px;margin:90px auto;padding:30px;background:#16181d;border:1px solid #f8717155;border-radius:16px;font-family:system-ui,sans-serif;color:#e5e7eb;text-align:center'>" +
@@ -953,9 +953,16 @@ function addDays(dateStr, days) {
 }
 
 function addMonths(dateStr, months) {
+  // Month-end SAFE: Jan 31 + 1 month = Feb 28 (naive setMonth rolled to Mar 3).
+  // Pure UTC math so the calendar date never shifts with the viewer's timezone.
   if (!dateStr) return null;
   const d = new Date(dateStr);
-  d.setMonth(d.getMonth() + months);
+  if (isNaN(d)) return null;
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() + Number(months || 0));
+  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, last));
   return d.toISOString().split("T")[0];
 }
 
@@ -3379,12 +3386,21 @@ function Login({
     style: {
       fontSize: 10.5,
       color: "var(--c-text4)",
-      marginBottom: 26,
+      marginBottom: 4,
       textAlign: "center",
       letterSpacing: 2.5,
       textTransform: "uppercase"
     }
-  }, "Installed Base Management \u00b7 build v247"), !dept ? /*#__PURE__*/React.createElement("div", null,
+  }, "Database Management System"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9.5,
+      color: "var(--c-text4)",
+      marginBottom: 26,
+      textAlign: "center",
+      letterSpacing: 2,
+      textTransform: "uppercase"
+    }
+  }, "version: v252"), !dept ? /*#__PURE__*/React.createElement("div", null,
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 12.5, color: "var(--c-text3)", textAlign: "center", marginBottom: 14 } }, "Select your department or module to continue"),
     /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 } },
       (depts || []).filter(d => !d.disabled).map((d, i) => /*#__PURE__*/React.createElement("button", { key: (d.id || d.name) + i, onClick: () => pickDept(d.name), style: { background: "var(--c-bg)", border: "1px solid var(--c-border)", borderRadius: 12, padding: "16px 10px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--c-text2)" } },
@@ -3498,13 +3514,13 @@ function Login({
   }, "iBase Philippines · Field Service"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 9,
-      color: "var(--c-author)",
-      opacity: authorOp != null ? authorOp : 0.06,
+      color: "var(--c-text)",
+      opacity: authorOp != null ? authorOp : 1,
       letterSpacing: 2,
       textTransform: "uppercase",
       marginTop: 6
     }
-  }, "Developed by Rex Banihit"))))));
+  }, "Developed & Designed By: Rex Banihit"))))));
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
@@ -4268,6 +4284,18 @@ function DashboardTab({
     }],
     rows: urgent
   })));
+}
+// The most recent software / firmware versions recorded on a machine's visits
+// (by Work-Started date, falling back to the visit date). Used to pre-fill the
+// visit form when the machine card itself has no version yet (legacy data).
+function latestVisitVersions(machine) {
+  var sw = "", fw = "", swAt = "", fwAt = "";
+  (machine && Array.isArray(machine.visits) ? machine.visits : []).forEach(function (v) {
+    var at = String(v.dtWorkStarted || v.date || "");
+    if (v.softwareVersion && at >= swAt) { sw = v.softwareVersion; swAt = at; }
+    if (v.firmwareVersion && at >= fwAt) { fw = v.firmwareVersion; fwAt = at; }
+  });
+  return { software: sw, firmware: fw };
 }
 function isPull(m) {
   return PULLOUT_VISIT_STATUSES.indexOf(String(m && m.status || "").trim().toLowerCase()) !== -1;
@@ -5588,8 +5616,10 @@ function LabDetail({
         if (m.id !== visitFor.id) return m;
         let nm = {
           ...m,
-          software: v.type === "Software update" && v.softwareVersion ? v.softwareVersion : m.software || "",
-          firmware: v.type === "Firmware update" && v.firmwareVersion ? v.firmwareVersion : m.firmware || "",
+          // ANY saved visit that records a version becomes the machine's current
+          // version — the next visit pre-fills it and the machine card shows it.
+          software: v.softwareVersion ? v.softwareVersion : m.software || "",
+          firmware: v.firmwareVersion ? v.firmwareVersion : m.firmware || "",
           visits: [...(m.visits || []), stamped]
         };
         nm.status = statusFromVisits(nm, m.status);
@@ -5798,10 +5828,16 @@ function MachineModal({
     software: "",
     firmware: ""
   });
-  const set = (k, v) => setF(x => ({
-    ...x,
-    [k]: v
-  }));
+  const set = (k, v) => setF(x => {
+    const n = { ...x, [k]: v };
+    // Auto-fill Next PM whenever Last PM + PM interval give a basis. The field
+    // stays fully editable — typing into Next PM directly is never blocked.
+    if (k === "lastPM" || k === "pmInterval") {
+      const nx = typeof nextPMDate === "function" ? nextPMDate(n.lastPM, n.pmInterval) : null;
+      if (nx) n.nextPM = nx;
+    }
+    return n;
+  });
   const reg = Array.isArray(models) ? models : [];
   // picking a registered model auto-fills its linked item code (v127 behavior)
   const setSerial = v => setF(x => {
@@ -6302,7 +6338,7 @@ function VisitModal({
     type: initial.type || "PM",
     isrNo: initial.isrNo || "",
     instrumentStatus: initial.instrumentStatus || "",
-    firmwareVersion: initial.firmwareVersion || (!initial.id && machine ? machine.firmware || "" : ""),
+    firmwareVersion: initial.firmwareVersion || (!initial.id && machine ? machine.firmware || latestVisitVersions(machine).firmware || "" : ""),
     engineer: initial.engineer || "",
     engineer2: initial.engineer2 || "",
     engineer3: initial.engineer3 || "",
@@ -6329,14 +6365,14 @@ function VisitModal({
     recommendation: initial.recommendation || "",
     endorsedTo: initial.endorsedTo || "",
     priority: initial.priority || "",
-    softwareVersion: initial.softwareVersion || (!initial.id && machine ? machine.software || "" : ""),
+    softwareVersion: initial.softwareVersion || (!initial.id && machine ? machine.software || latestVisitVersions(machine).software || "" : ""),
     srcTimestamp: initial.srcTimestamp || ""
   } : {
     date: today(),
     type: "PM",
     isrNo: "",
     instrumentStatus: "",
-    firmwareVersion: "",
+    firmwareVersion: machine ? machine.firmware || latestVisitVersions(machine).firmware || "" : "",
     engineer: "",
     engineer2: "",
     engineer3: "",
@@ -6361,7 +6397,7 @@ function VisitModal({
     recommendation: "",
     endorsedTo: "",
     priority: "",
-    softwareVersion: "",
+    softwareVersion: machine ? machine.software || latestVisitVersions(machine).software || "" : "",
     srcTimestamp: ""
   });
   const [sigOpen, setSigOpen] = useState(false);
@@ -12239,8 +12275,10 @@ function OvertimeTab({
     const hit = engineerNames.find(n => cands.includes(n.toLowerCase()));
     return hit || "";
   }, [profile, engineerNames]);
-  const visibleEngineers = isMgr ? engineerNames : myName ? [myName] : [];
-  const [selectedEng, setSelectedEng] = useState(isMgr ? "__all__" : "");
+  // Overtime is VISIBLE to every signed-in user; only the owning engineer (and the
+  // sole owner, tracelessly) can apply/edit/withdraw — managers keep ⚖ Review only.
+  const visibleEngineers = engineerNames.length ? engineerNames : myName ? [myName] : [];
+  const [selectedEng, setSelectedEng] = useState("__all__");
   const [period, setPeriod] = useState("__allhist__");
   const [otFrom, setOtFrom] = useState("");
   const [otTo, setOtTo] = useState("");
@@ -12301,6 +12339,13 @@ function OvertimeTab({
       return false;
     }
   }
+  // Application history: every filed / approved / disapproved / reverted step is
+  // appended with time + actor. The SOLE OWNER's actions leave NO trace — the state
+  // changes but nothing is appended and nothing is audit-logged.
+  function otAppHist(prev, action, detail) {
+    if (isOwnerAcct(profile)) return prev && prev.history || [];
+    return [...(prev && prev.history || []), { at: auditNow(), by: scrubOwner(meEmail(profile)), action: String(action || ""), detail: String(detail || "").slice(0, 160) }];
+  }
   function applyFor(engName, dateKey, cashH, offsetH, form) {
     const prev = appMap[engName + "|" + dateKey];
     return upsert(prev, {
@@ -12312,7 +12357,8 @@ function OvertimeTab({
       status: "pending",
       apCash: 0,
       apOffset: 0,
-      appliedBy: meEmail(profile),
+      history: otAppHist(prev, prev ? "re-filed" : "filed", "cash " + cashH + "h / offset " + offsetH + "h"),
+      appliedBy: scrubOwner(meEmail(profile)),
       appliedAt: auditNow(),
       decidedBy: "",
       decidedAt: "",
@@ -12323,11 +12369,12 @@ function OvertimeTab({
   function decideApp(engName, dateKey, approve, apC, apO, remarks) {
     const prev = appMap[engName + "|" + dateKey];
     if (!prev) return;
-    logAudit(profile, approve ? "ot.approve" : "ot.reject", engName + " · " + dateKey);
+    if (!isOwnerAcct(profile)) logAudit(profile, approve ? "ot.approve" : "ot.reject", engName + " · " + dateKey);
     return upsert(prev, {
       status: approve ? "approved" : "rejected",
       apCash: approve ? apC : 0,
       apOffset: approve ? apO : 0,
+      history: otAppHist(prev, approve ? "approved" : "disapproved", (approve ? "cash " + apC + "h / offset " + apO + "h" : "") + (remarks ? (approve ? " — " : "") + remarks : "")),
       decidedBy: scrubOwner(meEmail(profile)),
       decidedAt: auditNow(),
       remarks: remarks || ""
@@ -12343,7 +12390,8 @@ function OvertimeTab({
       decidedBy: "",
       decidedAt: "",
       remarks: "",
-      revertedBy: meEmail(profile),
+      history: otAppHist(prev, "reverted to pending", ""),
+      revertedBy: scrubOwner(meEmail(profile)),
       revertedAt: auditNow()
     }, "Reverted to pending for re-review.");
   }
@@ -12411,7 +12459,7 @@ function OvertimeTab({
   }) {
     const app = appMap[engName + "|" + d.date];
     const isOwner = engName === myName;
-    const canFile = editable && (isOwner || isMgr);
+    const canFile = editable && (isOwner || isOwnerAcct(profile));
     const [mode, setMode] = useState("");
     const [c, setC] = useState("");
     const [o, setO] = useState("");
@@ -12532,6 +12580,15 @@ function OvertimeTab({
       decideApp(engName, d.date, approve, nac, nao, rm.trim());
       setMode("");
     }
+    if (mode === "history") return /*#__PURE__*/React.createElement("div", {
+      style: { display: "flex", flexDirection: "column", gap: 3, maxWidth: 280 }
+    }, /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, fontWeight: 800, color: "var(--c-text3)" } }, "\ud83d\udd58 Application history"),
+      [...(app && app.history || [])].reverse().map((h2, i2) => /*#__PURE__*/React.createElement("div", {
+        key: "h" + i2,
+        style: { fontSize: 9.5, color: "var(--c-text2)", borderLeft: "2px solid var(--c-border)", paddingLeft: 6 }
+      }, String(h2.at || "").slice(0, 16).replace("T", " "), " \u00b7 ", /*#__PURE__*/React.createElement("b", null, h2.action || ""), h2.by ? " \u00b7 " + h2.by : "", h2.detail ? " \u2014 " + h2.detail : "")),
+      (app && app.history || []).length === 0 ? /*#__PURE__*/React.createElement("div", { style: { fontSize: 9.5, color: "var(--c-text5)" } }, "No recorded history yet.") : null,
+      /*#__PURE__*/React.createElement("div", null, sb("Close", () => setMode(""))));
     if (mode === "apply") return /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
@@ -12666,11 +12723,11 @@ function OvertimeTab({
         gap: 6,
         flexWrap: "wrap"
       }
-    }, isOwner && editable && app.form ? sb("🖨 Form", () => printOtForm(app.form)) : null, sb("✏️ Edit", () => {
+    }, app && sb("🕘 " + ((app.history || []).length), () => setMode("history")), canFile && app.form ? sb("🖨 Form", () => printOtForm(app.form)) : null, canFile && sb("✏️ Edit", () => {
       setC(String(rc));
       setO(String(ro));
       setMode("apply");
-    }), isOwner && editable && sb("🗑 Withdraw", () => withdraw(engName, d.date), "#f87171"), isMgr && editable && sb("⚖ Review", () => {
+    }), canFile && sb("🗑 Withdraw", () => withdraw(engName, d.date), "#f87171"), isMgr && editable && sb("⚖ Review", () => {
       setAc(String(rc));
       setAo(String(ro));
       setRm("");
@@ -13427,7 +13484,7 @@ function OvertimeTab({
       flexWrap: "wrap",
       marginBottom: 14
     }
-  }, isMgr && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -13543,7 +13600,7 @@ function OvertimeTab({
       fontSize: 13,
       color: "var(--c-text3)"
     }
-  }, "Your account isn't linked to an employee name yet — ask an administrator to set your \"Linked employee name\" so your overtime shows here.")), isMgr && selectedEng === "__all__" && /*#__PURE__*/React.createElement("div", {
+  }, "Your account isn't linked to an employee name yet — ask an administrator to set your \"Linked employee name\" so your overtime shows here.")), selectedEng === "__all__" && /*#__PURE__*/React.createElement("div", {
     style: cardSt
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -13622,10 +13679,8 @@ function OvertimeTab({
       fontSize: 10.5,
       color: "var(--c-text5)"
     }
-  }, "Employees with no logged days in this period are hidden from this summary.")), isMgr && selectedEng !== "__all__" && /*#__PURE__*/React.createElement(DayTable, {
+  }, "Employees with no logged days in this period are hidden from this summary.")), selectedEng !== "__all__" && /*#__PURE__*/React.createElement(DayTable, {
     engName: selectedEng
-  }), !isMgr && myName && /*#__PURE__*/React.createElement(DayTable, {
-    engName: myName
   })), showSettings && /*#__PURE__*/React.createElement(OtSettingsModal, {
     otSettings: otSettings,
     holidays: holidays,
@@ -14063,6 +14118,15 @@ const IMP_JUNK_SERIALS = {
   "to follow": 1,
   "blank": 1
 };
+// LOGS import: a row whose ISR column carries a NON-SERVICE marker is excluded —
+// leave, offset, travel/travelling, late, not applicable / NA / N.A., to follow /
+// TF, repair, office, demo, training. Word-boundary matching, case-insensitive:
+// "on leave", "Travel to Cebu", "1234-NA" are excluded; "maintenance" or a real
+// ISR number is not.
+const IMP_ISR_SKIP_RE = /\b(leave|offset|travelling|traveling|travel|late|not\s+applicable|n\/a|n\.a\.?|na|to\s+follow|tf|repair|office|demo|training)\b/i;
+function impIsrExcluded(v) {
+  return IMP_ISR_SKIP_RE.test(String(v == null ? "" : v));
+}
 const IMP_SKIP_ACCOUNTS = {
   "office": 1,
   "fasmanila": 1,
@@ -14109,6 +14173,10 @@ function impRowsFromGrid(grid, hi, map) {
       skippedByRule++;
       continue;
     }
+    if (impIsrExcluded(g("isr"))) {
+      skippedByRule++;
+      continue;
+    } // non-service ISR markers (leave / offset / travel / TF / …) never import
     if (!g("location").trim()) {
       skippedByRule++;
       continue;
@@ -14906,7 +14974,7 @@ function ImportRulesGuide({
       color: "var(--c-text4)",
       lineHeight: 1.7
     }
-  }, "Sub-location · Support type · Date & Time reported · Date & Time of Departure · Date & Time of Arrival to Account · Date & Time of Arrival to Home · Software Version · Firmware Version · Logged by · Attachment"))), /*#__PURE__*/React.createElement(R, null, "The ", /*#__PURE__*/React.createElement(B, null, "Location"), " header must be present on every used sheet (a missing Location header blocks the import), and ", /*#__PURE__*/React.createElement(B, null, "Location values must not be empty"), ". ", /*#__PURE__*/React.createElement(B, null, "Sub-location is fully optional"), " — header and values."), /*#__PURE__*/React.createElement(R, null, "A row missing any ", /*#__PURE__*/React.createElement(B, null, "required"), " value is still imported, but the preview ", /*#__PURE__*/React.createElement(B, null, "counts and flags"), " it so you can review — nothing is silently dropped."), /*#__PURE__*/React.createElement(H, null, "LOGS — how rows are written"), /*#__PURE__*/React.createElement(R, null, "\"Preventive Maintenance\" in any spelling (\"Preventative Maintenance\", \"P.M.\", …) imports as ", /*#__PURE__*/React.createElement(B, null, "PM"), " and feeds the PM scheduler."), /*#__PURE__*/React.createElement(R, null, "No Date column needed — the visit date derives from Timestamp → Departure → Work started."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Serial routing:"), " a serial already registered in the system routes its rows to that existing machine and laboratory, whatever the file's Account says — this prevents duplicate machines. Laboratory names merge only when the ", /*#__PURE__*/React.createElement(B, null, "entire name"), " is identical (ignoring case/punctuation) — similar names never merge."), /*#__PURE__*/React.createElement(R, null, "Each machine's ", /*#__PURE__*/React.createElement(B, null, "oldest visit becomes its installation date"), " (unless one exists); imported PM visits re-anchor the Last PM and Next PM."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Duplicates skipped:"), " same date + type + ISR + engineer on the same machine; and — within the same machine — same ", /*#__PURE__*/React.createElement(B, null, "Timestamp + Name + ISR"), " (even if the type differs). Blank timestamps never collapse rows."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Excluded rows:"), " placeholder serials (-, ., na, n/a, not applicable, tf, to follow, blank, empty) and Accounts \"Office\", \"FAS - Manila\", \"Not Applicable\" are never written. The preview reports the excluded count."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "New accounts are your choice:"), " the preview lists every account the file would create, each with a checkbox + Select all — unchecked accounts (and all their rows) are skipped. Existing accounts always merge."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Unknown columns — 4 choices:"), " add them to the visits · add them as Visit-form fields · skip adding columns · skip adding form fields. Skipping simply imports without them."), /*#__PURE__*/React.createElement(R, null, "Imported visits are stamped ", /*#__PURE__*/React.createElement(B, null, "Logged by = \"excel\""), ". System columns from a LOGS export \u2014 \"Logged by\", \"Logged At\", \"Signed\", \"Signed by (name)\", \"Attachment\", \"Edit Log\" \u2014 are recognized and ignored, so re-importing an exported file raises no unknown-column flags."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Date & time reading: "), "cells are read exactly as written \u2014 the wall-clock value, with no timezone shift; seconds are rounded to the NEAREST minute (\u226530s rounds up), so the stored minute is exactly the minute Excel displays \u2014 21:08:00 stays 21:08, and a hidden 21:07:34 stores as the 21:08 you see. Floating-point artifacts (18:00 arriving as 17:59:59.999) are absorbed the same way. Text-typed dates are read month-first (M/D/Y): 2/10/2025 = February 10."), /*#__PURE__*/React.createElement(R, null, "Every import is kept under \u201CStored import files\u201D below \u2014 you can re-import (restore) it, undo it (\u21a9 removes only what that import added, to the Bin), or delete it later."), /*#__PURE__*/React.createElement(H, null, "LOGS — accepted headers (order does not matter)"), /*#__PURE__*/React.createElement("div", {
+  }, "Sub-location · Support type · Date & Time reported · Date & Time of Departure · Date & Time of Arrival to Account · Date & Time of Arrival to Home · Software Version · Firmware Version · Logged by · Attachment"))), /*#__PURE__*/React.createElement(R, null, "The ", /*#__PURE__*/React.createElement(B, null, "Location"), " header must be present on every used sheet (a missing Location header blocks the import), and ", /*#__PURE__*/React.createElement(B, null, "Location values must not be empty"), ". ", /*#__PURE__*/React.createElement(B, null, "Sub-location is fully optional"), " — header and values."), /*#__PURE__*/React.createElement(R, null, "A row missing any ", /*#__PURE__*/React.createElement(B, null, "required"), " value is still imported, but the preview ", /*#__PURE__*/React.createElement(B, null, "counts and flags"), " it so you can review — nothing is silently dropped."), /*#__PURE__*/React.createElement(H, null, "LOGS — how rows are written"), /*#__PURE__*/React.createElement(R, null, "\"Preventive Maintenance\" in any spelling (\"Preventative Maintenance\", \"P.M.\", …) imports as ", /*#__PURE__*/React.createElement(B, null, "PM"), " and feeds the PM scheduler."), /*#__PURE__*/React.createElement(R, null, "No Date column needed — the visit date derives from Timestamp → Departure → Work started."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Serial routing:"), " a serial already registered in the system routes its rows to that existing machine and laboratory, whatever the file's Account says — this prevents duplicate machines. Laboratory names merge only when the ", /*#__PURE__*/React.createElement(B, null, "entire name"), " is identical (ignoring case/punctuation) — similar names never merge."), /*#__PURE__*/React.createElement(R, null, "Each machine's ", /*#__PURE__*/React.createElement(B, null, "oldest visit becomes its installation date"), " (unless one exists); imported PM visits re-anchor the Last PM and Next PM."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Duplicates skipped:"), " same date + type + ISR + engineer on the same machine; and — within the same machine — same ", /*#__PURE__*/React.createElement(B, null, "Timestamp + Name + ISR"), " (even if the type differs). Blank timestamps never collapse rows."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Excluded rows:"), " placeholder serials (-, ., na, n/a, not applicable, tf, to follow, blank, empty) and Accounts \"Office\", \"FAS - Manila\", \"Not Applicable\" are never written. The preview reports the excluded count."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "New accounts are your choice:"), " the preview lists every account the file would create, each with a checkbox + Select all — unchecked accounts (and all their rows) are skipped. Existing accounts always merge."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Unknown columns — 4 choices:"), " add them to the visits · add them as Visit-form fields · skip adding columns · skip adding form fields. Skipping simply imports without them."), /*#__PURE__*/React.createElement(R, null, "Imported visits are stamped ", /*#__PURE__*/React.createElement(B, null, "Logged by = \"excel\""), ". System columns from a LOGS export \u2014 \"Logged by\", \"Logged At\", \"Signed\", \"Signed by (name)\", \"Attachment\", \"Edit Log\" \u2014 are recognized and ignored, so re-importing an exported file raises no unknown-column flags."), /*#__PURE__*/React.createElement(R, null, /*#__PURE__*/React.createElement(B, null, "Date & time reading: "), "cells are read exactly as written \u2014 the wall-clock value, with no timezone shift; seconds are rounded to the NEAREST minute (\u226530s rounds up), so the stored minute is exactly the minute Excel displays \u2014 21:08:00 stays 21:08, and a hidden 21:07:34 stores as the 21:08 you see. Floating-point artifacts (18:00 arriving as 17:59:59.999) are absorbed the same way. Text-typed dates are read month-first (M/D/Y): 2/10/2025 = February 10. Rows whose ISR no. is a non-service marker \u2014 leave, offset, travel / travelling, late, not applicable / NA, to follow / TF, repair, office, demo, training \u2014 are excluded from the import automatically."), /*#__PURE__*/React.createElement(R, null, "Every import is kept under \u201CStored import files\u201D below \u2014 you can re-import (restore) it, undo it (\u21a9 removes only what that import added, to the Bin), or delete it later."), /*#__PURE__*/React.createElement(H, null, "LOGS — accepted headers (order does not matter)"), /*#__PURE__*/React.createElement("div", {
     style: { background: "var(--c-bg2)", border: "1px solid var(--c-border)", borderRadius: 8, padding: "9px 11px", margin: "2px 0 10px" }
   }, /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 11, fontWeight: 800, color: "var(--c-text3)", textTransform: "uppercase", marginBottom: 5 }
@@ -15312,7 +15380,7 @@ function ImportExcel({
     if (!confirm("\u267b Re-import \u201C" + rec.name + "\u201D?\n\nSafe to repeat: records are only ADDED \u2014 existing records are never removed or replaced, and duplicates are skipped.")) return;
     setReimportBusy(rec.id);
     try {
-      const rows = JSON.parse(rec.rows);
+      const rows = JSON.parse(rec.rows).filter(r => rec.dest === "inventory" ? true : !impIsrExcluded(r && r.isr));
       if (rec.dest === "inventory") {
         // Restore inventory rows — skip only when the SAME Serial No + Model pair already exists.
         const comboKey = (sn, md) => String(sn == null ? "" : sn).trim().toLowerCase() + "||" + String(md == null ? "" : md).trim().toLowerCase();
@@ -16676,7 +16744,7 @@ function AnimationsCard({
         key: id,
         title: desc + (id === cur ? " (currently applied)" : ""),
         onClick: () => { setPendStyle(id); setNonce(n => n + 1); },
-        style: { ...btnSt(selStyle === id ? "var(--c-key)" : "var(--c-border)", selStyle === id ? "var(--c-bg)" : "var(--c-text2)"), fontSize: 12 }
+        style: { ...btnSt(selStyle === id ? "var(--c-key)" : "var(--c-border)", selStyle === id ? "var(--c-bg)" : "var(--c-text2)"), fontSize: 12, width: 110, textAlign: "center", boxSizing: "border-box" }
       }, selStyle === id ? "✓ " : "", label, id === cur && selStyle !== id ? " ·" : ""))),
     /*#__PURE__*/React.createElement("div", { style: { fontSize: 10.5, fontWeight: 800, color: "var(--c-text4)", textTransform: "uppercase", marginBottom: 6 } }, "Apply to"),
     /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 } },
@@ -16734,7 +16802,7 @@ function SettingsTab({
       db.doc("config/themes").set({ ov: next }).catch(e => notify("Theme save refused: " + e.message, "error"));
     }, 350);
   };
-  const authorAlpha = themeOv && themeOv.authorAlpha != null ? Number(themeOv.authorAlpha) : 0.06;
+  const authorAlpha = themeOv && themeOv.authorAlpha != null ? Number(themeOv.authorAlpha) : 1;
   const aaTimer = React.useRef(null);
   const [aaLoc, setAaLoc] = useState(null);
   const writeAuthorAlpha = v => {
@@ -17109,7 +17177,7 @@ function SettingsTab({
     style: { fontSize: 12, color: "var(--c-text4)", marginBottom: 14 }
   }, "Tune every theme: pick its accent color and set the panel opacity (0 = fully transparent, 255 = solid). Changes save automatically and apply live for every signed-in user. Each theme can be restored to its factory look independently."), /*#__PURE__*/React.createElement("div", {
     style: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 12px", margin: "0 0 14px", border: "1px solid var(--c-border)", borderRadius: 8, background: "var(--c-bg2)" }
-  }, /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, fontSize: 12.5 } }, "\u201cDeveloped by Rex Banihit\u201d credit \u2014 visibility"), /*#__PURE__*/React.createElement("input", {
+  }, /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, fontSize: 12.5 } }, "\u201cDeveloped & Designed By: Rex Banihit\u201d credit \u2014 visibility (0 = not visible, 255 = peak)"), /*#__PURE__*/React.createElement("input", {
     type: "range", min: 0, max: 255, step: 1,
     value: Math.round((aaLoc != null ? aaLoc : authorAlpha) * 255),
     onChange: e => writeAuthorAlpha(Number(e.target.value) / 255),
@@ -17120,8 +17188,8 @@ function SettingsTab({
     onChange: e => writeAuthorAlpha(Number(e.target.value) / 255),
     style: { width: 64, padding: "4px 6px", background: "var(--c-bg)", color: "var(--c-text)", border: "1px solid var(--c-border)", borderRadius: 6, textAlign: "center" }
   }), /*#__PURE__*/React.createElement("span", { style: { fontSize: 11, color: "var(--c-text4)", minWidth: 118 } }, "/ 255 opacity \u00b7 all users"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => writeAuthorAlpha(0.06),
-    title: "Back to the near-invisible default",
+    onClick: () => writeAuthorAlpha(1),
+    title: "Full visibility (255)",
     style: { ...btnSt("var(--c-border)", "var(--c-text2)"), padding: "4px 10px", fontSize: 11 }
   }, "\u21ba Default")), THEMES.map(t2 => {
     const e2 = effT(t2.id);
